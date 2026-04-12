@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set image prefix
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -30,7 +33,7 @@ jobs:
           context: .
           file: Dockerfile.app
           push: true
-          tags: ghcr.io/${{ github.repository }}/app:latest
+          tags: ${{ env.IMAGE }}/app:latest
 
       - name: Build & push sandbox
         uses: docker/build-push-action@v6
@@ -38,4 +41,4 @@ jobs:
           context: .
           file: Dockerfile.sandbox
           push: true
-          tags: ghcr.io/${{ github.repository }}/sandbox:latest
+          tags: ${{ env.IMAGE }}/sandbox:latest
