@@ -56,6 +56,8 @@ def _build_headers(api_key: str) -> dict:
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/Janar0/quip",
+        "X-Title": "QUIP",
     }
 
 

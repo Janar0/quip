@@ -1,8 +1,6 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
+    image: ghcr.io/janar0/quip/app:latest
     ports:
       - "${PORT:-3000}:80"
     environment:
@@ -27,11 +25,10 @@ services:
   # Builds quip-sandbox:latest image, then exits.
   # The backend (via docker.sock) uses this image to run code execution containers.
   sandbox_build:
-    build:
-      context: .
-      dockerfile: Dockerfile.sandbox
-    image: quip-sandbox:latest
-    command: ["echo", "quip-sandbox image ready"]
+    image: docker:cli
+    entrypoint: ["sh", "-c", "docker pull ghcr.io/janar0/quip/sandbox:latest && docker tag ghcr.io/janar0/quip/sandbox:latest quip-sandbox:latest"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: "no"
 
 volumes:
