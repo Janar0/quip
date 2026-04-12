@@ -302,7 +302,7 @@
           <!-- Paperclip -->
           <button
             type="button"
-            class="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-all active:scale-[0.92]"
+            class="p-2 rounded-lg quip-icon-btn active:scale-[0.92]"
             onclick={() => fileInputEl.click()}
             title={$t('chat.attach')}
             aria-label={$t('chat.attach')}
@@ -329,8 +329,10 @@
               {#each ['auto', 'search', 'research'] as const as m (m)}
                 <button
                   type="button"
-                  class="px-2.5 py-1 transition-all active:scale-[0.95] {$modePreference === m ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}"
-                  style={$modePreference === m ? 'background: var(--quip-bg-raised)' : ''}
+                  class="px-2.5 py-1 transition-all active:scale-[0.95]"
+                  style={$modePreference === m
+                    ? 'background: var(--quip-bg-raised); color: var(--quip-text); font-weight: 500;'
+                    : 'color: var(--quip-text-muted);'}
                   onclick={() => modePreference.set(m as ModePreference)}
                   disabled={$isStreaming}
                 >{$t(`chat.mode_${m}`)}</button>

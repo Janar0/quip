@@ -421,6 +421,16 @@
 ::-webkit-scrollbar-thumb { background: var(--quip-scrollbar); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--quip-scrollbar-hover); }
 
+/* ── Icon buttons (theme-aware) ────────────────────────────────────── */
+.quip-icon-btn {
+  color: var(--quip-text-muted);
+  transition: color var(--quip-d-1), background-color var(--quip-d-1);
+}
+.quip-icon-btn:hover {
+  color: var(--quip-text-dim);
+  background: var(--quip-hover);
+}
+
 /* ── Typing indicator dots ─────────────────────────────────────────── */
 @keyframes typing-dot {
   0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
