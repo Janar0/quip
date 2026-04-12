@@ -1,22 +1,12 @@
 services:
-  frontend:
+  app:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: Dockerfile.app
     ports:
       - "${PORT:-3000}:80"
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
     environment:
       DATABASE_URL: sqlite+aiosqlite:///data/quip.db
-      CORS_ORIGINS: http://localhost:${PORT:-3000}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
