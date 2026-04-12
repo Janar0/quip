@@ -198,6 +198,7 @@
 
   function getFileIcon(file: File): string {
     if (file.type.startsWith('image/')) return '🖼';
+    if (file.type.startsWith('video/')) return '🎬';
     if (file.type === 'application/pdf') return '📄';
     if (file.type.includes('word') || file.type.includes('docx')) return '📝';
     if (file.type.includes('csv') || file.type.includes('spreadsheet')) return '📊';

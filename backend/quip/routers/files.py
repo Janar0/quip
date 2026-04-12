@@ -28,17 +28,20 @@ DOCUMENT_TYPES = {
     "text/csv",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+VIDEO_TYPES = {"video/mp4", "video/webm", "video/mpeg", "video/quicktime", "video/x-msvideo"}
+VIDEO_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
 def _classify_file(content_type: str) -> str:
-    """Classify file as 'image' or 'document'."""
+    """Classify file as 'image', 'video', or 'document'."""
     if content_type in IMAGE_TYPES or content_type.startswith("image/"):
         return "image"
+    if content_type in VIDEO_TYPES or content_type.startswith("video/"):
+        return "video"
     if content_type in DOCUMENT_TYPES:
         return "document"
-    # Default: treat as document if text-like, else skip
     if content_type.startswith("text/"):
         return "document"
     return "document"
@@ -99,9 +102,11 @@ async def upload_files(
         content_type = upload.content_type or "application/octet-stream"
         file_type = _classify_file(content_type)
 
-        # Resize large images
+        # Resize large images; reject oversized videos
         if file_type == "image":
             data = _normalize_image(data, content_type)
+        elif file_type == "video" and len(data) > VIDEO_MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f"Video file too large (max 100 MB)")
 
         # Hash for dedup
         file_hash = hashlib.sha256(data).hexdigest()
@@ -114,7 +119,7 @@ async def upload_files(
         storage_path = f"{user.id}/{storage_name}"
 
         # Determine initial embedding status
-        if file_type == "image":
+        if file_type in ("image", "video"):
             embedding_status = "skipped"
         elif get_setting("rag_enabled", "true") == "true":
             embedding_status = "pending"

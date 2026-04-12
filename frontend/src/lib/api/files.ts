@@ -5,7 +5,7 @@ import { authToken } from '$lib/stores/auth';
 export interface UploadedFile {
   id: string;
   filename: string;
-  file_type: 'image' | 'document';
+  file_type: 'image' | 'document' | 'video';
   content_type: string;
   size: number;
 }

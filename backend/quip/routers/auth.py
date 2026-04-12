@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -72,6 +73,9 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+
+    user.last_active_at = datetime.now(timezone.utc)
+    await db.commit()
 
     return TokenResponse(
         access_token=create_access_token(str(user.id), user.role),

@@ -210,23 +210,48 @@ async def _copy_attachments_to_sandbox(
             logger.warning("copy_host_file failed for %s: %s", dest, e)
 
 
+_VIDEO_URL_PATTERNS = [
+    r'https?://(?:www\.)?youtube\.com/watch\S+',
+    r'https?://youtu\.be/\S+',
+    r'https?://(?:www\.)?rutube\.ru/video/\S+',
+    r'https?://(?:www\.)?vk\.com/video\S+',
+    r'https?://vkvideo\.ru/\S+',
+]
+
+
+def _extract_video_urls(text: str) -> tuple[str, list[str]]:
+    """Extract video URLs from text. Returns (cleaned_text, [urls])."""
+    import re
+    urls = []
+    for pattern in _VIDEO_URL_PATTERNS:
+        for match in re.findall(pattern, text):
+            urls.append(match)
+            text = text.replace(match, '')
+    return text.strip(), urls
+
+
 def _build_multimodal_message(msg: dict, attachments: list[dict], is_ollama: bool) -> dict:
-    """Transform a message to include image content if it has image attachments."""
+    """Transform a message to include image/video content if it has media attachments."""
     from quip.routers.files import UPLOAD_DIR
     import base64
 
     image_attachments = [a for a in attachments if a.get("file_type") == "image"]
-    logger.debug(f"_build_multimodal: {len(image_attachments)} images from {len(attachments)} attachments")
-    if not image_attachments:
+    video_attachments = [a for a in attachments if a.get("file_type") == "video"]
+    text = msg.get("content", "")
+
+    # Extract video URLs from message text
+    text, video_urls = _extract_video_urls(text)
+
+    has_media = image_attachments or video_attachments or video_urls
+    logger.debug(f"_build_multimodal: {len(image_attachments)} images, {len(video_attachments)} videos, {len(video_urls)} urls")
+
+    if not has_media:
         return msg
 
     if is_ollama:
-        # Ollama format: {"role": "user", "content": "text", "images": ["base64..."]}
+        # Ollama only supports images
         images = []
         for att in image_attachments:
-            file_path = UPLOAD_DIR / att["file_id"].replace("-", "")  # Won't work — need storage_path
-            # We need to look up storage_path; for simplicity, construct it from the known pattern
-            # Actually, we'll store the storage_path in the attachment metadata
             storage_path = att.get("storage_path", "")
             if storage_path:
                 full_path = UPLOAD_DIR / storage_path
@@ -234,12 +259,11 @@ def _build_multimodal_message(msg: dict, attachments: list[dict], is_ollama: boo
                     data = full_path.read_bytes()
                     images.append(base64.b64encode(data).decode())
         if images:
-            return {**msg, "images": images}
+            return {**msg, "content": text or msg.get("content", ""), "images": images}
         return msg
     else:
         # OpenRouter / OpenAI format: content as array
         content_parts = []
-        text = msg.get("content", "")
         if text:
             content_parts.append({"type": "text", "text": text})
         for att in image_attachments:
@@ -255,7 +279,24 @@ def _build_multimodal_message(msg: dict, attachments: list[dict], is_ollama: boo
                         "type": "image_url",
                         "image_url": {"url": f"data:{mime};base64,{b64}"},
                     })
-        if len(content_parts) > 1 or (content_parts and content_parts[0].get("type") == "image_url"):
+        for att in video_attachments:
+            storage_path = att.get("storage_path", "")
+            if storage_path:
+                full_path = UPLOAD_DIR / storage_path
+                if full_path.exists():
+                    data = full_path.read_bytes()
+                    b64 = base64.b64encode(data).decode()
+                    mime = att.get("content_type", "video/mp4")
+                    content_parts.append({
+                        "type": "video_url",
+                        "video_url": {"url": f"data:{mime};base64,{b64}"},
+                    })
+        for url in video_urls:
+            content_parts.append({
+                "type": "video_url",
+                "video_url": {"url": url},
+            })
+        if len(content_parts) > 1 or (content_parts and content_parts[0].get("type") != "text"):
             return {**msg, "content": content_parts}
         return msg
 
