@@ -1,0 +1,16 @@
+FROM python:3.12-slim
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+# Install dependencies first (layer cache — invalidated only on pyproject.toml changes)
+COPY backend/pyproject.toml ./
+RUN mkdir -p quip && touch quip/__init__.py
+RUN uv pip install --system -e ".[dev]"
+
+# Copy real source (overwrites the stub)
+COPY backend/ ./
+RUN mkdir -p /app/data
+EXPOSE 8000
+
+CMD ["uvicorn", "quip.main:app", "--host", "0.0.0.0", "--port", "8000"]

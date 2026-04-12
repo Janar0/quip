@@ -1,0 +1,41 @@
+[project]
+name = "quip"
+version = "0.1.0"
+description = "Q.U.I.P. — agent-first multi-provider AI chat platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "pyjwt>=2.10.0",
+    "bcrypt>=4.2.0",
+    "redis>=5.2.0",
+    "python-multipart>=0.0.18",
+    "httpx>=0.28.0",
+    "aiosqlite>=0.20.0",
+    "docker>=7.0.0",
+    "tiktoken>=0.7.0",
+    "pymupdf>=1.24.0",
+    "python-docx>=1.1.0",
+    "Pillow>=10.0.0",
+    "geoip2>=4.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

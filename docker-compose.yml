@@ -1,0 +1,48 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "${PORT:-3000}:80"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:///data/quip.db
+      CORS_ORIGINS: http://localhost:${PORT:-3000}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - quip_data:/app/data
+    restart: unless-stopped
+    depends_on:
+      sandbox_build:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Builds quip-sandbox:latest image, then exits.
+  # The backend (via docker.sock) uses this image to run code execution containers.
+  sandbox_build:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: quip-sandbox:latest
+    command: ["echo", "quip-sandbox image ready"]
+    restart: "no"
+
+volumes:
+  quip_data:

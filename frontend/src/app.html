@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" data-theme="quip-gray">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>QUIP</title>
+		<link rel="preconnect" href="/api" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" />
+		<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+		<script>
+			(function() {
+				var t = localStorage.getItem('quip_theme') || 'gray';
+				if (t !== 'dark' && t !== 'light' && t !== 'gray') t = 'gray';
+				document.documentElement.dataset.theme = 'quip-' + t;
+				if (t !== 'light') document.documentElement.classList.add('dark');
+				// Inline background color so the splash screen matches the theme
+				// before the CSS file loads (prevents a flash of the wrong color).
+				var bg = t === 'light' ? '#ffffff' : t === 'gray' ? '#161616' : '#020617';
+				document.documentElement.style.background = bg;
+				document.documentElement.style.setProperty('--quip-splash-bg', bg);
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<!-- Splash screen — background is injected inline by the theme script above -->
+		<div id="splash" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--quip-splash-bg, var(--quip-bg, #161616));z-index:9999">
+			<div style="text-align:center">
+				<div style="width:48px;height:48px;border:3px solid #404040;border-top-color:#f5f5f5;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto"></div>
+				<p style="color:#737373;margin-top:16px;font-family:'Inter',system-ui;font-size:14px">Loading...</p>
+			</div>
+		</div>
+		<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

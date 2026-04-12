@@ -1,0 +1,26 @@
+FROM python:3.12-slim
+
+# System tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git jq imagemagick pandoc nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Common Python packages (covers ~90% of use cases without install)
+RUN pip install --no-cache-dir \
+    numpy pandas matplotlib seaborn plotly scipy scikit-learn sympy \
+    Pillow requests beautifulsoup4 \
+    python-pptx python-docx openpyxl reportlab
+
+# Non-root user with no sudo
+RUN useradd -m -s /bin/bash -d /home/sandbox sandbox \
+    && mkdir -p /workspace && chown sandbox:sandbox /workspace
+
+USER sandbox
+WORKDIR /workspace
+
+# Avoid read-only filesystem warnings from matplotlib/other libs
+ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV HOME=/tmp
+
+# Keep container alive
+CMD ["sleep", "infinity"]

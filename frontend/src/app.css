@@ -1,0 +1,493 @@
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+
+/* ── QUIP Slate Theme ─────────────────────────────────────────────── */
+[data-theme^='quip-'] {
+	--spacing: 0.25rem;
+	--text-scaling: 1.067;
+	--base-font-color: var(--color-surface-950);
+	--base-font-color-dark: var(--color-surface-50);
+	--base-font-family: 'Inter', system-ui, sans-serif;
+	--base-font-size: inherit;
+	--base-line-height: inherit;
+	--base-font-weight: normal;
+	--base-font-style: normal;
+	--base-letter-spacing: 0em;
+	--heading-font-color: inherit;
+	--heading-font-color-dark: inherit;
+	--heading-font-family: 'Manrope', system-ui, sans-serif;
+	--heading-font-weight: bold;
+	--heading-font-style: normal;
+	--heading-letter-spacing: -0.02em;
+	--anchor-font-color: var(--color-primary-400);
+	--anchor-font-color-dark: var(--color-primary-300);
+	--anchor-font-family: inherit;
+	--anchor-font-size: inherit;
+	--anchor-line-height: inherit;
+	--anchor-font-weight: inherit;
+	--anchor-font-style: inherit;
+	--anchor-letter-spacing: inherit;
+	--anchor-text-decoration: none;
+	--anchor-text-decoration-hover: underline;
+	--anchor-text-decoration-active: none;
+	--anchor-text-decoration-focus: none;
+	--body-background-color: var(--color-surface-50);
+	--body-background-color-dark: var(--color-surface-950);
+	--radius-base: 0.5rem;
+	--radius-container: 0.75rem;
+	--default-border-width: 1px;
+	--default-divide-width: 1px;
+	--default-ring-width: 1px;
+	/* Primary — neutral light (white buttons in dark mode) */
+	--color-primary-50: oklch(0.99 0 0);
+	--color-primary-100: oklch(0.968 0.007 247.9);
+	--color-primary-200: oklch(0.929 0.013 255.5);
+	--color-primary-300: oklch(0.869 0.022 252.9);
+	--color-primary-400: oklch(0.704 0.04 256.8);
+	--color-primary-500: oklch(0.97 0.003 247.9);
+	--color-primary-600: oklch(0.869 0.022 252.9);
+	--color-primary-700: oklch(0.704 0.04 256.8);
+	--color-primary-800: oklch(0.554 0.046 257.4);
+	--color-primary-900: oklch(0.372 0.044 257.3);
+	--color-primary-950: oklch(0.208 0.042 265.8);
+	--color-primary-contrast-dark: var(--color-primary-950);
+	--color-primary-contrast-light: var(--color-primary-50);
+	--color-primary-contrast-50: var(--color-primary-contrast-dark);
+	--color-primary-contrast-100: var(--color-primary-contrast-dark);
+	--color-primary-contrast-200: var(--color-primary-contrast-dark);
+	--color-primary-contrast-300: var(--color-primary-contrast-dark);
+	--color-primary-contrast-400: var(--color-primary-contrast-dark);
+	--color-primary-contrast-500: var(--color-primary-contrast-dark);
+	--color-primary-contrast-600: var(--color-primary-contrast-dark);
+	--color-primary-contrast-700: var(--color-primary-contrast-light);
+	--color-primary-contrast-800: var(--color-primary-contrast-light);
+	--color-primary-contrast-900: var(--color-primary-contrast-light);
+	--color-primary-contrast-950: var(--color-primary-contrast-light);
+	/* Secondary — slate mid-range */
+	--color-secondary-50: oklch(0.929 0.013 255.5);
+	--color-secondary-100: oklch(0.869 0.022 252.9);
+	--color-secondary-200: oklch(0.704 0.04 256.8);
+	--color-secondary-300: oklch(0.554 0.046 257.4);
+	--color-secondary-400: oklch(0.446 0.043 257.3);
+	--color-secondary-500: oklch(0.372 0.044 257.3);
+	--color-secondary-600: oklch(0.32 0.043 258);
+	--color-secondary-700: oklch(0.279 0.041 260);
+	--color-secondary-800: oklch(0.208 0.042 265.8);
+	--color-secondary-900: oklch(0.16 0.042 265);
+	--color-secondary-950: oklch(0.129 0.042 264.7);
+	--color-secondary-contrast-dark: var(--color-secondary-950);
+	--color-secondary-contrast-light: var(--color-secondary-50);
+	--color-secondary-contrast-50: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-100: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-200: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-300: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-400: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-500: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-600: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-700: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-800: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-900: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-950: var(--color-secondary-contrast-light);
+	/* Tertiary — same as secondary */
+	--color-tertiary-50: oklch(0.929 0.013 255.5);
+	--color-tertiary-100: oklch(0.869 0.022 252.9);
+	--color-tertiary-200: oklch(0.704 0.04 256.8);
+	--color-tertiary-300: oklch(0.554 0.046 257.4);
+	--color-tertiary-400: oklch(0.446 0.043 257.3);
+	--color-tertiary-500: oklch(0.372 0.044 257.3);
+	--color-tertiary-600: oklch(0.32 0.043 258);
+	--color-tertiary-700: oklch(0.279 0.041 260);
+	--color-tertiary-800: oklch(0.208 0.042 265.8);
+	--color-tertiary-900: oklch(0.16 0.042 265);
+	--color-tertiary-950: oklch(0.129 0.042 264.7);
+	--color-tertiary-contrast-dark: var(--color-tertiary-950);
+	--color-tertiary-contrast-light: var(--color-tertiary-50);
+	--color-tertiary-contrast-50: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-100: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-200: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-300: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-400: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-500: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-600: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-700: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-800: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-900: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-950: var(--color-tertiary-contrast-light);
+	/* Success — green */
+	--color-success-50: oklch(0.94 0.09 178.68);
+	--color-success-100: oklch(0.92 0.1 178.62);
+	--color-success-200: oklch(0.89 0.11 177.17);
+	--color-success-300: oklch(0.87 0.12 176.91);
+	--color-success-400: oklch(0.85 0.13 175.46);
+	--color-success-500: oklch(0.83 0.13 174.96);
+	--color-success-600: oklch(0.73 0.12 175.71);
+	--color-success-700: oklch(0.62 0.1 176);
+	--color-success-800: oklch(0.51 0.08 178.29);
+	--color-success-900: oklch(0.4 0.06 179.75);
+	--color-success-950: oklch(0.27 0.04 185.3);
+	--color-success-contrast-dark: var(--color-success-950);
+	--color-success-contrast-light: var(--color-success-50);
+	--color-success-contrast-50: var(--color-success-contrast-dark);
+	--color-success-contrast-100: var(--color-success-contrast-dark);
+	--color-success-contrast-200: var(--color-success-contrast-dark);
+	--color-success-contrast-300: var(--color-success-contrast-dark);
+	--color-success-contrast-400: var(--color-success-contrast-dark);
+	--color-success-contrast-500: var(--color-success-contrast-dark);
+	--color-success-contrast-600: var(--color-success-contrast-dark);
+	--color-success-contrast-700: var(--color-success-contrast-light);
+	--color-success-contrast-800: var(--color-success-contrast-light);
+	--color-success-contrast-900: var(--color-success-contrast-light);
+	--color-success-contrast-950: var(--color-success-contrast-light);
+	/* Warning — amber */
+	--color-warning-50: oklch(0.96 0.05 84.57);
+	--color-warning-100: oklch(0.93 0.06 82.17);
+	--color-warning-200: oklch(0.9 0.08 80.34);
+	--color-warning-300: oklch(0.88 0.1 80.02);
+	--color-warning-400: oklch(0.85 0.12 78.36);
+	--color-warning-500: oklch(0.82 0.14 76.72);
+	--color-warning-600: oklch(0.76 0.13 72.26);
+	--color-warning-700: oklch(0.7 0.13 68.1);
+	--color-warning-800: oklch(0.64 0.13 63.18);
+	--color-warning-900: oklch(0.58 0.13 57.97);
+	--color-warning-950: oklch(0.52 0.13 51.44);
+	--color-warning-contrast-dark: var(--color-warning-950);
+	--color-warning-contrast-light: var(--color-warning-50);
+	--color-warning-contrast-50: var(--color-warning-contrast-dark);
+	--color-warning-contrast-100: var(--color-warning-contrast-dark);
+	--color-warning-contrast-200: var(--color-warning-contrast-dark);
+	--color-warning-contrast-300: var(--color-warning-contrast-dark);
+	--color-warning-contrast-400: var(--color-warning-contrast-dark);
+	--color-warning-contrast-500: var(--color-warning-contrast-dark);
+	--color-warning-contrast-600: var(--color-warning-contrast-light);
+	--color-warning-contrast-700: var(--color-warning-contrast-light);
+	--color-warning-contrast-800: var(--color-warning-contrast-light);
+	--color-warning-contrast-900: var(--color-warning-contrast-light);
+	--color-warning-contrast-950: var(--color-warning-contrast-light);
+	/* Error — red */
+	--color-error-50: oklch(0.9 0.04 14);
+	--color-error-100: oklch(0.83 0.07 19.8);
+	--color-error-200: oklch(0.77 0.11 21.97);
+	--color-error-300: oklch(0.72 0.15 24.89);
+	--color-error-400: oklch(0.67 0.19 26.71);
+	--color-error-500: oklch(0.64 0.22 28.71);
+	--color-error-600: oklch(0.59 0.21 28.53);
+	--color-error-700: oklch(0.55 0.2 28.58);
+	--color-error-800: oklch(0.51 0.19 28.72);
+	--color-error-900: oklch(0.46 0.18 28.88);
+	--color-error-950: oklch(0.42 0.17 29.23);
+	--color-error-contrast-dark: var(--color-error-950);
+	--color-error-contrast-light: var(--color-error-50);
+	--color-error-contrast-50: var(--color-error-contrast-dark);
+	--color-error-contrast-100: var(--color-error-contrast-dark);
+	--color-error-contrast-200: var(--color-error-contrast-dark);
+	--color-error-contrast-300: var(--color-error-contrast-dark);
+	--color-error-contrast-400: var(--color-error-contrast-light);
+	--color-error-contrast-500: var(--color-error-contrast-light);
+	--color-error-contrast-600: var(--color-error-contrast-light);
+	--color-error-contrast-700: var(--color-error-contrast-light);
+	--color-error-contrast-800: var(--color-error-contrast-light);
+	--color-error-contrast-900: var(--color-error-contrast-light);
+	--color-error-contrast-950: var(--color-error-contrast-light);
+	/* Surface — Tailwind slate (blue-gray) */
+	--color-surface-50: oklch(0.984 0.003 247.86);
+	--color-surface-100: oklch(0.968 0.007 247.9);
+	--color-surface-200: oklch(0.929 0.013 255.5);
+	--color-surface-300: oklch(0.869 0.022 252.9);
+	--color-surface-400: oklch(0.704 0.04 256.8);
+	--color-surface-500: oklch(0.554 0.046 257.4);
+	--color-surface-600: oklch(0.446 0.043 257.3);
+	--color-surface-700: oklch(0.372 0.044 257.3);
+	--color-surface-800: oklch(0.279 0.041 260);
+	--color-surface-900: oklch(0.208 0.042 265.8);
+	--color-surface-950: oklch(0.129 0.042 264.7);
+	--color-surface-contrast-dark: var(--color-surface-950);
+	--color-surface-contrast-light: var(--color-surface-50);
+	--color-surface-contrast-50: var(--color-surface-contrast-dark);
+	--color-surface-contrast-100: var(--color-surface-contrast-dark);
+	--color-surface-contrast-200: var(--color-surface-contrast-dark);
+	--color-surface-contrast-300: var(--color-surface-contrast-dark);
+	--color-surface-contrast-400: var(--color-surface-contrast-light);
+	--color-surface-contrast-500: var(--color-surface-contrast-light);
+	--color-surface-contrast-600: var(--color-surface-contrast-light);
+	--color-surface-contrast-700: var(--color-surface-contrast-light);
+	--color-surface-contrast-800: var(--color-surface-contrast-light);
+	--color-surface-contrast-900: var(--color-surface-contrast-light);
+	--color-surface-contrast-950: var(--color-surface-contrast-light);
+}
+
+/* ── Dark Theme (Slate Blue-Gray) ─────────────────────────────────── */
+[data-theme='quip-dark'] {
+	--quip-bg: #020617;
+	--quip-sidebar-bg: #020617;
+	--quip-bg-raised: #0f172a;
+	--quip-bg-elevated: rgba(30, 41, 59, 0.5);
+	--quip-input-bg: rgba(15, 23, 42, 0.8);
+	--quip-input-border: rgba(30, 41, 59, 0.6);
+	--quip-user-msg: rgba(30, 41, 59, 0.8);
+	--quip-text: #f8fafc;
+	--quip-text-dim: #94a3b8;
+	--quip-text-muted: #475569;
+	--quip-border: rgba(30, 41, 59, 0.6);
+	--quip-border-strong: #1e293b;
+	--quip-hover: rgba(148, 163, 184, 0.08);
+	--quip-scrollbar: #1e293b;
+	--quip-scrollbar-hover: #334155;
+	--quip-code-bg: rgba(15, 23, 42, 0.8);
+	--quip-code-border: rgba(30, 41, 59, 0.6);
+	--quip-link: #94a3b8;
+	--quip-link-hover: #cbd5e1;
+	--quip-gradient-from: #0b1120;
+	--quip-gradient-to: #020617;
+	--quip-glow: rgba(148, 163, 184, 0.04);
+	--quip-btn-primary-bg: #f1f5f9;
+	--quip-btn-primary-text: #0f172a;
+}
+
+/* ── Light Theme (Clean White) ────────────────────────────────────── */
+[data-theme='quip-light'] {
+	--quip-bg: #ffffff;
+	--quip-sidebar-bg: #ffffff;
+	--quip-bg-raised: #f8fafc;
+	--quip-bg-elevated: rgba(241, 245, 249, 0.7);
+	--quip-input-bg: rgba(255, 255, 255, 0.9);
+	--quip-input-border: rgba(203, 213, 225, 0.5);
+	--quip-user-msg: #f1f5f9;
+	--quip-text: #0f172a;
+	--quip-text-dim: #475569;
+	--quip-text-muted: #94a3b8;
+	--quip-border: rgba(203, 213, 225, 0.5);
+	--quip-border-strong: #e2e8f0;
+	--quip-hover: rgba(15, 23, 42, 0.04);
+	--quip-scrollbar: #cbd5e1;
+	--quip-scrollbar-hover: #94a3b8;
+	--quip-code-bg: #f8fafc;
+	--quip-code-border: rgba(203, 213, 225, 0.5);
+	--quip-link: #475569;
+	--quip-link-hover: #1e293b;
+	--quip-gradient-from: #f8fafc;
+	--quip-gradient-to: #ffffff;
+	--quip-glow: rgba(100, 116, 139, 0.06);
+	--quip-btn-primary-bg: #0f172a;
+	--quip-btn-primary-text: #f8fafc;
+}
+
+/* ── Gray Theme (Neutral Dark) ────────────────────────────────────── */
+[data-theme='quip-gray'] {
+	/* Override surface to pure neutral (no blue tint) */
+	--color-surface-50: oklch(0.984 0 0);
+	--color-surface-100: oklch(0.968 0 0);
+	--color-surface-200: oklch(0.929 0 0);
+	--color-surface-300: oklch(0.869 0 0);
+	--color-surface-400: oklch(0.704 0 0);
+	--color-surface-500: oklch(0.554 0 0);
+	--color-surface-600: oklch(0.446 0 0);
+	--color-surface-700: oklch(0.372 0 0);
+	--color-surface-800: oklch(0.279 0 0);
+	--color-surface-900: oklch(0.208 0 0);
+	--color-surface-950: oklch(0.129 0 0);
+	/* Override secondary/tertiary to neutral */
+	--color-secondary-50: oklch(0.929 0 0);
+	--color-secondary-100: oklch(0.869 0 0);
+	--color-secondary-200: oklch(0.704 0 0);
+	--color-secondary-300: oklch(0.554 0 0);
+	--color-secondary-400: oklch(0.446 0 0);
+	--color-secondary-500: oklch(0.372 0 0);
+	--color-secondary-600: oklch(0.32 0 0);
+	--color-secondary-700: oklch(0.279 0 0);
+	--color-secondary-800: oklch(0.208 0 0);
+	--color-secondary-900: oklch(0.16 0 0);
+	--color-secondary-950: oklch(0.129 0 0);
+	--color-tertiary-50: oklch(0.929 0 0);
+	--color-tertiary-100: oklch(0.869 0 0);
+	--color-tertiary-200: oklch(0.704 0 0);
+	--color-tertiary-300: oklch(0.554 0 0);
+	--color-tertiary-400: oklch(0.446 0 0);
+	--color-tertiary-500: oklch(0.372 0 0);
+	--color-tertiary-600: oklch(0.32 0 0);
+	--color-tertiary-700: oklch(0.279 0 0);
+	--color-tertiary-800: oklch(0.208 0 0);
+	--color-tertiary-900: oklch(0.16 0 0);
+	--color-tertiary-950: oklch(0.129 0 0);
+	/* QUIP UI vars */
+	--quip-bg: #161616;
+	--quip-sidebar-bg: #101010;
+	--quip-bg-raised: #1a1a1a;
+	--quip-bg-elevated: rgba(42, 42, 42, 0.5);
+	--quip-input-bg: rgba(26, 26, 26, 0.8);
+	--quip-input-border: rgba(64, 64, 64, 0.6);
+	--quip-user-msg: rgba(42, 42, 42, 0.8);
+	--quip-text: #f5f5f5;
+	--quip-text-dim: #a3a3a3;
+	--quip-text-muted: #525252;
+	--quip-border: rgba(64, 64, 64, 0.6);
+	--quip-border-strong: #404040;
+	--quip-hover: rgba(163, 163, 163, 0.08);
+	--quip-scrollbar: #333333;
+	--quip-scrollbar-hover: #525252;
+	--quip-code-bg: rgba(26, 26, 26, 0.8);
+	--quip-code-border: rgba(64, 64, 64, 0.6);
+	--quip-link: #a3a3a3;
+	--quip-link-hover: #d4d4d4;
+	--quip-gradient-from: #171717;
+	--quip-gradient-to: #111111;
+	--quip-glow: rgba(163, 163, 163, 0.04);
+	--quip-btn-primary-bg: #e5e5e5;
+	--quip-btn-primary-text: #171717;
+}
+
+/* ── Motion tokens ─────────────────────────────────────────────────── */
+:root {
+  --quip-d-1: 120ms;  /* micro: hover, press, colour */
+  --quip-d-2: 220ms;  /* standard: modals, dropdowns, entrances */
+  --quip-d-3: 380ms;  /* expressive: sidebar slide, hero intro */
+  --quip-ease-out: cubic-bezier(0.22, 1, 0.36, 1);       /* easeOutQuart */
+  --quip-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);  /* soft overshoot */
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --quip-d-1: 0ms; --quip-d-2: 0ms; --quip-d-3: 0ms; }
+}
+
+/* ── Fonts ─────────────────────────────────────────────────────────── */
+.font-headline { font-family: 'Manrope', system-ui, sans-serif; }
+
+/* ── Markdown prose ────────────────────────────────────────────────── */
+.prose { color: inherit; }
+
+/* Tailwind Typography's `prose-invert` class bakes in light-on-dark colors
+ * via `--tw-prose-invert-*` variables. On our light theme that makes body
+ * text unreadable (light gray on white). Re-point the invert vars to our
+ * theme tokens so `.prose-invert` children render with dark, legible text. */
+[data-theme='quip-light'] .prose-invert,
+[data-theme='quip-light'] .prose.prose-invert {
+  --tw-prose-invert-body: var(--quip-text);
+  --tw-prose-invert-headings: var(--quip-text);
+  --tw-prose-invert-lead: var(--quip-text-dim);
+  --tw-prose-invert-links: var(--quip-link);
+  --tw-prose-invert-bold: var(--quip-text);
+  --tw-prose-invert-counters: var(--quip-text-dim);
+  --tw-prose-invert-bullets: var(--quip-text-muted);
+  --tw-prose-invert-hr: var(--quip-border);
+  --tw-prose-invert-quotes: var(--quip-text-dim);
+  --tw-prose-invert-quote-borders: var(--quip-border);
+  --tw-prose-invert-captions: var(--quip-text-muted);
+  --tw-prose-invert-kbd: var(--quip-text);
+  --tw-prose-invert-code: var(--quip-text);
+  --tw-prose-invert-pre-code: var(--quip-text);
+  --tw-prose-invert-pre-bg: var(--quip-code-bg);
+  --tw-prose-invert-th-borders: var(--quip-border);
+  --tw-prose-invert-td-borders: var(--quip-border);
+  color: var(--quip-text);
+}
+[data-theme='quip-light'] .prose-invert p,
+[data-theme='quip-light'] .prose-invert li,
+[data-theme='quip-light'] .prose-invert strong,
+[data-theme='quip-light'] .prose-invert h1,
+[data-theme='quip-light'] .prose-invert h2,
+[data-theme='quip-light'] .prose-invert h3,
+[data-theme='quip-light'] .prose-invert h4 {
+  color: var(--quip-text);
+}
+.prose p { margin: 0.5em 0; }
+.prose p:first-child { margin-top: 0; }
+.prose p:last-child { margin-bottom: 0; }
+.prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
+.prose li { margin: 0.2em 0; }
+.prose h1, .prose h2, .prose h3 { margin: 0.8em 0 0.4em; font-weight: 700; font-family: 'Manrope', system-ui, sans-serif; }
+.prose h1 { font-size: 1.4em; }
+.prose h2 { font-size: 1.2em; }
+.prose h3 { font-size: 1.1em; }
+.prose blockquote { border-left: 3px solid var(--quip-border); padding-left: 1em; opacity: 0.8; margin: 0.5em 0; }
+.prose a { color: var(--quip-link); text-decoration: underline; }
+.prose a:hover { color: var(--quip-link-hover); }
+.prose table { border-collapse: collapse; margin: 0.5em 0; font-size: 0.9em; }
+.prose th, .prose td { border: 1px solid var(--quip-border); padding: 0.3em 0.6em; }
+.prose th { background: var(--quip-hover); }
+
+/* ── Code blocks ───────────────────────────────────────────────────── */
+.code-block { border-radius: 0.75rem; overflow: hidden; margin: 0.5em 0; background: var(--quip-code-bg); border: 1px solid var(--quip-code-border); }
+.code-block pre { margin: 0; padding: 0.8em 1em; overflow-x: auto; font-size: 0.85em; }
+.code-block code { background: transparent !important; }
+.code-header { border-bottom: 1px solid var(--quip-code-border); }
+.copy-btn { cursor: pointer; background: none; border: none; color: inherit; }
+.copy-btn:hover { opacity: 1 !important; }
+
+/* ── Inline code ───────────────────────────────────────────────────── */
+.inline-code { background: var(--quip-hover); padding: 0.15em 0.4em; border-radius: 0.25rem; font-size: 0.9em; }
+
+/* ── Scrollbars ────────────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--quip-scrollbar) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--quip-scrollbar); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--quip-scrollbar-hover); }
+
+/* ── Typing indicator dots ─────────────────────────────────────────── */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
+}
+.typing-dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: currentColor; animation: typing-dot 1.4s infinite; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Citations ─────────────────────────────────────────────────────── */
+.citation { color: var(--quip-text-dim); cursor: default; font-size: 0.75em; }
+
+/* ── Source badges ─────────────────────────────────────────────────── */
+.source-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; margin: 0 1px;
+  border-radius: 4px; background: var(--quip-hover);
+  text-decoration: none; vertical-align: text-bottom;
+  transform: translateY(0);
+  transition: background var(--quip-d-1), transform var(--quip-d-1);
+}
+.source-badge:hover { background: var(--quip-border); transform: translateY(-1px); text-decoration: none; }
+.source-badge img { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── Source cards ──────────────────────────────────────────────────── */
+.source-card {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.75rem; border-radius: 0.75rem;
+  border: 1px solid var(--quip-border-strong);
+  background: var(--quip-bg-raised);
+  text-decoration: none; color: inherit;
+  transition: background var(--quip-d-1), border-color var(--quip-d-1);
+}
+.source-card:hover { background: var(--quip-bg-elevated); }
+.source-card-icon { opacity: 0.4; transition: opacity var(--quip-d-1); }
+.source-card:hover .source-card-icon { opacity: 0.8; }
+
+/* ── Floating search images (search mode inline layout) ───────────── */
+.prose .search-float-right {
+  float: right;
+  max-width: 280px;
+  margin: 0.25rem 0 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--quip-border);
+  background: var(--quip-bg-raised);
+}
+.prose .search-float-right a { display: block; text-decoration: none; }
+.prose .search-float-right img { width: 100%; height: auto; display: block; }
+.prose h2, .prose h3 { clear: right; }
+@media (max-width: 640px) {
+  .prose .search-float-right {
+    float: none;
+    max-width: 100%;
+    margin: 0.75rem 0;
+  }
+}
+
+/* ── Background gradient ───────────────────────────────────────────── */
+.main-gradient-bg {
+  background: radial-gradient(circle at 50% 50%, var(--quip-gradient-from) 0%, var(--quip-gradient-to) 100%);
+}
+
+/* ── Ambient glow (start screen) ───────────────────────────────────── */
+.ambient-glow { position: relative; overflow: hidden; }
+.ambient-glow::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, var(--quip-glow) 0%, transparent 60%);
+  pointer-events: none;
+}
