@@ -303,7 +303,7 @@
               class="textarea font-mono text-xs"
               rows="10"
               bind:value={form.template_html}
-              placeholder="<div class='widget-myskill'>{{field}}</div>"
+              placeholder={"<div class='widget-myskill'>{{field}}</div>"}
             ></textarea>
           </label>
           <label class="label">

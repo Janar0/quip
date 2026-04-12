@@ -9,6 +9,7 @@ export interface WidgetTemplate {
 }
 
 export const widgetTemplates = writable<Record<string, WidgetTemplate>>({});
+export const widgetTemplatesLoaded = writable(false);
 
 export async function loadWidgetTemplates(): Promise<void> {
   try {
@@ -20,6 +21,7 @@ export async function loadWidgetTemplates(): Promise<void> {
         map[t.id] = t;
       }
       widgetTemplates.set(map);
+      widgetTemplatesLoaded.set(true);
     }
   } catch {
     // silent fail — widgets just won't render if server unavailable

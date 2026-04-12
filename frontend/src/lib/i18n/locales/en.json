@@ -325,5 +325,12 @@
 
   "admin.defaultModel": "Default Model",
   "admin.defaultModelDesc": "Model pre-selected for users who haven't chosen one, or whose saved model was removed.",
-  "admin.defaultModelNone": "None (first available model)"
+  "admin.defaultModelNone": "None (first available model)",
+
+  "admin.imageGeneration": "Image Generation",
+  "admin.imageGenerationDesc": "Set an OpenRouter image model to enable the generate_image tool. Recommended: google/gemini-2.0-flash-exp:free",
+  "admin.imageModelEnabled": "Enabled",
+  "admin.imageModelPlaceholder": "google/gemini-2.0-flash-exp:free",
+
+  "chat.generatingImage": "Generating image…"
 }

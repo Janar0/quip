@@ -23,7 +23,7 @@ export interface Artifact {
 export interface AttachmentInfo {
   file_id: string;
   filename: string;
-  file_type: 'image' | 'document';
+  file_type: 'image' | 'document' | 'video';
   content_type: string;
 }
 

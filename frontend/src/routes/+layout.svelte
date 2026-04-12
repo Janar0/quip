@@ -19,8 +19,8 @@
     setTheme($theme);
     if ($authToken) {
       await fetchMe();
+      await loadWidgetTemplates();
     }
-    await loadWidgetTemplates();
   });
 </script>
 

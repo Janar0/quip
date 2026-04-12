@@ -13,13 +13,14 @@
   } from '$lib/utils/markdown';
   import { stripArtifactTags } from '$lib/utils/artifacts';
   import { formatRelativeTime } from '$lib/utils/time';
-  import { getFileUrl } from '$lib/api/files';
+  import { getFileUrl, getGeneratedImageUrl } from '$lib/api/files';
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import { fly } from 'svelte/transition';
   import { D2, easeOut, prm } from '$lib/motion';
   import InlineArtifact from '$lib/components/artifacts/InlineArtifact.svelte';
   import ToolExecutionBlock from '$lib/components/chat/ToolExecutionBlock.svelte';
+  import WidgetCard from '$lib/components/chat/WidgetCard.svelte';
   import SearchProgress from '$lib/components/chat/SearchProgress.svelte';
   import SearchImageGrid from '$lib/components/chat/SearchImageGrid.svelte';
   import PrimarySourceBanner from '$lib/components/chat/PrimarySourceBanner.svelte';
@@ -46,13 +47,22 @@
   let sourcesOpen = $state(false);
   let editing = $state(false);
   let editText = $state('');
-  const SEARCH_TOOLS = new Set(['web_search', 'read_url']);
+  const SEARCH_TOOLS = new Set(['web_search']);
   let hasArtifacts = $derived(!!(message.artifacts?.length));
   let hasToolExecs = $derived(!!(message.toolExecutions?.length));
   let searchExecs = $derived((message.toolExecutions ?? []).filter((e) => SEARCH_TOOLS.has(e.name)));
   let sandboxExecs = $derived((message.toolExecutions ?? []).filter((e) => !SEARCH_TOOLS.has(e.name)));
+  // Widget executions render inline; regular execs go in the collapsible tools section
+  let widgetExecs = $derived(sandboxExecs.filter((e) => !!((e.result as Record<string, unknown> | undefined)?.widget)));
+  let imageGenExecs = $derived(sandboxExecs.filter((e) => e.name === 'generate_image'));
+  let regularExecs = $derived(sandboxExecs.filter((e) => {
+    const r = e.result as Record<string, unknown> | undefined;
+    return !r?.widget && e.name !== 'generate_image';
+  }));
   let hasSearchExecs = $derived(searchExecs.length > 0);
-  let hasSandboxExecs = $derived(sandboxExecs.length > 0);
+  let hasSandboxExecs = $derived(regularExecs.length > 0);
+  let hasWidgetExecs = $derived(widgetExecs.length > 0);
+  let hasImageGenExecs = $derived(imageGenExecs.length > 0);
   let hasRunningTools = $derived(sandboxExecs.some((e) => e.status === 'running'));
   $effect(() => {
     if (hasRunningTools) toolsOpen = true;
@@ -63,9 +73,9 @@
   // Files starting with _ or temp/tmp prefix are AI-internal intermediates — hide from user
   const _TEMP_FILE_RE = /^(temp[_\-.~]|tmp[_\-.~]|_)/i;
   let createdFiles = $derived.by(() => {
-    if (!sandboxExecs.length) return [];
+    if (!regularExecs.length) return [];
     const files: string[] = [];
-    for (const exec of sandboxExecs) {
+    for (const exec of regularExecs) {
       const created = (exec.result as Record<string, unknown> | undefined)?.files_created as string[] | undefined;
       if (created) {
         for (const f of created) {
@@ -331,20 +341,23 @@
         <div class="my-2">
           <button
             type="button"
-            class="text-xs text-slate-500 hover:text-slate-400 select-none transition-colors flex items-center gap-1.5"
+            class="text-xs select-none transition-colors flex items-center gap-1.5"
+            style="color: var(--quip-text-muted)"
+            onmouseenter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-dim)'}
+            onmouseleave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-muted)'}
             aria-expanded={toolsOpen}
             onclick={() => (toolsOpen = !toolsOpen)}
           >
             {#if hasRunningTools}
-              <span class="animate-spin text-slate-400 text-[10px]">&#9696;</span>
+              <span class="animate-spin text-[10px]">&#9696;</span>
             {:else}
-              <svg class="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               </svg>
             {/if}
-            <span>{hasRunningTools ? $t('chat.usingTools') : $t('chat.usedTools')} ({sandboxExecs.length})</span>
+            <span>{hasRunningTools ? $t('chat.usingTools') : $t('chat.usedTools')} ({regularExecs.length})</span>
             <span
-              class="inline-block transition-transform opacity-60"
+              class="inline-block transition-transform opacity-50"
               style:transform={toolsOpen ? 'rotate(90deg)' : ''}
               style:transition-duration="var(--quip-d-1)"
             >▸</span>
@@ -355,8 +368,8 @@
             style:transition="grid-template-rows var(--quip-d-2) var(--quip-ease-out)"
           >
             <div class="overflow-hidden">
-              <div class="mt-1.5 rounded-lg overflow-hidden border border-slate-800/60 bg-slate-950/40 divide-y divide-slate-800/40">
-                {#each sandboxExecs as execution (execution.id)}
+              <div class="mt-1 pl-1 space-y-0.5">
+                {#each regularExecs as execution (execution.id)}
                   <ToolExecutionBlock {execution} chatId={message.chat_id} />
                 {/each}
               </div>
@@ -370,6 +383,43 @@
             {/each}
           </div>
         {/if}
+      {/if}
+
+      <!-- Widget cards render inline, no click required -->
+      {#if hasWidgetExecs}
+        <div class="flex flex-col gap-3 my-3">
+          {#each widgetExecs as exec (exec.id)}
+            <WidgetCard
+              templateName={(exec.result as Record<string, unknown>)?.template as string ?? ''}
+              data={(exec.result as Record<string, unknown>)?.data as Record<string, unknown> ?? {}}
+            />
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Generated images render inline -->
+      {#if hasImageGenExecs}
+        <div class="my-3 space-y-3">
+          {#each imageGenExecs as exec (exec.id)}
+            {@const res = exec.result as Record<string, unknown> | undefined}
+            {#if res?.urls && Array.isArray(res.urls) && (res.urls as string[]).length > 0}
+              <div class="flex flex-wrap gap-2">
+                {#each res.urls as imgUrl (imgUrl)}
+                  <a href={getGeneratedImageUrl(imgUrl as string)} target="_blank" rel="noopener">
+                    <img
+                      src={getGeneratedImageUrl(imgUrl as string)}
+                      alt="AI generated"
+                      class="rounded-xl max-w-full max-h-96 object-contain"
+                      style="border: 1px solid var(--quip-border)"
+                    />
+                  </a>
+                {/each}
+              </div>
+            {:else if exec.status === 'running'}
+              <div class="text-sm opacity-50 animate-pulse">{$t('chat.generatingImage')}</div>
+            {/if}
+          {/each}
+        </div>
       {/if}
 
       {#if hasArtifacts}

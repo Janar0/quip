@@ -1,14 +1,12 @@
 <script lang="ts">
   import type { ToolExecution } from '$lib/stores/sandbox';
   import { getHljs, hljsLoaded } from '$lib/utils/markdown';
-  import WidgetCard from './WidgetCard.svelte';
 
   let { execution, chatId }: { execution: ToolExecution; chatId: string } = $props();
 
   let expanded = $state(false);
   let isRunning = $derived(execution.status === 'running');
   let r = $derived(execution.result as Record<string, unknown> | undefined);
-  let isWidget = $derived(!!r?.widget);
   let isError = $derived(execution.status === 'error' || !!r?.error || ((r?.exit_code as number) ?? 0) !== 0);
   let isSuccess = $derived(execution.status === 'completed' && !r?.error && ((r?.exit_code as number) ?? 0) === 0);
 
@@ -52,12 +50,14 @@
     return labels[execution.name] ?? execution.name;
   });
 
-  // Status-based accent color (CSS var approach for left border)
-  let accentColor = $derived(
+  let exitCode = $derived((r?.exit_code as number | undefined));
+
+  let dotClass = $derived(
+    isRunning ? 'animate-pulse' : ''
+  );
+  let dotColor = $derived(
     isRunning ? '#60a5fa' : isError ? '#f87171' : isSuccess ? '#34d399' : '#475569'
   );
-
-  let exitCode = $derived((r?.exit_code as number | undefined));
 
   function getFileUrl(path: string): string {
     const token = localStorage.getItem('access_token');
@@ -65,84 +65,85 @@
   }
 </script>
 
-<!-- Each block is a row inside the shared container — no outer border, just separator -->
-<div class="group/tool" style="border-left: 2px solid {accentColor}">
+<div class="group/tool">
   <!-- Header row -->
   <button
-    class="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-slate-800/30 transition-colors text-left"
+    class="flex items-center gap-2 w-full px-1 py-1 rounded transition-colors text-left"
+    style="hover:background: var(--quip-hover)"
+    onmouseenter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--quip-hover)'}
+    onmouseleave={(e) => (e.currentTarget as HTMLElement).style.background = ''}
     onclick={() => (expanded = !expanded)}
   >
-    <!-- Animated status indicator -->
-    <span class="flex-shrink-0 w-1.5 h-1.5 rounded-full {isRunning ? 'animate-pulse bg-blue-400' : isError ? 'bg-red-400' : isSuccess ? 'bg-emerald-400' : 'bg-slate-600'}"></span>
+    <!-- Status dot -->
+    <span
+      class="flex-shrink-0 w-1.5 h-1.5 rounded-full {dotClass}"
+      style="background: {dotColor}"
+    ></span>
 
-    <!-- Tool label — monospace -->
-    <span class="font-mono text-[11px] text-slate-300/75 flex-1 min-w-0 truncate">{toolLabel}</span>
+    <!-- Tool label -->
+    <span class="font-mono text-[11px] flex-1 min-w-0 truncate" style="color: var(--quip-text-dim)">{toolLabel}</span>
 
     <!-- Exit code badge -->
     {#if !isRunning && exitCode !== undefined && exitCode !== 0}
-      <span class="text-[9px] font-mono px-1 py-0.5 rounded bg-red-950/60 text-red-400/70 flex-shrink-0">exit {exitCode}</span>
+      <span class="text-[9px] font-mono px-1 py-0.5 rounded flex-shrink-0" style="background: rgba(127,29,29,0.4); color: #f87171">exit {exitCode}</span>
     {/if}
 
-    <!-- Expand chevron -->
-    <span
-      class="flex-shrink-0 text-[10px] text-slate-600 transition-transform"
-      style:transform={expanded ? 'rotate(90deg)' : ''}
-      style:transition-duration="150ms"
-    >▶</span>
+    <!-- Expand chevron — only show if there's expandable content -->
+    {#if codeContent || r?.stdout || r?.stderr || (r?.files_created as string[] | undefined)?.length}
+      <span
+        class="flex-shrink-0 text-[10px] transition-transform"
+        style="color: var(--quip-text-muted); transform: {expanded ? 'rotate(90deg)' : 'rotate(0deg)'}; transition-duration: 150ms"
+      >▶</span>
+    {/if}
   </button>
 
   <!-- Expandable body -->
   <div
     class="grid"
-    style:grid-template-rows={isWidget || expanded ? '1fr' : '0fr'}
+    style:grid-template-rows={expanded ? '1fr' : '0fr'}
     style:transition="grid-template-rows 150ms ease-out"
   >
     <div class="overflow-hidden">
-      {#if isWidget}
-        <div class="px-2 pb-2 pt-1">
-          <WidgetCard templateName={(r?.template as string) ?? ''} data={(r?.data as Record<string, unknown>) ?? {}} />
+      <!-- Code block -->
+      {#if codeContent}
+        <div class="rounded overflow-x-auto mt-0.5" style="background: var(--quip-code-bg); border: 1px solid var(--quip-border)">
+          <pre class="px-3 py-2 text-[11px] leading-relaxed font-mono m-0"><code>{@html highlightedCode}</code></pre>
         </div>
-      {:else}
-        <!-- Code block -->
-        {#if codeContent}
-          <div class="border-t border-slate-800/40 bg-slate-950/60 overflow-x-auto">
-            <pre class="px-4 py-3 text-[11px] leading-relaxed font-mono m-0"><code>{@html highlightedCode}</code></pre>
-          </div>
-        {/if}
+      {/if}
 
-        <!-- stdout -->
-        {#if r?.stdout}
-          <div class="border-t border-slate-800/40 px-4 py-2.5 bg-slate-950/30">
-            <span class="text-[9px] font-mono uppercase tracking-widest text-emerald-400/40">stdout</span>
-            <pre class="mt-1 text-[11px] text-slate-400/80 whitespace-pre-wrap font-mono leading-relaxed">{r.stdout as string}</pre>
-          </div>
-        {/if}
+      <!-- stdout -->
+      {#if r?.stdout}
+        <div class="mt-0.5 px-3 py-2 rounded" style="background: var(--quip-code-bg); border: 1px solid var(--quip-border)">
+          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: #34d399; opacity: 0.5">stdout</span>
+          <pre class="mt-1 text-[11px] whitespace-pre-wrap font-mono leading-relaxed" style="color: var(--quip-text-dim)">{r.stdout as string}</pre>
+        </div>
+      {/if}
 
-        <!-- stderr -->
-        {#if r?.stderr}
-          <div class="border-t border-slate-800/40 px-4 py-2.5 bg-red-950/10">
-            <span class="text-[9px] font-mono uppercase tracking-widest text-red-400/40">stderr</span>
-            <pre class="mt-1 text-[11px] text-red-300/60 whitespace-pre-wrap font-mono leading-relaxed">{r.stderr as string}</pre>
-          </div>
-        {/if}
+      <!-- stderr -->
+      {#if r?.stderr}
+        <div class="mt-0.5 px-3 py-2 rounded" style="background: rgba(127,29,29,0.06); border: 1px solid var(--quip-border)">
+          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: #f87171; opacity: 0.5">stderr</span>
+          <pre class="mt-1 text-[11px] whitespace-pre-wrap font-mono leading-relaxed" style="color: #f87171; opacity: 0.7">{r.stderr as string}</pre>
+        </div>
+      {/if}
 
-        <!-- Created files -->
-        {#if (r?.files_created as string[] | undefined)?.length}
-          <div class="border-t border-slate-800/40 px-3 py-2 flex flex-wrap gap-1.5">
-            {#each (r!.files_created as string[]) as file}
-              <a
-                href={getFileUrl(file)}
-                target="_blank"
-                class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-200 transition-colors text-[11px] font-mono"
-              >
-                <svg class="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                {file}
-              </a>
-            {/each}
-          </div>
-        {/if}
+      <!-- Created files -->
+      {#if (r?.files_created as string[] | undefined)?.length}
+        <div class="mt-0.5 flex flex-wrap gap-1.5">
+          {#each (r!.files_created as string[]) as file}
+            <a
+              href={getFileUrl(file)}
+              target="_blank"
+              class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono transition-colors"
+              style="background: var(--quip-bg-raised); color: var(--quip-text-dim); border: 1px solid var(--quip-border)"
+            >
+              <svg class="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {file}
+            </a>
+          {/each}
+        </div>
       {/if}
     </div>
   </div>

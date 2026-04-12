@@ -325,5 +325,12 @@
 
   "admin.defaultModel": "Модель по умолчанию",
   "admin.defaultModelDesc": "Модель для пользователей без выбранной, или если сохранённая модель была удалена.",
-  "admin.defaultModelNone": "Нет (первая доступная модель)"
+  "admin.defaultModelNone": "Нет (первая доступная модель)",
+
+  "admin.imageGeneration": "Генерация изображений",
+  "admin.imageGenerationDesc": "Укажите модель OpenRouter для включения инструмента generate_image. Рекомендуем: google/gemini-2.0-flash-exp:free",
+  "admin.imageModelEnabled": "Включено",
+  "admin.imageModelPlaceholder": "google/gemini-2.0-flash-exp:free",
+
+  "chat.generatingImage": "Генерация изображения…"
 }

@@ -52,6 +52,7 @@ class SettingsUpdate(BaseModel):
     research_model: str | None = None
     title_model: str | None = None
     default_model: str | None = None
+    image_model: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -83,6 +84,7 @@ class SettingsResponse(BaseModel):
     research_model: Optional[str] = None
     title_model: Optional[str] = None
     default_model: Optional[str] = None
+    image_model: Optional[str] = None
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -122,6 +124,7 @@ async def get_settings(user: User = Depends(get_admin_user)):
         research_model=get_setting("research_model") or None,
         title_model=get_setting("title_model") or None,
         default_model=get_setting("default_model") or None,
+        image_model=get_setting("image_model") or None,
     )
 
 
@@ -181,6 +184,8 @@ async def update_settings(data: SettingsUpdate, user: User = Depends(get_admin_u
         set_setting("title_model", data.title_model)
     if data.default_model is not None:
         set_setting("default_model", data.default_model)
+    if data.image_model is not None:
+        set_setting("image_model", data.image_model)
     await save_settings()
     return {"status": "ok"}
 

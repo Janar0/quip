@@ -30,6 +30,8 @@ from quip.services.rag import retrieve_context, format_rag_context
 from quip.services.tools import (
     LOAD_SKILL_TOOL,
     WIDGET_TOOL,
+    READ_URL_TOOL,
+    GENERATE_IMAGE_TOOL,
     SANDBOX_TOOLS,
     SEARCH_TOOLS,
     AccumulatedToolCall,
@@ -82,7 +84,9 @@ def _build_base_prompt(
         "You have named skills you can load on demand with the `load_skill` tool. "
         "When you need details for a capability you don't remember (e.g. how to "
         "format a plot artifact, how to use the sandbox, or the web search "
-        "answer style), call `load_skill` with its name before using it."
+        "answer style), call `load_skill` with its name before using it. "
+        "When the user's message contains an http/https URL, call `read_url` on it "
+        "to fetch its content before answering."
     ]
 
     rt_lines = [f"Current date: {datetime.now(timezone.utc).date().isoformat()}."]
@@ -264,8 +268,14 @@ def _build_multimodal_message(msg: dict, attachments: list[dict], is_ollama: boo
     else:
         # OpenRouter / OpenAI format: content as array
         content_parts = []
-        if text:
-            content_parts.append({"type": "text", "text": text})
+        # Append file URL hints so the model can reference uploaded images in generate_image calls
+        text_with_hints = text
+        if image_attachments:
+            url_hints = [f"/api/files/{att['file_id']}" for att in image_attachments if att.get("file_id")]
+            if url_hints:
+                text_with_hints = (text + "\n[Uploaded image URLs: " + ", ".join(url_hints) + "]").strip()
+        if text_with_hints:
+            content_parts.append({"type": "text", "text": text_with_hints})
         for att in image_attachments:
             storage_path = att.get("storage_path", "")
             if storage_path:
@@ -588,6 +598,20 @@ async def chat_completion(
                 msg_dict = _build_multimodal_message(msg_dict, enriched, is_ollama)
                 if m.role == "user":
                     all_history_attachments.extend(enriched)
+        # Inject previously generated image URLs into assistant message content so the model
+        # can reference them in follow-up generate_image calls (multi-turn editing).
+        if m.role == "assistant" and m.tool_calls:
+            gen_urls: list[str] = []
+            for tc in m.tool_calls:
+                if tc.get("name") == "generate_image":
+                    result = tc.get("result")
+                    if isinstance(result, dict):
+                        gen_urls.extend(result.get("urls", []))
+                        if not gen_urls and result.get("url"):
+                            gen_urls.append(result["url"])
+            if gen_urls:
+                url_note = "\n[Generated image URLs: " + ", ".join(gen_urls) + "]"
+                msg_dict["content"] = (msg_dict.get("content") or "") + url_note
         history.append(msg_dict)
 
     # Sync all user attachments from conversation history into sandbox workspace (idempotent).
@@ -627,6 +651,9 @@ async def chat_completion(
             enabled_skills.update(ARTIFACT_SKILL_NAMES)
         if get_setting("sandbox_enabled", "false") == "true" and sandbox_manager.available:
             enabled_skills.add("sandbox")
+    # Image generation
+    if get_setting("image_model", ""):
+        enabled_skills.add("image_generation")
     # Add widget skills from skill_store
     from quip.services.skill_store import _skills_cache as _sc
     for _sid, _sk in _sc.items():
@@ -666,7 +693,9 @@ async def chat_completion(
         get_setting("sandbox_enabled", "false") == "true"
         and sandbox_manager.available
     )
-    tools_for_api: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL]
+    tools_for_api: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
+    if get_setting("image_model", ""):
+        tools_for_api.append(GENERATE_IMAGE_TOOL)
     if search_mode:
         # Fast search mode — web_search + read_url only, no sandbox/artifacts
         tools_for_api.extend(SEARCH_TOOLS)
@@ -1164,7 +1193,9 @@ async def regenerate_message(
         get_setting("sandbox_enabled", "false") == "true"
         and sandbox_manager.available
     )
-    regen_tools_list: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL]
+    regen_tools_list: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
+    if get_setting("image_model", ""):
+        regen_tools_list.append(GENERATE_IMAGE_TOOL)
     if regen_sandbox_enabled:
         regen_tools_list.extend(SANDBOX_TOOLS)
     if get_setting("search_enabled", "false") == "true":

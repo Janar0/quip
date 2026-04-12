@@ -145,24 +145,62 @@ SEARCH_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_url",
-            "description": "Fetch the full content of a web page found via web_search.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL to read",
-                    },
+]
+
+READ_URL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_url",
+        "description": (
+            "Fetch the full content of a web page. "
+            "Use proactively when the user shares an http/https link in their message. "
+            "Also use to read a specific page from search results."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch",
                 },
-                "required": ["url"],
             },
+            "required": ["url"],
         },
     },
-]
+}
+
+GENERATE_IMAGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "generate_image",
+        "description": "Generate or edit images with AI. Call load_skill('image_generation') for details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Text description of the image to generate or edit",
+                },
+                "image_urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: URLs of reference images to edit or style-transfer from",
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+                    "description": "Aspect ratio of the output image (default: 1:1)",
+                },
+                "image_size": {
+                    "type": "string",
+                    "enum": ["0.5K", "1K", "2K", "4K"],
+                    "description": "Resolution (default: 1K)",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+}
 
 WIDGET_TOOL = {
     "type": "function",
@@ -340,6 +378,22 @@ async def execute_tool_call(
                     for f in files
                 ]
             })
+
+        elif tool_name == "generate_image":
+            from quip.services.image_gen import generate_image
+            from quip.services.config import get_setting
+            model = get_setting("image_model", "") or "google/gemini-2.0-flash-exp:free"
+            api_key = get_setting("openrouter_api_key", "")
+            result = await generate_image(
+                prompt=args.get("prompt", ""),
+                image_urls=args.get("image_urls") or [],
+                aspect_ratio=args.get("aspect_ratio", "1:1"),
+                image_size=args.get("image_size", "1K"),
+                model=model,
+                api_key=api_key,
+                db=db,
+            )
+            return json.dumps(result)
 
         elif tool_name == "use_widget":
             from quip.services.skill_store import get_skill

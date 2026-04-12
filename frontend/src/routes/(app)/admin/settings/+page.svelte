@@ -32,6 +32,7 @@
   let activeTab = $state<'api' | 'system' | 'tools'>('api');
   let weatherKey = $state('');
   let weatherKeyIsSet = $state(false);
+  let imageModel = $state('');
 
   onMount(async () => {
     const settings = await getSettings();
@@ -57,6 +58,7 @@
     ragChunkSize = settings.rag_chunk_size ?? 512;
     ragChunkOverlap = settings.rag_chunk_overlap ?? 64;
     ragTopK = settings.rag_top_k ?? 5;
+    imageModel = settings.image_model ?? '';
     loading = false;
   });
 
@@ -191,6 +193,13 @@
     } else {
       toast.error($t('admin.failedToSave'));
     }
+    saving = false;
+  }
+
+  async function saveImageModel() {
+    saving = true;
+    const ok = await updateSettings({ image_model: imageModel.trim() || null });
+    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
     saving = false;
   }
 </script>
@@ -492,6 +501,27 @@
         <div class="flex gap-2">
           <input type="password" class="input flex-1" placeholder={weatherKeyIsSet ? $t('admin.enterNewKey') : 'Your Gismeteo API key...'} bind:value={weatherKey} />
           <button class="btn preset-filled-primary-500" onclick={saveWeatherKey} disabled={saving || !weatherKey.trim()}>
+            {saving ? '...' : $t('common.save')}
+          </button>
+        </div>
+      </section>
+
+      <!-- Image Generation -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <h2 class="text-lg font-semibold">{$t('admin.imageGeneration')}</h2>
+        </div>
+        <p class="text-sm opacity-60">{$t('admin.imageGenerationDesc')}</p>
+        {#if imageModel}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
+            <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
+            {$t('admin.imageModelEnabled')}: {imageModel}
+          </span>
+        {/if}
+        <div class="flex gap-2">
+          <input type="text" class="input flex-1 font-mono text-sm" placeholder={$t('admin.imageModelPlaceholder')} bind:value={imageModel} />
+          <button class="btn preset-filled-primary-500" onclick={saveImageModel} disabled={saving}>
             {saving ? '...' : $t('common.save')}
           </button>
         </div>

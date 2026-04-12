@@ -27,6 +27,7 @@ from quip.providers.openrouter import UsageInfo
 from quip.services.skills import get_skill
 from quip.services.tools import (
     LOAD_SKILL_TOOL,
+    READ_URL_TOOL,
     SEARCH_TOOLS,
     SANDBOX_TOOLS,
     AccumulatedToolCall,
@@ -405,7 +406,7 @@ async def _run_search_sub_agent(
 
         content, usage = await _run_sub_stream_loop(
             session, task_id, body, goal,
-            tools=[LOAD_SKILL_TOOL] + SEARCH_TOOLS,
+            tools=[LOAD_SKILL_TOOL, READ_URL_TOOL] + SEARCH_TOOLS,
             max_rounds=SUB_AGENT_MAX_ROUNDS,
             progress_event_type="subagent_progress",
             on_tool_call=_enforce_budget,

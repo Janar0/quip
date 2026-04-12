@@ -34,6 +34,12 @@ export function getFileUrl(fileId: string): string {
   return `/api/files/${fileId}?token=${encodeURIComponent(token)}`;
 }
 
+export function getGeneratedImageUrl(path: string): string {
+  const token = localStorage.getItem('access_token') || get(authToken) || '';
+  // path is like "/api/images/uuid.png" — append token
+  return `${path}?token=${encodeURIComponent(token)}`;
+}
+
 export async function deleteFile(fileId: string): Promise<boolean> {
   const res = await api(`/api/files/${fileId}`, { method: 'DELETE' });
   return res.ok;
