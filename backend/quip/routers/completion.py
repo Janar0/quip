@@ -36,7 +36,7 @@ from quip.services.tools import (
     accumulate_tool_calls,
     execute_tool_call,
 )
-from quip.services.skill_store import list_skill_index
+from quip.services.skill_store import list_skill_index, get_skill
 from quip.services.geo import client_ip, resolve, format_location
 from quip.services.research import run_deep_research, ResearchEvent
 
@@ -96,7 +96,17 @@ def _build_base_prompt(
         )
     parts.append("\n".join(rt_lines))
 
-    index = list_skill_index(enabled_skills)
+    # Fast search: inject full skill body directly — avoids lazy load_skill round-trip
+    # that causes some models (e.g. Gemini) to stall after calling load_skill.
+    if "fast_search" in enabled_skills:
+        skill = get_skill("fast_search")
+        if skill and skill.prompt_instructions:
+            parts.append(skill.prompt_instructions)
+        lazy_skills = enabled_skills - {"fast_search"}
+    else:
+        lazy_skills = enabled_skills
+
+    index = list_skill_index(lazy_skills)
     if index:
         parts.append("Available skills:\n" + index)
 
@@ -644,7 +654,7 @@ async def chat_completion(
         yield _sse("chat", {"chat_id": chat_id, "user_message_id": user_msg_id, "message_id": assistant_msg_id, "user_parent_id": user_parent_id_str})
 
         # --- Deep Research mode ---
-        if req.deep_research and get_setting("search_enabled", "false") == "true":
+        if req.deep_research and get_setting("search_enabled", "false") == "true" and get_setting("research_enabled", "true") == "true":
             queue: asyncio.Queue[ResearchEvent] = asyncio.Queue()
 
             async def _emit(event: ResearchEvent) -> None:

@@ -38,6 +38,7 @@ class SettingsUpdate(BaseModel):
     sandbox_exec_timeout: int | None = None
     rag_enabled: bool | None = None
     search_enabled: bool | None = None
+    research_enabled: bool | None = None
     search_provider: str | None = None
     tavily_api_key: str | None = None
     searxng_url: str | None = None
@@ -68,6 +69,7 @@ class SettingsResponse(BaseModel):
     sandbox_exec_timeout: int = 30
     rag_enabled: bool = True
     search_enabled: bool = False
+    research_enabled: bool = True
     search_provider: str = "tavily"
     tavily_api_key_set: bool = False
     searxng_url: str = ""
@@ -106,6 +108,7 @@ async def get_settings(user: User = Depends(get_admin_user)):
         sandbox_exec_timeout=int(get_setting("sandbox_exec_timeout", "30")),
         rag_enabled=get_setting("rag_enabled", "true") == "true",
         search_enabled=get_setting("search_enabled", "false") == "true",
+        research_enabled=get_setting("research_enabled", "true") == "true",
         search_provider=get_setting("search_provider", "tavily"),
         tavily_api_key_set=bool(get_setting("tavily_api_key")),
         searxng_url=get_setting("searxng_url", ""),
@@ -150,6 +153,8 @@ async def update_settings(data: SettingsUpdate, user: User = Depends(get_admin_u
         set_setting("rag_enabled", "true" if data.rag_enabled else "false")
     if data.search_enabled is not None:
         set_setting("search_enabled", "true" if data.search_enabled else "false")
+    if data.research_enabled is not None:
+        set_setting("research_enabled", "true" if data.research_enabled else "false")
     if data.search_provider is not None:
         set_setting("search_provider", data.search_provider)
     if data.tavily_api_key is not None:

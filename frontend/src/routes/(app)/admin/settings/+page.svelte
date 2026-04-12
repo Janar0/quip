@@ -16,6 +16,7 @@
   let sandboxTimeout = $state(10);
   let sandboxExecTimeout = $state(30);
   let searchEnabled = $state(false);
+  let researchEnabled = $state(true);
   let searchProvider = $state('tavily');
   let tavilyApiKey = $state('');
   let tavilyKeyIsSet = $state(false);
@@ -46,6 +47,7 @@
     sandboxTimeout = Math.round((settings.sandbox_idle_timeout ?? 600) / 60);
     sandboxExecTimeout = settings.sandbox_exec_timeout ?? 30;
     searchEnabled = settings.search_enabled ?? false;
+    researchEnabled = settings.research_enabled ?? true;
     searchProvider = settings.search_provider ?? 'tavily';
     tavilyKeyIsSet = settings.tavily_api_key_set ?? false;
     searxngUrl = settings.searxng_url ?? '';
@@ -122,6 +124,15 @@
     const ok = await updateSettings({ search_enabled: searchEnabled });
     if (!ok) {
       searchEnabled = !searchEnabled;
+      toast.error($t('admin.failedToSave'));
+    }
+  }
+
+  async function toggleResearch() {
+    researchEnabled = !researchEnabled;
+    const ok = await updateSettings({ research_enabled: researchEnabled });
+    if (!ok) {
+      researchEnabled = !researchEnabled;
       toast.error($t('admin.failedToSave'));
     }
   }
@@ -405,6 +416,19 @@
             </button>
           </div>
         {/if}
+      </section>
+
+      <!-- Deep Research -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>
+          <h2 class="text-lg font-semibold">Deep Research</h2>
+        </div>
+        <p class="text-sm opacity-40">Multi-agent deep research mode. Requires Web Search to be enabled.</p>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" class="checkbox" checked={researchEnabled} onchange={toggleResearch} />
+          <span class="text-sm">{researchEnabled ? $t('common.enabled') : $t('common.disabled')}</span>
+        </label>
       </section>
 
       <!-- RAG & Documents -->
