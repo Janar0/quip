@@ -569,7 +569,6 @@ async def chat_completion(
     enabled_skills: set[str] = set()
     if search_mode:
         enabled_skills.add("fast_search")
-        enabled_skills.add("web_search")
     else:
         if get_setting("search_enabled", "false") == "true":
             enabled_skills.add("web_search")
