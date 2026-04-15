@@ -33,6 +33,7 @@
   let weatherKey = $state('');
   let weatherKeyIsSet = $state(false);
   let imageModel = $state('');
+  let musicModel = $state('');
 
   onMount(async () => {
     const settings = await getSettings();
@@ -59,6 +60,7 @@
     ragChunkOverlap = settings.rag_chunk_overlap ?? 64;
     ragTopK = settings.rag_top_k ?? 5;
     imageModel = settings.image_model ?? '';
+    musicModel = settings.music_model ?? '';
     loading = false;
   });
 
@@ -199,6 +201,13 @@
   async function saveImageModel() {
     saving = true;
     const ok = await updateSettings({ image_model: imageModel.trim() || null });
+    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
+    saving = false;
+  }
+
+  async function saveMusicModel() {
+    saving = true;
+    const ok = await updateSettings({ music_model: musicModel.trim() || null });
     toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
     saving = false;
   }
@@ -522,6 +531,27 @@
         <div class="flex gap-2">
           <input type="text" class="input flex-1 font-mono text-sm" placeholder={$t('admin.imageModelPlaceholder')} bind:value={imageModel} />
           <button class="btn preset-filled-primary-500" onclick={saveImageModel} disabled={saving}>
+            {saving ? '...' : $t('common.save')}
+          </button>
+        </div>
+      </section>
+
+      <!-- Music Generation -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <h2 class="text-lg font-semibold">Music Generation</h2>
+        </div>
+        <p class="text-sm opacity-60">OpenRouter model for the <code class="text-xs px-1 py-0.5 rounded bg-slate-800">generate_music</code> tool. Defaults to <code class="text-xs px-1 py-0.5 rounded bg-slate-800">google/lyria-3-clip-preview</code>.</p>
+        {#if musicModel}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
+            <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
+            Active: {musicModel}
+          </span>
+        {/if}
+        <div class="flex gap-2">
+          <input type="text" class="input flex-1 font-mono text-sm" placeholder="google/lyria-3-clip-preview" bind:value={musicModel} />
+          <button class="btn preset-filled-primary-500" onclick={saveMusicModel} disabled={saving}>
             {saving ? '...' : $t('common.save')}
           </button>
         </div>

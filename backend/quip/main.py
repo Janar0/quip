@@ -19,6 +19,7 @@ from quip.routers.skills import router as skills_router
 from quip.routers.sandbox import router as sandbox_router
 from quip.routers.files import router as files_router
 from quip.routers.images import router as images_router
+from quip.routers.audio import router as audio_router
 from quip.services.sandbox import sandbox_cleanup_loop
 import quip.models  # noqa: F401 — register all models with Base
 
@@ -76,6 +77,7 @@ app.include_router(skills_router)
 app.include_router(sandbox_router)
 app.include_router(files_router)
 app.include_router(images_router)
+app.include_router(audio_router)
 
 
 @app.get("/health")

@@ -384,6 +384,22 @@ function renderCitations(html: string, sources: SourceInfo[]): string {
   });
 }
 
+function appendAuthTokenToMediaUrls(html: string): string {
+  // Find /api/images/... and /api/audio/... URLs in href/src and append token if missing.
+  if (typeof localStorage === 'undefined') return html;
+  const token = localStorage.getItem('access_token') || '';
+  if (!token) return html;
+  const enc = encodeURIComponent(token);
+  return html.replace(
+    /(src|href)=(["'])((?:https?:\/\/[^"'\s]+)?\/api\/(?:images|audio|files)\/[^"'\s]+?)\2/gi,
+    (_m, attr, q, url) => {
+      if (/[?&]token=/.test(url)) return `${attr}=${q}${url}${q}`;
+      const sep = url.includes('?') ? '&' : '?';
+      return `${attr}=${q}${url}${sep}token=${enc}${q}`;
+    },
+  );
+}
+
 export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: string): string {
   if (!text) return '';
   _chatId = chatId ?? '';
@@ -394,5 +410,7 @@ export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: st
   html = renderBareLaTeX(html);
   // Style citation markers (with source badges if available)
   html = renderCitations(html, sources ?? []);
+  // Auth-protect media URLs emitted by the model in-line
+  html = appendAuthTokenToMediaUrls(html);
   return html;
 }

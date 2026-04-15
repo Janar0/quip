@@ -32,6 +32,7 @@ from quip.services.tools import (
     WIDGET_TOOL,
     READ_URL_TOOL,
     GENERATE_IMAGE_TOOL,
+    GENERATE_MUSIC_TOOL,
     SANDBOX_TOOLS,
     SEARCH_TOOLS,
     AccumulatedToolCall,
@@ -696,6 +697,7 @@ async def chat_completion(
     tools_for_api: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
     if get_setting("image_model", ""):
         tools_for_api.append(GENERATE_IMAGE_TOOL)
+    tools_for_api.append(GENERATE_MUSIC_TOOL)
     if search_mode:
         # Fast search mode — web_search + read_url only, no sandbox/artifacts
         tools_for_api.extend(SEARCH_TOOLS)
@@ -1196,6 +1198,7 @@ async def regenerate_message(
     regen_tools_list: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
     if get_setting("image_model", ""):
         regen_tools_list.append(GENERATE_IMAGE_TOOL)
+    regen_tools_list.append(GENERATE_MUSIC_TOOL)
     if regen_sandbox_enabled:
         regen_tools_list.extend(SANDBOX_TOOLS)
     if get_setting("search_enabled", "false") == "true":

@@ -40,6 +40,12 @@ export function getGeneratedImageUrl(path: string): string {
   return `${path}?token=${encodeURIComponent(token)}`;
 }
 
+export function getGeneratedAudioUrl(path: string): string {
+  const token = localStorage.getItem('access_token') || get(authToken) || '';
+  // path is like "/api/audio/uuid.wav" — append token
+  return `${path}?token=${encodeURIComponent(token)}`;
+}
+
 export async function deleteFile(fileId: string): Promise<boolean> {
   const res = await api(`/api/files/${fileId}`, { method: 'DELETE' });
   return res.ok;

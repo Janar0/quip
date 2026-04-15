@@ -23,6 +23,8 @@ COPY --from=frontend-build /app/build /usr/share/nginx/html
 
 COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
-CMD ["supervisord", "-n"]
+CMD ["/entrypoint.sh"]

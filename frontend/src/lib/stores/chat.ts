@@ -42,6 +42,10 @@ export interface SearchImageInfo {
   title: string;
 }
 
+export type ContentBlock =
+  | { type: 'text'; content: string }
+  | { type: 'tool'; executionId: string };
+
 export interface MessageInfo {
   id: string;
   chat_id: string;
@@ -59,6 +63,7 @@ export interface MessageInfo {
   researchStatus?: ResearchStatusInfo;
   researchHistory?: ResearchStatusInfo[];
   searchImages?: SearchImageInfo[];
+  contentBlocks?: ContentBlock[];
   created_at: string;
 }
 

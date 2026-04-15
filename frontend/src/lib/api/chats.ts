@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo } from '$lib/stores/chat';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
@@ -146,6 +146,7 @@ async function processSSEStream(
   let currentEvent = '';
   let fullContent = '';
   let fullReasoning = '';
+  let contentBlocks: ContentBlock[] = [];
   let chatId: string | undefined;
   let userMessageId: string | undefined;
   let messageId: string | undefined;
@@ -198,7 +199,14 @@ async function processSSEStream(
               updateStreamingContent(messageId, fullContent, fullReasoning);
             } else if (currentEvent === 'content') {
               fullContent += data.text;
-              updateStreamingContent(messageId, fullContent, fullReasoning);
+              // Track text in content blocks
+              const lastBlock = contentBlocks[contentBlocks.length - 1];
+              if (lastBlock?.type === 'text') {
+                contentBlocks[contentBlocks.length - 1] = { type: 'text', content: lastBlock.content + data.text };
+              } else {
+                contentBlocks = [...contentBlocks, { type: 'text', content: data.text }];
+              }
+              updateStreamingContent(messageId, fullContent, fullReasoning, contentBlocks);
               // Detect completed artifact tags during streaming
               const streamArtifacts = extractStreamingArtifacts(fullContent);
               const completed = streamArtifacts.filter((a) => a.isComplete);
@@ -218,6 +226,8 @@ async function processSSEStream(
                 );
               }
             } else if (currentEvent === 'tool_executing') {
+              // Add tool block to content blocks (before any subsequent text)
+              contentBlocks = [...contentBlocks, { type: 'tool', executionId: data.id }];
               const targetId = messageId || 'streaming';
               messages.update((msgs) =>
                 msgs.map((m) => {
@@ -229,7 +239,7 @@ async function processSSEStream(
                     arguments: data.arguments,
                     status: 'running' as const,
                   });
-                  return { ...m, toolExecutions: execs };
+                  return { ...m, toolExecutions: execs, contentBlocks };
                 }),
               );
             } else if (currentEvent === 'tool_result') {
@@ -305,10 +315,20 @@ async function processSSEStream(
   return { chatId, userMessageId, messageId };
 }
 
-function updateStreamingContent(messageId: string | undefined, content: string, reasoning?: string) {
+function updateStreamingContent(
+  messageId: string | undefined,
+  content: string,
+  reasoning?: string,
+  contentBlocks?: ContentBlock[],
+) {
   const targetId = messageId || 'streaming';
   messages.update((msgs) =>
-    msgs.map((m) => (m.id === targetId ? { ...m, content, reasoning } : m)),
+    msgs.map((m) => {
+      if (m.id !== targetId) return m;
+      return contentBlocks !== undefined
+        ? { ...m, content, reasoning, contentBlocks }
+        : { ...m, content, reasoning };
+    }),
   );
 }
 

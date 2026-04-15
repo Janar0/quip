@@ -24,7 +24,7 @@ export async function api(path: string, options: RequestInit = {}): Promise<Resp
   return res;
 }
 
-async function tryRefresh(): Promise<boolean> {
+export async function tryRefresh(): Promise<boolean> {
   const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('refresh_token') : null;
   if (!refreshToken) return false;
 

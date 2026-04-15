@@ -169,6 +169,24 @@ READ_URL_TOOL = {
     },
 }
 
+GENERATE_MUSIC_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "generate_music",
+        "description": "Generate AI music/audio. Call load_skill('music_generation') for details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Detailed description of the music: genre, instruments, BPM, mood, atmosphere",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+}
+
 GENERATE_IMAGE_TOOL = {
     "type": "function",
     "function": {
@@ -196,6 +214,14 @@ GENERATE_IMAGE_TOOL = {
                     "enum": ["0.5K", "1K", "2K", "4K"],
                     "description": "Resolution (default: 1K)",
                 },
+                "hidden": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, the generated image is NOT rendered as a standalone preview in the chat. "
+                        "Use this when you plan to embed the image into a widget (e.g. recipe hero) or "
+                        "insert it inline in your text yourself via markdown. Default: false."
+                    ),
+                },
             },
             "required": ["prompt"],
         },
@@ -208,16 +234,16 @@ WIDGET_TOOL = {
         "name": "use_widget",
         "description": (
             "Render a visual widget card in the chat. "
-            "For API widgets (weather, places): pass params. "
-            "For content widgets (recipe, converter, poll, sports): pass data with all fields filled. "
-            "Call load_skill first to see available widgets and their data schemas."
+            "For API widgets: pass params. For content widgets: pass data with all fields filled. "
+            "Call load_skill(name) first with the widget name from the 'Available skills' index "
+            "to get its data schema, then call use_widget."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Widget template name (e.g. 'weather', 'recipe')",
+                    "description": "Widget template name from the skill index",
                 },
                 "params": {
                     "type": "object",
@@ -267,6 +293,18 @@ def accumulate_tool_calls(
         existing.function_arguments += delta.function_arguments
 
 
+def _normalize_widget_strings(obj):
+    """Convert literal backslash-n sequences into real newlines recursively.
+    Models sometimes emit "\\n" inside JSON string values instead of "\n"."""
+    if isinstance(obj, str):
+        return obj.replace("\\n", "\n").replace("\\t", "\t")
+    if isinstance(obj, list):
+        return [_normalize_widget_strings(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _normalize_widget_strings(v) for k, v in obj.items()}
+    return obj
+
+
 async def execute_tool_call(
     manager: SandboxManager,
     sandbox,
@@ -296,7 +334,7 @@ async def execute_tool_call(
                     "hint": "You already loaded this skill earlier in the conversation — see the previous tool result.",
                 })
             skill = get_skill(name)
-            if not skill:
+            if not skill or not skill.enabled or skill.is_internal:
                 return json.dumps({"error": f"unknown skill: {name}"})
             if loaded_skills is not None:
                 loaded_skills.add(name)
@@ -393,6 +431,18 @@ async def execute_tool_call(
                 api_key=api_key,
                 db=db,
             )
+            if args.get("hidden"):
+                result["hidden"] = True
+            return json.dumps(result)
+
+        elif tool_name == "generate_music":
+            from quip.services.music_gen import generate_music
+            from quip.services.config import get_setting
+            api_key = get_setting("openrouter_api_key", "")
+            result = await generate_music(
+                prompt=args.get("prompt", ""),
+                api_key=api_key,
+            )
             return json.dumps(result)
 
         elif tool_name == "use_widget":
@@ -400,7 +450,7 @@ async def execute_tool_call(
             from quip.services.widget_api import execute_widget_api
             widget_name = args.get("name", "")
             skill = get_skill(widget_name)
-            if not skill or skill.category != "widget":
+            if not skill or skill.category != "widget" or not skill.enabled or skill.is_internal:
                 return json.dumps({"error": f"Unknown widget: {widget_name}"})
 
             if skill.type == "api":
@@ -413,6 +463,8 @@ async def execute_tool_call(
                     for o in data.get("options", []):
                         o["percent"] = round(o["votes"] / total * 100) if total > 0 else 0
                     data["total_votes"] = total
+
+            data = _normalize_widget_strings(data)
 
             return json.dumps({
                 "widget": True,

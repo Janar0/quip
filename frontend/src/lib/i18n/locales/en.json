@@ -53,6 +53,7 @@
   "chat.primarySource": "Primary source",
   "chat.usingTools": "Using tools",
   "chat.usedTools": "Used tools",
+  "tool.skill": "skill",
 
   "settings.title": "Settings",
   "settings.displayName": "Display Name",
@@ -332,5 +333,6 @@
   "admin.imageModelEnabled": "Enabled",
   "admin.imageModelPlaceholder": "google/gemini-2.0-flash-exp:free",
 
+  "chat.generatingMusic": "Generating music…",
   "chat.generatingImage": "Generating image…"
 }

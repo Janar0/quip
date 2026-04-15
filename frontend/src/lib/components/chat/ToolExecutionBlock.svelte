@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ToolExecution } from '$lib/stores/sandbox';
   import { getHljs, hljsLoaded } from '$lib/utils/markdown';
+  import { t } from 'svelte-i18n';
 
   let { execution, chatId }: { execution: ToolExecution; chatId: string } = $props();
 
@@ -38,6 +39,8 @@
 
   let toolLabel = $derived.by(() => {
     const labels: Record<string, string> = {
+      load_skill: `${$t('tool.skill')}: ${parsedArgs.name ?? ''}`,
+      generate_music: `♪ ${(parsedArgs.prompt as string | undefined)?.slice(0, 48) ?? ''}`,
       sandbox_execute: language ? `run ${language}` : 'execute',
       sandbox_install: `pip install ${parsedArgs.packages?.join(' ') ?? ''}`,
       sandbox_write_file: `write ${parsedArgs.path ?? ''}`,

@@ -154,12 +154,16 @@ async def generate_image(
     if not saved_urls:
         raise ValueError("Failed to save any generated images")
 
+    usage = data.get("usage", {})
+    cost = float(usage.get("cost", 0) or usage.get("total_cost", 0) or 0)
+
     return {
         "generated_image": True,
         "url": saved_urls[0],
         "urls": saved_urls,
         "text": text_response,
         "model": data.get("model", model),
+        "cost": cost,
     }
 
 
