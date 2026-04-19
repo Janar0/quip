@@ -16,7 +16,7 @@ from quip.models.user import User
 from quip.models.file import File, DocumentChunk
 from quip.services.permissions import get_current_user
 from quip.services.auth import decode_token
-from quip.services.config import get_setting
+from quip.services.config import get_setting, get_bool_setting
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "uploads"
 
@@ -121,7 +121,7 @@ async def upload_files(
         # Determine initial embedding status
         if file_type in ("image", "video"):
             embedding_status = "skipped"
-        elif get_setting("rag_enabled", "true") == "true":
+        elif get_bool_setting("rag_enabled", True):
             embedding_status = "pending"
         else:
             embedding_status = "skipped"
@@ -150,7 +150,9 @@ async def upload_files(
         if chat_uuid:
             try:
                 from quip.services.sandbox import sandbox_manager
-                if sandbox_manager.available and get_setting("sandbox_enabled", "false") == "true":
+                from quip.services.skill_store import get_skill as _gsk
+                _sb = _gsk("sandbox")
+                if sandbox_manager.available and _sb and _sb.enabled:
                     from quip.database import async_session
                     from quip.models.sandbox import Sandbox
                     async with async_session() as sdb:

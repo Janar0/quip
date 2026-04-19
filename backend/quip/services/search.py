@@ -1,6 +1,7 @@
 """Web search providers — Tavily and SearXNG. Returns text results + images."""
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -11,6 +12,31 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 10.0
 MAX_IMAGES = 10
+
+# Process-wide query cache. Repeated queries within a chat (clarifications,
+# tool retries) skip the network round-trip. Keyed by (provider, query) —
+# results are public web data so no per-user partitioning needed.
+_SEARCH_CACHE_TTL = 1800  # 30 min — web pages don't change that fast
+_SEARCH_CACHE_MAX = 128
+_search_cache: dict[tuple[str, str, int], tuple[float, tuple]] = {}
+
+
+def _search_cache_get(key):
+    hit = _search_cache.get(key)
+    if not hit:
+        return None
+    ts, val = hit
+    if time.time() - ts > _SEARCH_CACHE_TTL:
+        _search_cache.pop(key, None)
+        return None
+    return val
+
+
+def _search_cache_put(key, val):
+    if len(_search_cache) >= _SEARCH_CACHE_MAX:
+        for k, _ in sorted(_search_cache.items(), key=lambda kv: kv[1][0])[: _SEARCH_CACHE_MAX // 4]:
+            _search_cache.pop(k, None)
+    _search_cache[key] = (time.time(), val)
 
 
 @dataclass
@@ -32,17 +58,31 @@ async def web_search(
     query: str, max_results: int = 5
 ) -> tuple[list[SearchResult], list[ImageResult]]:
     """Dispatch to the configured search provider. Returns (text_results, image_results)."""
-    provider = get_setting("search_provider", "tavily")
+    from quip.services.skill_store import get_skill_setting
+    provider = get_skill_setting("web_search", "provider", None) or get_setting("search_provider", "tavily")
+
+    cache_key = (provider, query.strip(), max_results)
+    cached = _search_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     if provider == "searxng":
-        return await _searxng_search(query, max_results)
-    return await _tavily_search(query, max_results)
+        result = await _searxng_search(query, max_results)
+    else:
+        result = await _tavily_search(query, max_results)
+
+    # Don't cache obvious failures — first item title "Error"/"Search error".
+    if result[0] and result[0][0].title not in ("Error", "Search error"):
+        _search_cache_put(cache_key, result)
+    return result
 
 
 async def _tavily_search(
     query: str, max_results: int
 ) -> tuple[list[SearchResult], list[ImageResult]]:
     """Search via Tavily API (https://api.tavily.com)."""
-    api_key = get_setting("tavily_api_key", "")
+    from quip.services.skill_store import get_skill_setting
+    api_key = get_skill_setting("web_search", "tavily_api_key", "") or get_setting("tavily_api_key", "")
     if not api_key:
         return (
             [SearchResult(title="Error", url="", snippet="Tavily API key not configured")],
@@ -105,7 +145,8 @@ async def _searxng_search(
     query: str, max_results: int
 ) -> tuple[list[SearchResult], list[ImageResult]]:
     """Search via a self-hosted SearXNG instance — runs text + image queries concurrently."""
-    base_url = get_setting("searxng_url", "").rstrip("/")
+    from quip.services.skill_store import get_skill_setting
+    base_url = (get_skill_setting("web_search", "searxng_url", "") or get_setting("searxng_url", "")).rstrip("/")
     if not base_url:
         return (
             [SearchResult(title="Error", url="", snippet="SearXNG URL not configured")],

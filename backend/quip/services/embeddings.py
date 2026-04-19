@@ -1,5 +1,6 @@
 """Embedding service — generate embeddings via OpenRouter or Ollama."""
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -10,6 +11,33 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100  # Max texts per API call
 
+# Short-lived cache for query embeddings — same RAG question fired twice in a
+# row (clarification, edit, regenerate) skips the network call. Capped to keep
+# memory bounded.
+_QUERY_CACHE_TTL = 600  # seconds
+_QUERY_CACHE_MAX = 256
+_query_cache: dict[tuple[str, str, str], tuple[float, list[float]]] = {}
+
+
+def _cache_get(key: tuple[str, str, str]) -> Optional[list[float]]:
+    hit = _query_cache.get(key)
+    if not hit:
+        return None
+    ts, vec = hit
+    if time.time() - ts > _QUERY_CACHE_TTL:
+        _query_cache.pop(key, None)
+        return None
+    return vec
+
+
+def _cache_put(key: tuple[str, str, str], vec: list[float]) -> None:
+    if len(_query_cache) >= _QUERY_CACHE_MAX:
+        # Drop the oldest 25% to amortize eviction cost
+        oldest = sorted(_query_cache.items(), key=lambda kv: kv[1][0])[: _QUERY_CACHE_MAX // 4]
+        for k, _ in oldest:
+            _query_cache.pop(k, None)
+    _query_cache[key] = (time.time(), vec)
+
 
 async def get_embeddings(texts: list[str]) -> list[list[float]]:
     """Generate embeddings for a list of texts using the configured provider."""
@@ -18,6 +46,12 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
 
     provider = get_setting("embedding_provider", "openrouter")
     model = get_setting("embedding_model", "openai/text-embedding-3-small")
+
+    # Single-text fast path is the common RAG query case — try cache first.
+    if len(texts) == 1:
+        cached = _cache_get((provider, model, texts[0]))
+        if cached is not None:
+            return [cached]
 
     all_embeddings: list[list[float]] = []
 
@@ -33,6 +67,9 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
         if embeddings is None:
             return []
         all_embeddings.extend(embeddings)
+
+    if len(texts) == 1 and all_embeddings:
+        _cache_put((provider, model, texts[0]), all_embeddings[0])
 
     return all_embeddings
 

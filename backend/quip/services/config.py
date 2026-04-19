@@ -17,6 +17,12 @@ def get_setting(key: str, default: str = "") -> str:
     return _settings.get(key) or os.getenv(key.upper(), default)
 
 
+def get_bool_setting(key: str, default: bool = False) -> bool:
+    """Read a setting as a bool. Treats 'true'/'1'/'yes'/'on' (case-insensitive) as True."""
+    raw = get_setting(key, "true" if default else "false")
+    return str(raw).strip().lower() in ("true", "1", "yes", "on")
+
+
 def set_setting(key: str, value: str) -> None:
     """Set a setting in memory (call save_settings() to persist)."""
     _settings[key] = value

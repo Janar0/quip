@@ -34,7 +34,8 @@ async def generate_music(
         raise ValueError("No OpenRouter API key configured. Set it in Admin > Settings.")
 
     if not model:
-        model = get_setting("music_model", "") or MUSIC_MODEL_DEFAULT
+        from quip.services.skill_store import get_skill_setting
+        model = get_skill_setting("music_generation", "model", "") or MUSIC_MODEL_DEFAULT
 
     headers = {
         "Authorization": f"Bearer {key}",

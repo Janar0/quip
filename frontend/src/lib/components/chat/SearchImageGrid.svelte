@@ -137,6 +137,8 @@
       <img
         src={current.img_src}
         alt={current.title || ''}
+        loading="lazy"
+        decoding="async"
         referrerpolicy="no-referrer"
         class="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl"
         onerror={() => markBroken(current.img_src)}

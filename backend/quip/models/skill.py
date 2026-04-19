@@ -26,6 +26,11 @@ class Skill(Base):
     # API config (only for type="api")
     api_config = Column(JSON, nullable=True)
 
+    # Per-skill runtime settings (operator-tunable; e.g. model name, provider).
+    # settings_schema describes the fields; settings holds current values.
+    settings_schema = Column(JSON, nullable=True)   # code-owned: list[{key,label,type,default,options?,help?}]
+    settings = Column(JSON, nullable=True)          # user-owned: {key: value}
+
     # For non-widget skills (existing hardcoded ones migrated to DB)
     is_builtin = Column(Boolean, nullable=False, default=False)
     is_internal = Column(Boolean, nullable=False, default=False)  # hidden from skill index

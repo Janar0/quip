@@ -263,8 +263,20 @@ async function processSSEStream(
             } else if (currentEvent === 'search_images') {
               const targetId = messageId || 'streaming';
               const imgs = (data.images ?? []) as SearchImageInfo[];
+              const append = data.append === true;
               messages.update((msgs) =>
-                msgs.map((m) => (m.id === targetId ? { ...m, searchImages: imgs } : m)),
+                msgs.map((m) => {
+                  if (m.id !== targetId) return m;
+                  if (append && m.searchImages?.length) {
+                    const seen = new Set(m.searchImages.map((i) => i.img_src));
+                    const merged = [
+                      ...m.searchImages,
+                      ...imgs.filter((i) => !seen.has(i.img_src)),
+                    ].slice(0, 10);
+                    return { ...m, searchImages: merged };
+                  }
+                  return { ...m, searchImages: imgs };
+                }),
               );
             } else if (currentEvent === 'research_status') {
               const targetId = messageId || 'streaming';
@@ -281,6 +293,15 @@ async function processSSEStream(
                   }
                   return { ...m, researchStatus: status, researchHistory: history };
                 }),
+              );
+            } else if (currentEvent === 'usage') {
+              const targetId = messageId || 'streaming';
+              messages.update((msgs) =>
+                msgs.map((m) =>
+                  m.id === targetId
+                    ? { ...m, cost: data.cost ?? m.cost, provider: data.provider ?? m.provider }
+                    : m,
+                ),
               );
             } else if (currentEvent === 'error') {
               updateStreamingContent(messageId, `Error: ${data.message}`);

@@ -1,14 +1,14 @@
 import { writable } from 'svelte/store';
 
-export type ThemeName = 'dark' | 'light' | 'gray';
+export type ThemeName = 'dark' | 'light';
 
 const STORAGE_KEY = 'quip_theme';
 
 function getInitialTheme(): ThemeName {
-  if (typeof window === 'undefined') return 'gray';
+  if (typeof window === 'undefined') return 'dark';
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === 'dark' || stored === 'light' || stored === 'gray') return stored;
-  return 'gray';
+  if (stored === 'dark' || stored === 'light') return stored;
+  return 'dark';
 }
 
 export const theme = writable<ThemeName>(getInitialTheme());

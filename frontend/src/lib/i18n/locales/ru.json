@@ -1,10 +1,8 @@
 {
-  "common.appName": "К.В.И.П.",
   "common.save": "Сохранить",
   "common.cancel": "Отмена",
   "common.loading": "Загрузка...",
   "common.error": "Что-то пошло не так",
-
   "auth.login": "Войти",
   "auth.register": "Создать аккаунт",
   "auth.email": "Почта",
@@ -14,26 +12,18 @@
   "auth.noAccount": "Нет аккаунта?",
   "auth.hasAccount": "Уже есть аккаунт?",
   "auth.logout": "Выйти",
-
-  "nav.home": "Главная",
   "nav.newChat": "Новый чат",
-  "nav.chat": "Чат",
   "nav.search": "Поиск",
-  "nav.deepResearch": "Глубокий анализ",
   "nav.settings": "Настройки",
   "nav.admin": "Админка",
-  "sidebar.collapse": "Свернуть панель",
-
   "home.subtitle": "Ваш ИИ-ассистент нового поколения",
-  "home.tagline": "Тихий Интеллект",
   "home.startChat": "Начать новый разговор",
-
+  "chat.replyPlaceholder": "Продолжить разговор…",
   "toast.copied": "Скопировано",
   "toast.chatDeleted": "Чат удалён",
   "toast.chatRenamed": "Чат переименован",
   "toast.settingsSaved": "Настройки сохранены",
   "toast.exported": "Чат экспортирован",
-
   "sidebar.today": "Сегодня",
   "sidebar.yesterday": "Вчера",
   "sidebar.week": "Последние 7 дней",
@@ -42,32 +32,24 @@
   "sidebar.rename": "Переименовать",
   "sidebar.confirmDelete": "Удалить этот чат?",
   "sidebar.confirmDeleteMsg": "Это действие нельзя отменить.",
-
   "confirm.delete": "Удалить",
-
   "chat.scrollToBottom": "Вниз",
-  "chat.thinking": "Думаю...",
   "chat.export": "Экспорт",
   "chat.exportJSON": "Экспорт JSON",
   "chat.exportMarkdown": "Экспорт Markdown",
   "chat.primarySource": "Основной источник",
-  "chat.usingTools": "Использую инструменты",
-  "chat.usedTools": "Инструменты",
   "tool.skill": "навык",
-
   "settings.title": "Настройки",
   "settings.displayName": "Имя",
   "settings.defaultModel": "Модель по умолчанию",
   "settings.language": "Язык",
   "settings.theme": "Тема",
-
   "admin.tabs.skills": "Навыки",
   "admin.skills.title": "Навыки",
   "admin.skills.add": "Добавить навык",
   "admin.skills.edit": "Редактировать навык",
   "admin.skills.delete": "Удалить навык",
   "admin.skills.deleteConfirm": "Вы уверены, что хотите удалить этот навык?",
-  "admin.skills.general": "Основное",
   "admin.skills.prompt": "Промпт",
   "admin.skills.template": "Шаблон",
   "admin.skills.apiConfig": "API",
@@ -76,18 +58,11 @@
   "admin.skills.description": "Описание",
   "admin.skills.category": "Категория",
   "admin.skills.type": "Тип",
-  "admin.skills.icon": "Иконка (SVG path)",
   "admin.skills.enabled": "Включён",
   "admin.skills.promptInstructions": "Инструкции для ИИ",
   "admin.skills.templateHtml": "HTML-шаблон",
   "admin.skills.templateCss": "CSS",
-  "admin.skills.sampleData": "Пример данных (JSON)",
   "admin.skills.preview": "Предпросмотр",
-  "admin.skills.apiUrl": "URL API",
-  "admin.skills.apiMethod": "Метод",
-  "admin.skills.apiHeaders": "Заголовки",
-  "admin.skills.apiParams": "Маппинг параметров",
-  "admin.skills.apiResponse": "Маппинг ответа",
   "admin.skills.typeApi": "API",
   "admin.skills.typeContent": "Контент",
   "admin.skills.saved": "Навык сохранён",
@@ -95,18 +70,20 @@
   "admin.skills.deleted": "Навык удалён",
   "admin.skills.builtin": "Встроенный",
   "admin.skills.empty": "Навыки не найдены.",
-  "admin.settings.widgetsSection": "Виджеты",
-  "admin.settings.weatherApiKey": "API-ключ Gismeteo",
-  "admin.settings.gismeteoApiKey": "API-ключ Gismeteo",
-
+  "admin.skills.settings": "Настройки",
+  "admin.skills.noSettings": "У этого навыка нет настраиваемых параметров.",
+  "admin.skills.previewHint": "Превью использует data_schema.example. Поправьте example во вкладке «Шаблон», чтобы улучшить вид.",
+  "admin.skills.generateAi": "Сгенерировать через AI",
+  "admin.skills.generate": "Сгенерировать",
+  "admin.skills.generateAiPrompt": "Опишите навык",
+  "admin.skills.generateAiPlaceholder": "например: Виджет статистики GitHub-репозитория — звёзды, форки, открытые issue, топ-контрибьютор.",
+  "admin.skills.generateAiHint": "AI создаст черновик с инструкциями, шаблоном, схемой и настройками. Вы сможете проверить и отредактировать до сохранения.",
   "sidebar.pinned": "Закреплённые",
   "sidebar.pin": "Закрепить",
   "sidebar.unpin": "Открепить",
   "sidebar.noChats": "Нет чатов",
-  "sidebar.loadMore": "Загрузить ещё",
   "toast.chatPinned": "Чат закреплён",
   "toast.chatUnpinned": "Чат откреплён",
-
   "shortcuts.title": "Горячие клавиши",
   "shortcuts.focusInput": "Фокус на ввод",
   "shortcuts.newChat": "Новый чат",
@@ -114,7 +91,6 @@
   "shortcuts.showShortcuts": "Показать клавиши",
   "shortcuts.sendMessage": "Отправить",
   "shortcuts.newLine": "Новая строка",
-
   "migrate.title": "Импорт из OpenWebUI",
   "migrate.description": "Загрузите экспорт чатов OpenWebUI (JSON).",
   "migrate.dropzone": "Перетащите JSON файл сюда",
@@ -127,7 +103,6 @@
   "migrate.skipped": "Пропущено",
   "toast.importSuccess": "Импорт завершён",
   "toast.importError": "Ошибка импорта",
-
   "admin.enableUser": "Включить",
   "admin.disableUser": "Отключить",
   "admin.deleteUser": "Удалить",
@@ -136,41 +111,19 @@
   "toast.userEnabled": "Пользователь включён",
   "toast.userDisabled": "Пользователь отключён",
   "toast.userDeleted": "Пользователь удалён",
-
   "admin.modelWhitelist": "Доступные модели",
   "admin.modelWhitelistDesc": "Выберите модели, доступные пользователям. Пустой список = все доступны.",
   "admin.modelWhitelistHint": "Пусто = все модели доступны",
   "admin.modelAliases": "Отображаемые имена моделей",
   "admin.modelAliasesDesc": "Переопределите отображаемое имя модели в селекторе. Оставьте пустым для использования имени по умолчанию.",
   "admin.noModelsAvailable": "Модели недоступны. Сначала настройте API ключ.",
-
-  "admin.artifactsEnabled": "Артефакты",
-  "admin.artifactsEnabledDesc": "Разрешить моделям генерировать интерактивные артефакты (графики, диаграммы, таблицы и т.д.)",
-
   "artifacts.expand": "Развернуть",
   "artifacts.download": "Скачать",
   "artifacts.copy": "Копировать",
   "artifacts.close": "Закрыть",
-  "artifacts.loading": "Рендеринг артефакта...",
-
-  "sandbox.executing": "Выполняется...",
-  "sandbox.completed": "Выполнено",
-  "sandbox.error": "Ошибка выполнения",
-  "sandbox.installing": "Установка пакетов...",
-  "sandbox.exitCode": "Код выхода",
-  "sandbox.filesCreated": "Созданные файлы",
-
   "chat.attach": "Прикрепить файлы",
   "chat.dropFiles": "Перетащите файлы сюда...",
   "chat.uploadFailed": "Ошибка загрузки файла",
-
-  "admin.sandboxEnabled": "Песочница",
-  "admin.sandboxEnabledDesc": "Разрешить моделям выполнять код в изолированных Docker-контейнерах",
-  "admin.sandboxMemory": "Лимит памяти",
-  "admin.sandboxCpu": "Лимит CPU",
-  "admin.sandboxTimeout": "Таймаут простоя (мин)",
-  "admin.sandboxExecTimeout": "Таймаут выполнения (сек)",
-
   "admin.ragEnabled": "RAG и документы",
   "admin.ragEnabledDesc": "Автоматически обрабатывать загруженные документы для генерации с контекстом",
   "admin.embeddingProvider": "Провайдер эмбеддингов",
@@ -178,13 +131,8 @@
   "admin.ragChunkSize": "Размер чанка (токены)",
   "admin.ragChunkOverlap": "Перекрытие чанков (токены)",
   "admin.ragTopK": "Топ-K результатов",
-
   "admin.searchEnabled": "Веб-поиск",
   "admin.searchEnabledDesc": "Разрешить ИИ искать в интернете для актуальной информации",
-  "admin.searchProvider": "Поисковый провайдер",
-  "admin.tavilyApiKey": "API ключ Tavily",
-  "admin.searxngUrl": "URL SearXNG",
-
   "chat.deepResearch": "Глубокий анализ",
   "research.decomposing": "Анализирую ваш вопрос...",
   "research.searching": "Поиск",
@@ -192,13 +140,11 @@
   "research.reading": "Чтение страниц...",
   "research.pagesRead": "Прочитано {count} страниц",
   "research.synthesizing": "Составляю отчёт...",
-
   "common.enabled": "Включено",
   "common.disabled": "Отключено",
   "common.yes": "Да",
   "common.no": "Нет",
   "common.copied": "Скопировано",
-
   "chat.copy": "Копировать",
   "chat.edit": "Редактировать",
   "chat.regenerate": "Перегенерировать",
@@ -208,43 +154,33 @@
   "chat.hideThinking": "Скрыть размышления",
   "chat.chars": "симв.",
   "chat.sources": "Источники",
-
   "models.loading": "Загрузка моделей...",
   "models.noModels": "Нет моделей (добавьте API ключ в Админке)",
   "models.saveDefault": "Сохранить как модель по умолчанию",
-
   "search.searching": "Поиск...",
   "search.searched": "Найдено",
   "search.results": "результатов",
   "search.searchChats": "Поиск чатов...",
   "search.noResults": "Нет результатов",
-  "search.pageContent": "содержимое страницы",
-  "search.fastMode": "Быстрый поиск",
   "search.openImage": "Открыть",
   "search.viewSource": "Источник",
-
   "chat.mode_auto": "Чат",
   "chat.mode_search": "Поиск",
   "chat.mode_research": "Исследование",
-
   "home.disclaimer": "ИИ может ошибаться. Проверяйте важную информацию.",
-
   "admin.tabs.settings": "Настройки",
   "admin.tabs.models": "Модели",
   "admin.tabs.users": "Пользователи",
   "admin.tabs.usage": "Использование",
   "admin.tabs.budgets": "Бюджеты",
   "admin.tabs.import": "Импорт",
-
   "admin.users.lastActive": "Последний визит",
   "admin.users.changePassword": "Сменить пароль",
   "admin.users.newPassword": "Новый пароль",
   "admin.users.passwordChanged": "Пароль изменён",
-
   "admin.tabApi": "API и Модели",
   "admin.tabSystem": "Система",
   "admin.tabTools": "Инструменты",
-
   "admin.openrouterKey": "API ключ OpenRouter",
   "admin.connected": "Подключено",
   "admin.noApiKey": "API ключ не задан. Получите на",
@@ -259,15 +195,11 @@
   "admin.systemPrompt": "Системный промпт",
   "admin.systemPromptDesc": "Системный промпт по умолчанию, добавляемый ко всем диалогам.",
   "admin.systemPromptPlaceholder": "Вы — полезный ассистент...",
-
   "admin.failedToSave": "Ошибка сохранения",
-
   "toast.apiKeySaved": "API ключ сохранён",
   "toast.apiKeyFailed": "Ошибка сохранения API ключа",
   "toast.ollamaSaved": "URL Ollama сохранён",
   "toast.systemPromptSaved": "Системный промпт сохранён",
-  "toast.sandboxSaved": "Настройки песочницы сохранены",
-
   "admin.budgets": "Бюджеты",
   "admin.budgetsDesc": "Лимиты расходов для пользователей или глобальные. При превышении лимита — ошибка 429.",
   "admin.addBudget": "Добавить бюджет",
@@ -283,7 +215,6 @@
   "toast.budgetDeleted": "Бюджет удалён",
   "toast.budgetFailed": "Ошибка сохранения бюджета",
   "toast.budgetDeleteFailed": "Ошибка удаления",
-
   "admin.usage": "Использование",
   "admin.usageTotalCost": "Общая стоимость",
   "admin.usageRequests": "Запросы",
@@ -296,23 +227,13 @@
   "admin.usageCost": "Стоимость",
   "admin.usageReq": "запр.",
   "admin.usageFailedToLoad": "Ошибка загрузки данных",
-
   "admin.usersSearch": "Поиск по имени, почте, логину...",
   "admin.noUsersFound": "Пользователи не найдены",
   "toast.roleChanged": "Роль обновлена",
   "toast.roleChangeFailed": "Ошибка обновления роли",
-
-  "admin.getKeyAt": "Получите ключ на",
-  "admin.freeSearches": "(1000 бесплатных запросов/месяц)",
-  "admin.apiKeySet": "Ключ задан",
-  "admin.searxngDesc": "URL вашего экземпляра SearXNG",
-
   "admin.budgetGlobal": "Глобально (все пользователи)",
-
   "error.budgetExceeded": "Бюджет превышен (${current} / ${limit} {period})",
-
   "search.clear": "Очистить поиск",
-
   "admin.systemModels": "Системные модели",
   "admin.searchModel": "Модель для поиска и исследований",
   "admin.searchModelDesc": "Переопределяет модель для веб-поиска и глубокого анализа. Используйте быструю дешёвую модель.",
@@ -323,16 +244,9 @@
   "admin.titleModel": "Модель для генерации заголовков",
   "admin.titleModelDesc": "Автоматически генерирует заголовки чатов после первого сообщения.",
   "admin.titleModelNone": "Отключено (использовать превью сообщения)",
-
   "admin.defaultModel": "Модель по умолчанию",
   "admin.defaultModelDesc": "Модель для пользователей без выбранной, или если сохранённая модель была удалена.",
   "admin.defaultModelNone": "Нет (первая доступная модель)",
-
-  "admin.imageGeneration": "Генерация изображений",
-  "admin.imageGenerationDesc": "Укажите модель OpenRouter для включения инструмента generate_image. Рекомендуем: google/gemini-2.0-flash-exp:free",
-  "admin.imageModelEnabled": "Включено",
-  "admin.imageModelPlaceholder": "google/gemini-2.0-flash-exp:free",
-
   "chat.generatingMusic": "Генерация музыки…",
   "chat.generatingImage": "Генерация изображения…"
 }

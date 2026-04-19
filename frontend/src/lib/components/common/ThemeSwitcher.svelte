@@ -4,7 +4,6 @@
   const themes: { name: ThemeName; icon: string; label: string }[] = [
     { name: 'dark', icon: 'moon', label: 'Dark' },
     { name: 'light', icon: 'sun', label: 'Light' },
-    { name: 'gray', icon: 'circle', label: 'Gray' },
   ];
 </script>
 

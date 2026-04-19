@@ -21,7 +21,7 @@ from quip.models.usage import UsageLog
 from quip.models.budget import Budget
 from quip.schemas.chat import CompletionRequest, RegenerateRequest
 from quip.services.permissions import get_current_user
-from quip.services.config import get_setting
+from quip.services.config import get_setting, get_bool_setting
 from quip.providers import openrouter, ollama
 from quip.services.artifacts import extract_artifacts
 from quip.services.sandbox import sandbox_manager
@@ -34,12 +34,18 @@ from quip.services.tools import (
     GENERATE_IMAGE_TOOL,
     GENERATE_MUSIC_TOOL,
     SANDBOX_TOOLS,
+    SANDBOX_TOOL_NAMES,
     SEARCH_TOOLS,
     AccumulatedToolCall,
     accumulate_tool_calls,
-    execute_tool_call,
+    run_tool_call,
 )
-from quip.services.skill_store import list_skill_index, get_skill
+from quip.services.skill_store import (
+    list_skill_index,
+    get_skill,
+    build_enabled_skills,
+    build_tools_for_api,
+)
 from quip.services.geo import client_ip, resolve, format_location
 from quip.services.research import run_deep_research, ResearchEvent
 
@@ -177,7 +183,9 @@ async def _copy_attachments_to_sandbox(
     """Copy uploaded files into the sandbox workspace so the LLM tools can see them."""
     if not attachments:
         return
-    if get_setting("sandbox_enabled", "false") != "true":
+    from quip.services.skill_store import get_skill as _get_skill
+    _sb = _get_skill("sandbox")
+    if not (_sb and _sb.enabled):
         return
     if not sandbox_manager.available:
         return
@@ -318,7 +326,15 @@ async def _check_budget(user: User, db: AsyncSession) -> None:
     Uses a fresh session to guarantee we read the latest committed usage —
     SQLite's SERIALIZABLE isolation can otherwise hide commits from other
     sessions that occurred after the current session opened its transaction.
+    Fast-path skip: most installs run without any budget rows — one cheap
+    EXISTS query lets us short-circuit before opening a second session.
     """
+    has_budget = await db.execute(
+        select(Budget.id).where((Budget.user_id == user.id) | (Budget.user_id.is_(None))).limit(1)
+    )
+    if has_budget.scalar_one_or_none() is None:
+        return
+
     async with async_session() as fresh_db:
         # Check per-user budget, then global budget
         for user_filter in [Budget.user_id == user.id, Budget.user_id.is_(None)]:
@@ -360,6 +376,53 @@ async def _check_budget(user: User, db: AsyncSession) -> None:
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+# SSE coalescing: per-chunk emit costs ~25 bytes of envelope per token.
+# Buffering text events within a short window reduces stream traffic ~50%
+# while staying imperceptible to the user (~30ms is below the human visual
+# fusion threshold).
+_COALESCE_WINDOW = 0.03
+
+
+class _TextCoalescer:
+    """Accumulates streaming `content` / `reasoning` text and emits batched
+    SSE frames when the time window elapses or a flush is forced."""
+
+    __slots__ = ("_content", "_reasoning", "_last_flush")
+
+    def __init__(self) -> None:
+        self._content = ""
+        self._reasoning = ""
+        self._last_flush = 0.0
+
+    def add(self, content: str = "", reasoning: str = "") -> None:
+        if content:
+            self._content += content
+        if reasoning:
+            self._reasoning += reasoning
+
+    def maybe_flush(self) -> list[str]:
+        import time
+        now = time.monotonic()
+        if not self._content and not self._reasoning:
+            return []
+        if self._last_flush and (now - self._last_flush) < _COALESCE_WINDOW:
+            return []
+        return self.flush()
+
+    def flush(self) -> list[str]:
+        import time
+        out: list[str] = []
+        if self._reasoning:
+            out.append(_sse("reasoning", {"text": self._reasoning}))
+            self._reasoning = ""
+        if self._content:
+            out.append(_sse("content", {"text": self._content}))
+            self._content = ""
+        if out:
+            self._last_flush = time.monotonic()
+        return out
 
 
 def _is_ollama_model(model: str) -> bool:
@@ -581,24 +644,34 @@ async def chat_completion(
         )
         messages_for_history = list(msg_result.scalars().all())
 
+    # Single batched query for storage_paths of every attached file across the whole history.
+    # Avoids N+1 SELECTs that previously fired once per message-with-attachments.
+    all_file_ids: set[UUID] = set()
+    for m in messages_for_history:
+        for a in (m.meta or {}).get("attachments", []):
+            fid = a.get("file_id")
+            if fid:
+                try:
+                    all_file_ids.add(UUID(fid))
+                except (ValueError, TypeError):
+                    pass
+    file_path_map: dict[str, str] = {}
+    if all_file_ids:
+        files_result = await db.execute(select(File.id, File.storage_path).where(File.id.in_(all_file_ids)))
+        file_path_map = {str(fid): sp for fid, sp in files_result.all()}
+
     history = []
     all_history_attachments: list[dict] = []  # all user attachments across history for sandbox sync
     for m in messages_for_history:
         if not m.content:
             continue
         msg_dict = {"role": m.role, "content": m.content}
-        # Check for image attachments in message meta
         msg_attachments = (m.meta or {}).get("attachments", [])
-        # Add storage_path from DB for image rendering
         if msg_attachments:
-            file_ids_in_msg = [UUID(a["file_id"]) for a in msg_attachments if a.get("file_id")]
-            if file_ids_in_msg:
-                file_result = await db.execute(select(File).where(File.id.in_(file_ids_in_msg)))
-                file_map = {str(f.id): f.storage_path for f in file_result.scalars().all()}
-                enriched = [{**a, "storage_path": file_map.get(a["file_id"], "")} for a in msg_attachments]
-                msg_dict = _build_multimodal_message(msg_dict, enriched, is_ollama)
-                if m.role == "user":
-                    all_history_attachments.extend(enriched)
+            enriched = [{**a, "storage_path": file_path_map.get(a.get("file_id", ""), "")} for a in msg_attachments]
+            msg_dict = _build_multimodal_message(msg_dict, enriched, is_ollama)
+            if m.role == "user":
+                all_history_attachments.extend(enriched)
         # Inject previously generated image URLs into assistant message content so the model
         # can reference them in follow-up generate_image calls (multi-turn editing).
         if m.role == "assistant" and m.tool_calls:
@@ -615,18 +688,16 @@ async def chat_completion(
                 msg_dict["content"] = (msg_dict.get("content") or "") + url_note
         history.append(msg_dict)
 
-    # Sync all user attachments from conversation history into sandbox workspace (idempotent).
-    # This ensures every file the user ever attached is available when the model calls sandbox tools,
-    # regardless of which message it came from.
-    if all_history_attachments:
-        await _copy_attachments_to_sandbox(user, chat, all_history_attachments, db)
+    # History attachments were already copied during their original turn —
+    # `_copy_attachments_to_sandbox` is idempotent but each file does an
+    # in-container size check, so re-syncing all of history per turn is wasted
+    # I/O before first byte. We only need to copy the *new* attachments from
+    # this turn (handled above on line ~534).
 
     # Fast search mode bypasses normal tool/prompt assembly — only web_search + read_url,
     # Perplexity-style prompt, no artifacts, no sandbox, tighter round budget.
-    search_mode = (
-        req.mode_hint == "search"
-        and get_setting("search_enabled", "false") == "true"
-    )
+    search_enabled = get_bool_setting("search_enabled", False)
+    search_mode = req.mode_hint == "search" and search_enabled
 
     # Admin can configure cheap model overrides for search/research to reduce cost.
     # chat.model keeps req.model so the UI shows the user's chosen model.
@@ -640,32 +711,16 @@ async def chat_completion(
         if _rm:
             effective_model = _rm
 
-    # Assemble skill index — the model only sees names + one-liners here.
-    # Full bodies arrive on demand via the `load_skill` tool.
-    enabled_skills: set[str] = set()
-    if search_mode:
-        enabled_skills.add("fast_search")
-    else:
-        if get_setting("search_enabled", "false") == "true":
-            enabled_skills.add("web_search")
-        if get_setting("artifacts_enabled", "true") == "true":
-            enabled_skills.update(ARTIFACT_SKILL_NAMES)
-        if get_setting("sandbox_enabled", "false") == "true" and sandbox_manager.available:
-            enabled_skills.add("sandbox")
-    # Image generation
-    if get_setting("image_model", ""):
-        enabled_skills.add("image_generation")
-    # Add widget skills from skill_store
-    from quip.services.skill_store import _skills_cache as _sc
-    for _sid, _sk in _sc.items():
-        if _sk.enabled and not _sk.is_internal and _sk.category == "widget":
-            enabled_skills.add(_sid)
-
+    enabled_skills = build_enabled_skills(
+        search_mode=search_mode,
+        search_enabled=search_enabled,
+        sandbox_available=sandbox_manager.available,
+    )
     locale, location = _resolve_runtime_context(request, user)
     system_prompt = _build_base_prompt(enabled_skills, locale=locale, location=location)
 
     # RAG context injection
-    if get_setting("rag_enabled", "true") == "true":
+    if get_bool_setting("rag_enabled", True):
         try:
             rag_chunks = await retrieve_context(req.message, chat.id, db)
             if rag_chunks:
@@ -689,24 +744,16 @@ async def chat_completion(
     user_id = user.id
     user_parent_id_str = str(user_msg.parent_id) if user_msg.parent_id else None
 
-    # Check if sandbox tools are enabled
-    sandbox_enabled = (
-        get_setting("sandbox_enabled", "false") == "true"
-        and sandbox_manager.available
+    tools = build_tools_for_api(
+        base_tools=[LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL],
+        image_tool=GENERATE_IMAGE_TOOL,
+        music_tool=GENERATE_MUSIC_TOOL,
+        sandbox_tools=SANDBOX_TOOLS,
+        search_tools=SEARCH_TOOLS,
+        search_mode=search_mode,
+        search_enabled=search_enabled,
+        sandbox_available=sandbox_manager.available,
     )
-    tools_for_api: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
-    if get_setting("image_model", ""):
-        tools_for_api.append(GENERATE_IMAGE_TOOL)
-    tools_for_api.append(GENERATE_MUSIC_TOOL)
-    if search_mode:
-        # Fast search mode — web_search + read_url only, no sandbox/artifacts
-        tools_for_api.extend(SEARCH_TOOLS)
-    else:
-        if sandbox_enabled:
-            tools_for_api.extend(SANDBOX_TOOLS)
-        if get_setting("search_enabled", "false") == "true":
-            tools_for_api.extend(SEARCH_TOOLS)
-    tools = tools_for_api
     logger.info("Tools for API: %s", [t["function"]["name"] for t in tools] if tools else None)
 
     async def generate():
@@ -719,6 +766,7 @@ async def chat_completion(
         max_rounds = 3 if search_mode else 12
         all_tool_executions: list[dict] = []
         accumulated_images: dict[str, dict] = {}
+        emitted_image_count = 0
         # Per-session cache — repeated load_skill calls for the same name
         # return a cheap "already_loaded" hint instead of repeating the body.
         loaded_skills: set[str] = set()
@@ -726,7 +774,7 @@ async def chat_completion(
         yield _sse("chat", {"chat_id": chat_id, "user_message_id": user_msg_id, "message_id": assistant_msg_id, "user_parent_id": user_parent_id_str})
 
         # --- Deep Research mode ---
-        if req.deep_research and get_setting("search_enabled", "false") == "true" and get_setting("research_enabled", "true") == "true":
+        if req.deep_research and search_enabled and get_bool_setting("research_enabled", True):
             queue: asyncio.Queue[ResearchEvent] = asyncio.Queue()
 
             async def _emit(event: ResearchEvent) -> None:
@@ -852,6 +900,8 @@ async def chat_completion(
             return
         # --- End Deep Research mode ---
 
+        coalescer = _TextCoalescer()
+
         for round_num in range(max_rounds):
             round_content = ""
             round_reasoning = ""
@@ -876,6 +926,8 @@ async def chat_completion(
 
             async for chunk in stream:
                 if chunk.error:
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("error", {"message": chunk.error})
                     if full_content:
                         await _save_assistant_message(
@@ -887,11 +939,15 @@ async def chat_completion(
 
                 if chunk.reasoning:
                     round_reasoning += chunk.reasoning
-                    yield _sse("reasoning", {"text": chunk.reasoning})
+                    coalescer.add(reasoning=chunk.reasoning)
 
                 if chunk.content:
                     round_content += chunk.content
-                    yield _sse("content", {"text": chunk.content})
+                    coalescer.add(content=chunk.content)
+
+                if chunk.content or chunk.reasoning:
+                    for ev in coalescer.maybe_flush():
+                        yield ev
 
                 if chunk.tool_calls:
                     accumulate_tool_calls(accumulated_tool_calls, chunk.tool_calls)
@@ -900,10 +956,14 @@ async def chat_completion(
                     used_model = chunk.model
 
                 if chunk.finish_reason:
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("finish", {"reason": chunk.finish_reason})
 
                 if chunk.usage:
                     last_usage = chunk.usage
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("usage", {
                         "prompt_tokens": chunk.usage.prompt_tokens,
                         "completion_tokens": chunk.usage.completion_tokens,
@@ -911,6 +971,9 @@ async def chat_completion(
                         "cost": chunk.usage.cost,
                         "provider": chunk.usage.provider,
                     })
+
+            for ev in coalescer.flush():
+                yield ev
 
             full_content += round_content
             full_reasoning += round_reasoning
@@ -938,8 +1001,7 @@ async def chat_completion(
             messages_for_api.append(assistant_api_msg)
 
             # Get or create sandbox only if a sandbox tool is being called
-            _SANDBOX_TOOL_NAMES = {"sandbox_execute", "sandbox_install", "sandbox_write_file", "sandbox_read_file", "sandbox_list_files"}
-            if not sandbox and any(tc.function_name in _SANDBOX_TOOL_NAMES for tc in accumulated_tool_calls):
+            if not sandbox and any(tc.function_name in SANDBOX_TOOL_NAMES for tc in accumulated_tool_calls):
                 async with async_session() as sandbox_db:
                     sandbox = await sandbox_manager.get_or_create(user_id, sandbox_db)
                     await sandbox_manager.ensure_chat_dir(sandbox, chat_id)
@@ -957,21 +1019,16 @@ async def chat_completion(
             # transactions don't clash. asyncio.gather preserves input order in
             # results regardless of completion order, so downstream processing
             # (image accumulation, message history append) stays deterministic.
-            async def _run_one_tool(tc: AccumulatedToolCall) -> str:
-                async with async_session() as tool_db:
-                    try:
-                        return await execute_tool_call(
-                            sandbox_manager, sandbox, chat_id,
-                            tc.function_name, tc.function_arguments,
-                            db=tool_db,
-                            loaded_skills=loaded_skills,
-                        )
-                    except Exception as e:
-                        return json.dumps({"error": f"{type(e).__name__}: {e}"})
-
-            tool_results = await asyncio.gather(
-                *(_run_one_tool(tc) for tc in accumulated_tool_calls)
-            )
+            tool_results = await asyncio.gather(*(
+                run_tool_call(
+                    tc,
+                    sandbox_manager=sandbox_manager,
+                    sandbox=sandbox,
+                    chat_id=chat_id,
+                    loaded_skills=loaded_skills,
+                )
+                for tc in accumulated_tool_calls
+            ))
 
             # Process results in stable order
             for tc, result_str in zip(accumulated_tool_calls, tool_results):
@@ -1015,11 +1072,13 @@ async def chat_completion(
                     "content": result_str,
                 })
 
-            # Emit accumulated image snapshot once after the parallel batch so
-            # the frontend has URLs before the model streams content with
-            # search-image:K markers.
+            # Emit only NEW images this round so we don't re-send the whole grid
+            # every batch. Frontend appends and keeps its own cap of 10.
             if search_mode and accumulated_images:
-                yield _sse("search_images", {"images": list(accumulated_images.values())[:10]})
+                new_imgs = list(accumulated_images.values())[emitted_image_count:10]
+                if new_imgs:
+                    yield _sse("search_images", {"images": new_imgs, "append": True})
+                    emitted_image_count = min(len(accumulated_images), 10)
 
             # Continue loop — provider will be called again with tool results
 
@@ -1135,39 +1194,38 @@ async def regenerate_message(
         curr = id_to_msg.get(curr.parent_id) if curr.parent_id else None
     chain.reverse()
 
+    all_file_ids: set[UUID] = set()
+    for m in chain:
+        for a in (m.meta or {}).get("attachments", []):
+            fid = a.get("file_id")
+            if fid:
+                try:
+                    all_file_ids.add(UUID(fid))
+                except (ValueError, TypeError):
+                    pass
+    file_path_map: dict[str, str] = {}
+    if all_file_ids:
+        files_result = await db.execute(select(File.id, File.storage_path).where(File.id.in_(all_file_ids)))
+        file_path_map = {str(fid): sp for fid, sp in files_result.all()}
+
     history = []
-    regen_attachments_for_sandbox: list[dict] = []
     for m in chain:
         if not m.content:
             continue
         msg_dict = {"role": m.role, "content": m.content}
         msg_attachments = (m.meta or {}).get("attachments", [])
         if msg_attachments:
-            file_ids_in_msg = [UUID(a["file_id"]) for a in msg_attachments if a.get("file_id")]
-            if file_ids_in_msg:
-                file_result = await db.execute(select(File).where(File.id.in_(file_ids_in_msg)))
-                file_map = {str(f.id): f.storage_path for f in file_result.scalars().all()}
-                enriched = [{**a, "storage_path": file_map.get(a["file_id"], "")} for a in msg_attachments]
-                msg_dict = _build_multimodal_message(msg_dict, enriched, is_ollama)
-                if m.role == "user":
-                    regen_attachments_for_sandbox.extend(enriched)
+            enriched = [{**a, "storage_path": file_path_map.get(a.get("file_id", ""), "")} for a in msg_attachments]
+            msg_dict = _build_multimodal_message(msg_dict, enriched, is_ollama)
         history.append(msg_dict)
+    # Files were copied to sandbox during their original turn — skip re-sync to save TTFB.
 
-    # Re-sync uploaded files into the sandbox workspace (idempotent).
-    await _copy_attachments_to_sandbox(user, chat, regen_attachments_for_sandbox, db)
-
-    regen_enabled_skills: set[str] = set()
-    if get_setting("search_enabled", "false") == "true":
-        regen_enabled_skills.add("web_search")
-    if get_setting("artifacts_enabled", "true") == "true":
-        regen_enabled_skills.update(ARTIFACT_SKILL_NAMES)
-    if get_setting("sandbox_enabled", "false") == "true" and sandbox_manager.available:
-        regen_enabled_skills.add("sandbox")
-    # Add widget skills from skill_store
-    from quip.services.skill_store import _skills_cache as _sc
-    for _sid, _sk in _sc.items():
-        if _sk.enabled and not _sk.is_internal and _sk.category == "widget":
-            regen_enabled_skills.add(_sid)
+    search_enabled = get_bool_setting("search_enabled", False)
+    regen_enabled_skills = build_enabled_skills(
+        search_mode=False,
+        search_enabled=search_enabled,
+        sandbox_available=sandbox_manager.available,
+    )
     regen_locale, regen_location = _resolve_runtime_context(request, user)
     system_prompt = _build_base_prompt(
         regen_enabled_skills, locale=regen_locale, location=regen_location
@@ -1191,19 +1249,16 @@ async def regenerate_message(
     new_msg_id = str(new_msg.id)
     user_id = user.id
 
-    regen_sandbox_enabled = (
-        get_setting("sandbox_enabled", "false") == "true"
-        and sandbox_manager.available
+    regen_tools = build_tools_for_api(
+        base_tools=[LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL],
+        image_tool=GENERATE_IMAGE_TOOL,
+        music_tool=GENERATE_MUSIC_TOOL,
+        sandbox_tools=SANDBOX_TOOLS,
+        search_tools=SEARCH_TOOLS,
+        search_mode=False,
+        search_enabled=search_enabled,
+        sandbox_available=sandbox_manager.available,
     )
-    regen_tools_list: list[dict] = [LOAD_SKILL_TOOL, WIDGET_TOOL, READ_URL_TOOL]
-    if get_setting("image_model", ""):
-        regen_tools_list.append(GENERATE_IMAGE_TOOL)
-    regen_tools_list.append(GENERATE_MUSIC_TOOL)
-    if regen_sandbox_enabled:
-        regen_tools_list.extend(SANDBOX_TOOLS)
-    if get_setting("search_enabled", "false") == "true":
-        regen_tools_list.extend(SEARCH_TOOLS)
-    regen_tools = regen_tools_list
 
     async def generate():
         full_content = ""
@@ -1217,7 +1272,7 @@ async def regenerate_message(
 
         yield _sse("chat", {"chat_id": chat_id, "message_id": new_msg_id})
 
-        _SANDBOX_TOOL_NAMES = {"sandbox_execute", "sandbox_install", "sandbox_write_file", "sandbox_read_file", "sandbox_list_files"}
+        coalescer = _TextCoalescer()
 
         while True:
             round_content = ""
@@ -1232,6 +1287,8 @@ async def regenerate_message(
 
             async for chunk in stream:
                 if chunk.error:
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("error", {"message": chunk.error})
                     if full_content:
                         await _save_assistant_message(new_msg_id, chat_id, user_id, full_content, used_model, last_usage, reasoning=full_reasoning, tool_executions=all_tool_executions or None)
@@ -1239,11 +1296,15 @@ async def regenerate_message(
 
                 if chunk.reasoning:
                     round_reasoning += chunk.reasoning
-                    yield _sse("reasoning", {"text": chunk.reasoning})
+                    coalescer.add(reasoning=chunk.reasoning)
 
                 if chunk.content:
                     round_content += chunk.content
-                    yield _sse("content", {"text": chunk.content})
+                    coalescer.add(content=chunk.content)
+
+                if chunk.content or chunk.reasoning:
+                    for ev in coalescer.maybe_flush():
+                        yield ev
 
                 if chunk.tool_calls:
                     accumulate_tool_calls(accumulated_tool_calls, chunk.tool_calls)
@@ -1252,10 +1313,14 @@ async def regenerate_message(
                     used_model = chunk.model
 
                 if chunk.finish_reason:
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("finish", {"reason": chunk.finish_reason})
 
                 if chunk.usage:
                     last_usage = chunk.usage
+                    for ev in coalescer.flush():
+                        yield ev
                     yield _sse("usage", {
                         "prompt_tokens": chunk.usage.prompt_tokens,
                         "completion_tokens": chunk.usage.completion_tokens,
@@ -1264,6 +1329,9 @@ async def regenerate_message(
                         "provider": chunk.usage.provider,
                     })
 
+            for ev in coalescer.flush():
+                yield ev
+
             full_content += round_content
             full_reasoning += round_reasoning
 
@@ -1271,7 +1339,7 @@ async def regenerate_message(
                 break
 
             # Ensure sandbox container exists when a sandbox tool is called
-            if not sandbox and any(tc.function_name in _SANDBOX_TOOL_NAMES for tc in accumulated_tool_calls):
+            if not sandbox and any(tc.function_name in SANDBOX_TOOL_NAMES for tc in accumulated_tool_calls):
                 async with async_session() as sandbox_db:
                     sandbox = await sandbox_manager.get_or_create(user_id, sandbox_db)
                     await sandbox_manager.ensure_chat_dir(sandbox, chat_id)
@@ -1289,18 +1357,16 @@ async def regenerate_message(
             for tc in accumulated_tool_calls:
                 yield _sse("tool_executing", {"id": tc.id, "name": tc.function_name, "arguments": tc.function_arguments})
 
-            async def _run_one_tool(tc: AccumulatedToolCall) -> str:
-                async with async_session() as tool_db:
-                    try:
-                        return await execute_tool_call(
-                            sandbox_manager, sandbox, chat_id,
-                            tc.function_name, tc.function_arguments,
-                            db=tool_db, loaded_skills=loaded_skills,
-                        )
-                    except Exception as e:
-                        return json.dumps({"error": f"{type(e).__name__}: {e}"})
-
-            tool_results = await asyncio.gather(*(_run_one_tool(tc) for tc in accumulated_tool_calls))
+            tool_results = await asyncio.gather(*(
+                run_tool_call(
+                    tc,
+                    sandbox_manager=sandbox_manager,
+                    sandbox=sandbox,
+                    chat_id=chat_id,
+                    loaded_skills=loaded_skills,
+                )
+                for tc in accumulated_tool_calls
+            ))
 
             for tc, result_str in zip(accumulated_tool_calls, tool_results):
                 try:

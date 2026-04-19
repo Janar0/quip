@@ -2,15 +2,21 @@
 
 Models are cached server-side (5 min for OpenRouter, 30s for Ollama)
 to avoid hitting external APIs on every page load.
+
+Responses are ETag-tagged with a short SHA-256 digest of the payload so the
+client can send `If-None-Match: <etag>` and get a 16-byte 304 when nothing
+changed — cheap re-validation on every page load without resending the list.
 """
+import hashlib
 import json
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Response
+from fastapi.responses import JSONResponse
 
 from quip.models.user import User
 from quip.services.permissions import get_current_user
-from quip.services.config import get_setting
+from quip.services.config import get_setting, get_bool_setting
 from quip.providers.openrouter import list_models as or_list_models
 from quip.providers.ollama import list_models as ollama_list_models
 
@@ -35,7 +41,10 @@ def _set_cached(key: str, data: list) -> None:
 
 
 @router.get("")
-async def get_available_models(user: User = Depends(get_current_user)):
+async def get_available_models(
+    user: User = Depends(get_current_user),
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+):
     models = []
 
     # OpenRouter models (cached 5 min)
@@ -97,12 +106,24 @@ async def get_available_models(user: User = Depends(get_current_user)):
             for m in models
         ]
 
-    return {"models": models, "default_model": get_setting("default_model") or None}
+    payload = {"models": models, "default_model": get_setting("default_model") or None}
+    etag = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:16]
+
+    # Client sent a matching ETag — nothing changed, return 304 (empty body).
+    if if_none_match and if_none_match.strip('"') == etag:
+        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+    return JSONResponse(
+        content=payload,
+        headers={"ETag": f'"{etag}"', "Cache-Control": "private, must-revalidate"},
+    )
 
 
 @router.get("/features")
 async def get_features(user: User = Depends(get_current_user)):
     """Return feature flags visible to all authenticated users."""
     return {
-        "search_enabled": get_setting("search_enabled", "false") == "true",
+        "search_enabled": get_bool_setting("search_enabled", False),
     }

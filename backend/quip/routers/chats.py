@@ -16,7 +16,7 @@ from quip.services.permissions import get_current_user
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
 
-@router.get("", response_model=list[ChatResponse])
+@router.get("", response_model=list[ChatResponse], response_model_exclude_none=True)
 async def list_chats(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -46,21 +46,32 @@ async def create_chat(
     return chat
 
 
-@router.get("/{chat_id}", response_model=ChatWithMessages)
+@router.get("/{chat_id}", response_model=ChatWithMessages, response_model_exclude_none=True)
 async def get_chat(
     chat_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=200, ge=1, le=1000),
+    before: int | None = Query(default=None, ge=0, description="Created-at unix-ms cursor; messages strictly older are returned"),
 ):
+    """Return chat metadata and a window of messages.
+
+    Default returns the most recent 200 messages. Pass `before=<unix_ms>` to
+    page backwards. Reduces payload on long chats from MBs to ~100KB.
+    """
     result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.user_id == user.id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    msgs = await db.execute(
-        select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
-    )
-    messages = msgs.scalars().all()
+    from datetime import datetime, timezone
+    q = select(Message).where(Message.chat_id == chat_id)
+    if before is not None:
+        q = q.where(Message.created_at < datetime.fromtimestamp(before / 1000, tz=timezone.utc))
+    q = q.order_by(Message.created_at.desc()).limit(limit)
+    msgs = await db.execute(q)
+    messages = list(msgs.scalars().all())
+    messages.reverse()  # caller expects ascending order
 
     return ChatWithMessages(
         id=chat.id,

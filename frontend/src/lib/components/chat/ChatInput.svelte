@@ -221,20 +221,14 @@
   </div>
 {/if}
 
-{#if variant === 'chat'}
-  <!-- Gradient fade above input: smooths the transition from the scrolling
-       message list behind the fixed composer. Skipped on the start screen
-       where there are no messages behind the input to fade against. -->
-  <div class="pointer-events-none h-6 -mb-6 relative z-10" style="background: linear-gradient(to top, var(--quip-bg), transparent)"></div>
-{/if}
 
 <form
   onsubmit={handleSubmit}
-  class="relative z-20 px-4 pb-4 pt-2"
+  class="relative px-4 pb-4 pt-2"
   aria-label="Chat input"
 >
-  <div class="max-w-3xl mx-auto">
-    <div class="backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/20" style="background: var(--quip-input-bg); border: 1px solid var(--quip-input-border)">
+  <div class="max-w-4xl mx-auto">
+    <div class="quip-glass-strong rounded-[20px]">
       <!-- Attachment preview strip -->
       {#if attachedFiles.length > 0}
         <div class="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto">
@@ -288,7 +282,7 @@
           id="chat-input"
           class="w-full min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:outline-none text-sm leading-relaxed"
           style="color: var(--quip-text); --tw-placeholder-opacity: 1"
-          placeholder={isDragOver ? $t('chat.dropFiles') : $t('home.startChat')}
+          placeholder={isDragOver ? $t('chat.dropFiles') : (variant === 'chat' ? $t('chat.replyPlaceholder') : $t('home.startChat'))}
           bind:value={text}
           bind:this={textareaEl}
           onkeydown={handleKeydown}
@@ -323,17 +317,11 @@
           />
 
           {#if $searchEnabled}
-            <div
-              class="flex items-center rounded-lg border text-xs ml-1 overflow-hidden"
-              style="border-color: var(--quip-border)"
-            >
-              {#each ['auto', 'search', 'research'] as const as m (m)}
+            <div class="quip-seg ml-1">
+              {#each ['auto', 'search'] as const as m (m)}
                 <button
                   type="button"
-                  class="px-2.5 py-1 transition-all active:scale-[0.95]"
-                  style={$modePreference === m
-                    ? 'background: var(--quip-bg-raised); color: var(--quip-text); font-weight: 500;'
-                    : 'color: var(--quip-text-muted);'}
+                  class={$modePreference === m ? 'on' : ''}
                   onclick={() => modePreference.set(m as ModePreference)}
                   disabled={$isStreaming}
                 >{$t(`chat.mode_${m}`)}</button>
@@ -347,22 +335,21 @@
           {#if $isStreaming}
             <button
               type="button"
-              class="p-2 rounded-xl border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-all active:scale-[0.92]"
+              class="quip-send-btn"
               onclick={stopGeneration}
               title={$t('chat.stopGeneration')}
               aria-label={$t('chat.stopGeneration')}
             >
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
             </button>
           {:else}
             <button
               type="submit"
-              class="p-2 rounded-xl disabled:opacity-30 transition-all active:scale-[0.92] disabled:active:scale-100"
-              style="background: var(--quip-btn-primary-bg); color: var(--quip-btn-primary-text)"
+              class="quip-send-btn"
               disabled={!text.trim() && !attachedFiles.some((a) => a.uploaded)}
               aria-label={$t('chat.sendMessage')}
             >
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
           {/if}
         </div>

@@ -15,7 +15,7 @@ from quip.models.usage import UsageLog
 from quip.models.budget import Budget
 from quip.models.user import User, Auth
 from quip.services.permissions import get_admin_user
-from quip.services.config import get_setting, set_setting, save_settings
+from quip.services.config import get_setting, set_setting, save_settings, get_bool_setting
 from quip.services.auth import hash_password
 from quip.providers.openrouter import list_models as or_list_models, get_key_info
 
@@ -28,20 +28,10 @@ class SettingsUpdate(BaseModel):
     openrouter_api_key: str | None = None
     ollama_url: str | None = None
     system_prompt: str | None = None
-    gismeteo_api_key: str | None = None
     model_whitelist: list[str] | None = None
-    artifacts_enabled: bool | None = None
-    sandbox_enabled: bool | None = None
-    sandbox_memory_limit: str | None = None
-    sandbox_cpu_limit: str | None = None
-    sandbox_idle_timeout: int | None = None
-    sandbox_exec_timeout: int | None = None
     rag_enabled: bool | None = None
     search_enabled: bool | None = None
     research_enabled: bool | None = None
-    search_provider: str | None = None
-    tavily_api_key: str | None = None
-    searxng_url: str | None = None
     embedding_provider: str | None = None
     embedding_model: str | None = None
     rag_chunk_size: int | None = None
@@ -52,8 +42,6 @@ class SettingsUpdate(BaseModel):
     research_model: str | None = None
     title_model: str | None = None
     default_model: str | None = None
-    image_model: str | None = None
-    music_model: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -61,20 +49,10 @@ class SettingsResponse(BaseModel):
     openrouter_key_info: dict | None = None
     ollama_url: str = "http://localhost:11434"
     system_prompt: str = ""
-    gismeteo_api_key_set: bool = False
     model_whitelist: list[str] = []
-    artifacts_enabled: bool = True
-    sandbox_enabled: bool = False
-    sandbox_memory_limit: str = "512m"
-    sandbox_cpu_limit: str = "1.0"
-    sandbox_idle_timeout: int = 600
-    sandbox_exec_timeout: int = 30
     rag_enabled: bool = True
     search_enabled: bool = False
     research_enabled: bool = True
-    search_provider: str = "tavily"
-    tavily_api_key_set: bool = False
-    searxng_url: str = ""
     embedding_provider: str = "openrouter"
     embedding_model: str = "openai/text-embedding-3-small"
     rag_chunk_size: int = 512
@@ -85,8 +63,6 @@ class SettingsResponse(BaseModel):
     research_model: Optional[str] = None
     title_model: Optional[str] = None
     default_model: Optional[str] = None
-    image_model: Optional[str] = None
-    music_model: Optional[str] = None
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -102,20 +78,10 @@ async def get_settings(user: User = Depends(get_admin_user)):
         openrouter_key_info=key_info,
         ollama_url=get_setting("ollama_url", "http://localhost:11434"),
         system_prompt=get_setting("system_prompt"),
-        gismeteo_api_key_set=bool(get_setting("gismeteo_api_key")),
         model_whitelist=whitelist,
-        artifacts_enabled=get_setting("artifacts_enabled", "true") == "true",
-        sandbox_enabled=get_setting("sandbox_enabled", "false") == "true",
-        sandbox_memory_limit=get_setting("sandbox_memory_limit", "512m"),
-        sandbox_cpu_limit=get_setting("sandbox_cpu_limit", "1.0"),
-        sandbox_idle_timeout=int(get_setting("sandbox_idle_timeout", "600")),
-        sandbox_exec_timeout=int(get_setting("sandbox_exec_timeout", "30")),
-        rag_enabled=get_setting("rag_enabled", "true") == "true",
-        search_enabled=get_setting("search_enabled", "false") == "true",
-        research_enabled=get_setting("research_enabled", "true") == "true",
-        search_provider=get_setting("search_provider", "tavily"),
-        tavily_api_key_set=bool(get_setting("tavily_api_key")),
-        searxng_url=get_setting("searxng_url", ""),
+        rag_enabled=get_bool_setting("rag_enabled", True),
+        search_enabled=get_bool_setting("search_enabled", False),
+        research_enabled=get_bool_setting("research_enabled", True),
         embedding_provider=get_setting("embedding_provider", "openrouter"),
         embedding_model=get_setting("embedding_model", "openai/text-embedding-3-small"),
         rag_chunk_size=int(get_setting("rag_chunk_size", "512")),
@@ -126,71 +92,22 @@ async def get_settings(user: User = Depends(get_admin_user)):
         research_model=get_setting("research_model") or None,
         title_model=get_setting("title_model") or None,
         default_model=get_setting("default_model") or None,
-        image_model=get_setting("image_model") or None,
-        music_model=get_setting("music_model") or None,
     )
+
+
+_JSON_SETTING_FIELDS = {"model_whitelist", "model_aliases"}
+_BOOL_SETTING_FIELDS = {"rag_enabled", "search_enabled", "research_enabled"}
 
 
 @router.put("/settings")
 async def update_settings(data: SettingsUpdate, user: User = Depends(get_admin_user)):
-    if data.openrouter_api_key is not None:
-        set_setting("openrouter_api_key", data.openrouter_api_key)
-    if data.ollama_url is not None:
-        set_setting("ollama_url", data.ollama_url)
-    if data.system_prompt is not None:
-        set_setting("system_prompt", data.system_prompt)
-    if data.gismeteo_api_key is not None:
-        set_setting("gismeteo_api_key", data.gismeteo_api_key)
-    if data.model_whitelist is not None:
-        set_setting("model_whitelist", json.dumps(data.model_whitelist))
-    if data.artifacts_enabled is not None:
-        set_setting("artifacts_enabled", "true" if data.artifacts_enabled else "false")
-    if data.sandbox_enabled is not None:
-        set_setting("sandbox_enabled", "true" if data.sandbox_enabled else "false")
-    if data.sandbox_memory_limit is not None:
-        set_setting("sandbox_memory_limit", data.sandbox_memory_limit)
-    if data.sandbox_cpu_limit is not None:
-        set_setting("sandbox_cpu_limit", data.sandbox_cpu_limit)
-    if data.sandbox_idle_timeout is not None:
-        set_setting("sandbox_idle_timeout", str(data.sandbox_idle_timeout))
-    if data.sandbox_exec_timeout is not None:
-        set_setting("sandbox_exec_timeout", str(data.sandbox_exec_timeout))
-    if data.rag_enabled is not None:
-        set_setting("rag_enabled", "true" if data.rag_enabled else "false")
-    if data.search_enabled is not None:
-        set_setting("search_enabled", "true" if data.search_enabled else "false")
-    if data.research_enabled is not None:
-        set_setting("research_enabled", "true" if data.research_enabled else "false")
-    if data.search_provider is not None:
-        set_setting("search_provider", data.search_provider)
-    if data.tavily_api_key is not None:
-        set_setting("tavily_api_key", data.tavily_api_key)
-    if data.searxng_url is not None:
-        set_setting("searxng_url", data.searxng_url)
-    if data.embedding_provider is not None:
-        set_setting("embedding_provider", data.embedding_provider)
-    if data.embedding_model is not None:
-        set_setting("embedding_model", data.embedding_model)
-    if data.rag_chunk_size is not None:
-        set_setting("rag_chunk_size", str(data.rag_chunk_size))
-    if data.rag_chunk_overlap is not None:
-        set_setting("rag_chunk_overlap", str(data.rag_chunk_overlap))
-    if data.rag_top_k is not None:
-        set_setting("rag_top_k", str(data.rag_top_k))
-    if data.model_aliases is not None:
-        set_setting("model_aliases", json.dumps(data.model_aliases))
-    if data.search_model is not None:
-        set_setting("search_model", data.search_model)
-    if data.research_model is not None:
-        set_setting("research_model", data.research_model)
-    if data.title_model is not None:
-        set_setting("title_model", data.title_model)
-    if data.default_model is not None:
-        set_setting("default_model", data.default_model)
-    if data.image_model is not None:
-        set_setting("image_model", data.image_model)
-    if data.music_model is not None:
-        set_setting("music_model", data.music_model)
+    for key, val in data.model_dump(exclude_none=True).items():
+        if key in _JSON_SETTING_FIELDS:
+            set_setting(key, json.dumps(val))
+        elif key in _BOOL_SETTING_FIELDS:
+            set_setting(key, "true" if val else "false")
+        else:
+            set_setting(key, str(val) if not isinstance(val, str) else val)
     await save_settings()
     return {"status": "ok"}
 

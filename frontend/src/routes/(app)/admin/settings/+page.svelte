@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { goto } from '$app/navigation';
   import { getSettings, updateSettings } from '$lib/api/admin';
 
   let apiKey = $state('');
@@ -9,18 +10,8 @@
   let keyInfo = $state<Record<string, unknown> | null>(null);
   let ollamaUrl = $state('http://localhost:11434');
   let systemPrompt = $state('');
-  let artifactsEnabled = $state(true);
-  let sandboxEnabled = $state(false);
-  let sandboxMemory = $state('512m');
-  let sandboxCpu = $state('1.0');
-  let sandboxTimeout = $state(10);
-  let sandboxExecTimeout = $state(30);
   let searchEnabled = $state(false);
   let researchEnabled = $state(true);
-  let searchProvider = $state('tavily');
-  let tavilyApiKey = $state('');
-  let tavilyKeyIsSet = $state(false);
-  let searxngUrl = $state('');
   let ragEnabled = $state(true);
   let embeddingProvider = $state('openrouter');
   let embeddingModel = $state('openai/text-embedding-3-small');
@@ -30,10 +21,6 @@
   let saving = $state(false);
   let loading = $state(true);
   let activeTab = $state<'api' | 'system' | 'tools'>('api');
-  let weatherKey = $state('');
-  let weatherKeyIsSet = $state(false);
-  let imageModel = $state('');
-  let musicModel = $state('');
 
   onMount(async () => {
     const settings = await getSettings();
@@ -41,26 +28,14 @@
     keyInfo = settings.openrouter_key_info;
     ollamaUrl = settings.ollama_url ?? 'http://localhost:11434';
     systemPrompt = settings.system_prompt ?? '';
-    weatherKeyIsSet = settings.gismeteo_api_key_set ?? false;
-    artifactsEnabled = settings.artifacts_enabled ?? true;
-    sandboxEnabled = settings.sandbox_enabled ?? false;
-    sandboxMemory = settings.sandbox_memory_limit ?? '512m';
-    sandboxCpu = settings.sandbox_cpu_limit ?? '1.0';
-    sandboxTimeout = Math.round((settings.sandbox_idle_timeout ?? 600) / 60);
-    sandboxExecTimeout = settings.sandbox_exec_timeout ?? 30;
     searchEnabled = settings.search_enabled ?? false;
     researchEnabled = settings.research_enabled ?? true;
-    searchProvider = settings.search_provider ?? 'tavily';
-    tavilyKeyIsSet = settings.tavily_api_key_set ?? false;
-    searxngUrl = settings.searxng_url ?? '';
     ragEnabled = settings.rag_enabled ?? true;
     embeddingProvider = settings.embedding_provider ?? 'openrouter';
     embeddingModel = settings.embedding_model ?? 'openai/text-embedding-3-small';
     ragChunkSize = settings.rag_chunk_size ?? 512;
     ragChunkOverlap = settings.rag_chunk_overlap ?? 64;
     ragTopK = settings.rag_top_k ?? 5;
-    imageModel = settings.image_model ?? '';
-    musicModel = settings.music_model ?? '';
     loading = false;
   });
 
@@ -93,36 +68,6 @@
     saving = false;
   }
 
-  async function toggleArtifacts() {
-    artifactsEnabled = !artifactsEnabled;
-    const ok = await updateSettings({ artifacts_enabled: artifactsEnabled });
-    if (!ok) {
-      artifactsEnabled = !artifactsEnabled;
-      toast.error($t('admin.failedToSave'));
-    }
-  }
-
-  async function toggleSandbox() {
-    sandboxEnabled = !sandboxEnabled;
-    const ok = await updateSettings({ sandbox_enabled: sandboxEnabled });
-    if (!ok) {
-      sandboxEnabled = !sandboxEnabled;
-      toast.error($t('admin.failedToSave'));
-    }
-  }
-
-  async function saveSandboxSettings() {
-    saving = true;
-    const ok = await updateSettings({
-      sandbox_memory_limit: sandboxMemory,
-      sandbox_cpu_limit: sandboxCpu,
-      sandbox_idle_timeout: sandboxTimeout * 60,
-      sandbox_exec_timeout: sandboxExecTimeout,
-    });
-    toast[ok ? 'success' : 'error'](ok ? $t('toast.sandboxSaved') : $t('admin.failedToSave'));
-    saving = false;
-  }
-
   async function toggleSearch() {
     searchEnabled = !searchEnabled;
     const ok = await updateSettings({ search_enabled: searchEnabled });
@@ -139,28 +84,6 @@
       researchEnabled = !researchEnabled;
       toast.error($t('admin.failedToSave'));
     }
-  }
-
-  async function saveSearchSettings() {
-    saving = true;
-    const data: Record<string, unknown> = { search_provider: searchProvider };
-    if (searchProvider === 'tavily' && tavilyApiKey.trim()) {
-      data.tavily_api_key = tavilyApiKey;
-    }
-    if (searchProvider === 'searxng') {
-      data.searxng_url = searxngUrl;
-    }
-    const ok = await updateSettings(data as Parameters<typeof updateSettings>[0]);
-    if (ok) {
-      toast.success($t('toast.settingsSaved'));
-      if (tavilyApiKey.trim()) {
-        tavilyKeyIsSet = true;
-        tavilyApiKey = '';
-      }
-    } else {
-      toast.error($t('admin.failedToSave'));
-    }
-    saving = false;
   }
 
   async function toggleRag() {
@@ -181,33 +104,6 @@
       rag_chunk_overlap: ragChunkOverlap,
       rag_top_k: ragTopK,
     });
-    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
-    saving = false;
-  }
-
-  async function saveWeatherKey() {
-    saving = true;
-    const ok = await updateSettings({ gismeteo_api_key: weatherKey });
-    if (ok) {
-      weatherKeyIsSet = true;
-      weatherKey = '';
-      toast.success($t('admin.settings.weatherApiKey') + ' saved');
-    } else {
-      toast.error($t('admin.failedToSave'));
-    }
-    saving = false;
-  }
-
-  async function saveImageModel() {
-    saving = true;
-    const ok = await updateSettings({ image_model: imageModel.trim() || null });
-    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
-    saving = false;
-  }
-
-  async function saveMusicModel() {
-    saving = true;
-    const ok = await updateSettings({ music_model: musicModel.trim() || null });
     toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
     saving = false;
   }
@@ -246,7 +142,6 @@
   {:else if activeTab === 'api'}
     <!-- ══ TAB: API & Models ══ -->
     <div class="space-y-5">
-      <!-- OpenRouter API Key -->
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
@@ -275,7 +170,6 @@
         </div>
       </section>
 
-      <!-- Key Details -->
       {#if keyInfo}
         <section class="card p-6 space-y-3">
           <h2 class="text-sm font-semibold opacity-60 uppercase tracking-wide">{$t('admin.keyDetails')}</h2>
@@ -291,7 +185,6 @@
         </section>
       {/if}
 
-      <!-- Ollama -->
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
@@ -303,13 +196,11 @@
           <button class="btn preset-filled-primary-500" onclick={saveOllama} disabled={saving}>{$t('common.save')}</button>
         </div>
       </section>
-
     </div>
 
   {:else if activeTab === 'system'}
     <!-- ══ TAB: System ══ -->
     <div class="space-y-5">
-      <!-- System Prompt -->
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -321,71 +212,21 @@
           {saving ? '...' : $t('common.save')}
         </button>
       </section>
-
-      <!-- Artifacts -->
-      <section class="card p-6 space-y-4">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-          <h2 class="text-lg font-semibold">{$t('admin.artifactsEnabled')}</h2>
-        </div>
-        <p class="text-sm opacity-40">{$t('admin.artifactsEnabledDesc')}</p>
-        <label class="flex items-center gap-3 cursor-pointer">
-          <input type="checkbox" class="checkbox" checked={artifactsEnabled} onchange={toggleArtifacts} />
-          <span class="text-sm">{artifactsEnabled ? $t('common.enabled') : $t('common.disabled')}</span>
-        </label>
-      </section>
     </div>
 
   {:else}
-    <!-- ══ TAB: Tools ══ -->
+    <!-- ══ TAB: Tools — only high-level toggles; per-skill config lives in /admin/skills ══ -->
     <div class="space-y-5">
-      <!-- Sandbox -->
-      <section class="card p-6 space-y-4">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-          <h2 class="text-lg font-semibold">{$t('admin.sandboxEnabled')}</h2>
-        </div>
-        <p class="text-sm opacity-40">{$t('admin.sandboxEnabledDesc')}</p>
-        <label class="flex items-center gap-3 cursor-pointer">
-          <input type="checkbox" class="checkbox" checked={sandboxEnabled} onchange={toggleSandbox} />
-          <span class="text-sm">{sandboxEnabled ? $t('common.enabled') : $t('common.disabled')}</span>
-        </label>
-
-        {#if sandboxEnabled}
-          <div class="grid grid-cols-2 gap-4 pt-2">
-            <label class="space-y-1">
-              <span class="text-xs opacity-50">{$t('admin.sandboxMemory')}</span>
-              <select class="select w-full" bind:value={sandboxMemory}>
-                <option value="256m">256 MB</option>
-                <option value="512m">512 MB</option>
-                <option value="1g">1 GB</option>
-                <option value="2g">2 GB</option>
-              </select>
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs opacity-50">{$t('admin.sandboxCpu')}</span>
-              <select class="select w-full" bind:value={sandboxCpu}>
-                <option value="0.5">0.5 CPU</option>
-                <option value="1.0">1.0 CPU</option>
-                <option value="2.0">2.0 CPU</option>
-              </select>
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs opacity-50">{$t('admin.sandboxTimeout')}</span>
-              <input type="number" class="input w-full" min="1" max="60" bind:value={sandboxTimeout} />
-            </label>
-            <label class="space-y-1">
-              <span class="text-xs opacity-50">{$t('admin.sandboxExecTimeout')}</span>
-              <input type="number" class="input w-full" min="5" max="300" bind:value={sandboxExecTimeout} />
-            </label>
-          </div>
-          <button class="btn preset-filled-primary-500" onclick={saveSandboxSettings} disabled={saving}>
-            {saving ? '...' : $t('common.save')}
-          </button>
-        {/if}
+      <section class="card p-6 space-y-3">
+        <h2 class="text-lg font-semibold">{$t('admin.tabs.skills')}</h2>
+        <p class="text-sm opacity-60">
+          Каждый инструмент / виджет / артефакт теперь настраивается на своей карточке в разделе
+          <button class="underline text-slate-300" onclick={() => goto('/admin/skills')}>Skills</button>:
+          API-ключи, модели, лимиты, шаблоны. Включение/выключение — тумблером на карточке.
+        </p>
       </section>
 
-      <!-- Web Search -->
+      <!-- Web Search master toggle -->
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -396,44 +237,6 @@
           <input type="checkbox" class="checkbox" checked={searchEnabled} onchange={toggleSearch} />
           <span class="text-sm">{searchEnabled ? $t('common.enabled') : $t('common.disabled')}</span>
         </label>
-
-        {#if searchEnabled}
-          <div class="space-y-4 pt-2">
-            <label class="space-y-1">
-              <span class="text-xs opacity-50">{$t('admin.searchProvider')}</span>
-              <select class="select w-full" bind:value={searchProvider}>
-                <option value="tavily">Tavily (API)</option>
-                <option value="searxng">SearXNG (self-hosted)</option>
-              </select>
-            </label>
-
-            {#if searchProvider === 'tavily'}
-              <div class="space-y-2">
-                {#if tavilyKeyIsSet}
-                  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
-                    <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
-                    {$t('admin.apiKeySet')}
-                  </span>
-                {/if}
-                <label class="space-y-1">
-                  <span class="text-xs opacity-50">{$t('admin.tavilyApiKey')}</span>
-                  <input type="password" class="input w-full" placeholder={tavilyKeyIsSet ? $t('admin.enterNewKey') : 'tvly-...'} bind:value={tavilyApiKey} />
-                  <p class="text-xs opacity-30">{$t('admin.getKeyAt')} <a href="https://tavily.com" target="_blank" class="text-slate-400 underline">tavily.com</a> {$t('admin.freeSearches')}</p>
-                </label>
-              </div>
-            {:else}
-              <label class="space-y-1">
-                <span class="text-xs opacity-50">{$t('admin.searxngUrl')}</span>
-                <input type="text" class="input w-full" placeholder="http://localhost:8080" bind:value={searxngUrl} />
-                <p class="text-xs opacity-30">{$t('admin.searxngDesc')}</p>
-              </label>
-            {/if}
-
-            <button class="btn preset-filled-primary-500" onclick={saveSearchSettings} disabled={saving}>
-              {saving ? '...' : $t('common.save')}
-            </button>
-          </div>
-        {/if}
       </section>
 
       <!-- Deep Research -->
@@ -491,70 +294,6 @@
             {saving ? '...' : $t('common.save')}
           </button>
         {/if}
-      </section>
-
-      <!-- Weather Widget API Key -->
-      <section class="card p-6 space-y-4">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 6a6 6 0 100 12 6 6 0 000-12z"/></svg>
-          <h2 class="text-lg font-semibold">{$t('admin.settings.widgetsSection')} — {$t('admin.settings.gismeteoApiKey')}</h2>
-        </div>
-        {#if weatherKeyIsSet}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
-            <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
-            {$t('admin.apiKeySet')}
-          </span>
-        {:else}
-          <p class="text-sm opacity-40">{$t('admin.getKeyAt')} <a href="https://gismeteo.ru/api/" target="_blank" class="text-slate-400 underline">gismeteo.ru/api</a></p>
-        {/if}
-        <div class="flex gap-2">
-          <input type="password" class="input flex-1" placeholder={weatherKeyIsSet ? $t('admin.enterNewKey') : 'Your Gismeteo API key...'} bind:value={weatherKey} />
-          <button class="btn preset-filled-primary-500" onclick={saveWeatherKey} disabled={saving || !weatherKey.trim()}>
-            {saving ? '...' : $t('common.save')}
-          </button>
-        </div>
-      </section>
-
-      <!-- Image Generation -->
-      <section class="card p-6 space-y-4">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-          <h2 class="text-lg font-semibold">{$t('admin.imageGeneration')}</h2>
-        </div>
-        <p class="text-sm opacity-60">{$t('admin.imageGenerationDesc')}</p>
-        {#if imageModel}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
-            <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
-            {$t('admin.imageModelEnabled')}: {imageModel}
-          </span>
-        {/if}
-        <div class="flex gap-2">
-          <input type="text" class="input flex-1 font-mono text-sm" placeholder={$t('admin.imageModelPlaceholder')} bind:value={imageModel} />
-          <button class="btn preset-filled-primary-500" onclick={saveImageModel} disabled={saving}>
-            {saving ? '...' : $t('common.save')}
-          </button>
-        </div>
-      </section>
-
-      <!-- Music Generation -->
-      <section class="card p-6 space-y-4">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-          <h2 class="text-lg font-semibold">Music Generation</h2>
-        </div>
-        <p class="text-sm opacity-60">OpenRouter model for the <code class="text-xs px-1 py-0.5 rounded bg-slate-800">generate_music</code> tool. Defaults to <code class="text-xs px-1 py-0.5 rounded bg-slate-800">google/lyria-3-clip-preview</code>.</p>
-        {#if musicModel}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
-            <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span></span>
-            Active: {musicModel}
-          </span>
-        {/if}
-        <div class="flex gap-2">
-          <input type="text" class="input flex-1 font-mono text-sm" placeholder="google/lyria-3-clip-preview" bind:value={musicModel} />
-          <button class="btn preset-filled-primary-500" onclick={saveMusicModel} disabled={saving}>
-            {saving ? '...' : $t('common.save')}
-          </button>
-        </div>
       </section>
     </div>
   {/if}

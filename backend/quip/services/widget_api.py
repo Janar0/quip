@@ -88,7 +88,8 @@ async def execute_widget_api(skill: Skill, params: dict) -> dict:
 
 async def _fetch_weather(params: dict) -> dict:
     """Fetch current weather + forecast from Gismeteo."""
-    api_key = get_setting("gismeteo_api_key", "")
+    from quip.services.skill_store import get_skill_setting
+    api_key = get_skill_setting("weather", "gismeteo_api_key", "") or get_setting("gismeteo_api_key", "")
     if not api_key:
         return {"error": "gismeteo_api_key is not configured — ask an admin to set it in Settings → Tools."}
 

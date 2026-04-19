@@ -12,6 +12,15 @@ from quip.providers.openrouter import ToolCallDelta
 from quip.services.sandbox import SandboxManager, ExecutionResult
 
 
+SANDBOX_TOOL_NAMES = {
+    "sandbox_execute",
+    "sandbox_install",
+    "sandbox_write_file",
+    "sandbox_read_file",
+    "sandbox_list_files",
+}
+
+
 LOAD_SKILL_TOOL = {
     "type": "function",
     "function": {
@@ -420,7 +429,8 @@ async def execute_tool_call(
         elif tool_name == "generate_image":
             from quip.services.image_gen import generate_image
             from quip.services.config import get_setting
-            model = get_setting("image_model", "") or "google/gemini-2.0-flash-exp:free"
+            from quip.services.skill_store import get_skill_setting
+            model = get_skill_setting("image_generation", "model", "") or "google/gemini-2.0-flash-exp:free"
             api_key = get_setting("openrouter_api_key", "")
             result = await generate_image(
                 prompt=args.get("prompt", ""),
@@ -479,3 +489,31 @@ async def execute_tool_call(
         return json.dumps({"error": str(e)})
     except Exception as e:
         return json.dumps({"error": f"Execution error: {str(e)}"})
+
+
+
+async def run_tool_call(
+    tc: AccumulatedToolCall,
+    *,
+    sandbox_manager: SandboxManager,
+    sandbox,
+    chat_id: str,
+    loaded_skills: set[str],
+) -> str:
+    """Execute one accumulated tool call inside its own DB session.
+
+    Centralizes error wrapping so chat_completion and regenerate_message share
+    one implementation instead of duplicating the nested helper.
+    """
+    from quip.database import async_session
+
+    async with async_session() as tool_db:
+        try:
+            return await execute_tool_call(
+                sandbox_manager, sandbox, chat_id,
+                tc.function_name, tc.function_arguments,
+                db=tool_db,
+                loaded_skills=loaded_skills,
+            )
+        except Exception as e:
+            return json.dumps({"error": f"{type(e).__name__}: {e}"})

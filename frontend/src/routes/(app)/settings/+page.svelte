@@ -77,11 +77,11 @@
       <div>
         <span class="text-sm font-medium">{$t('settings.theme') ?? 'Theme'}</span>
         <div class="flex gap-2 mt-2">
-          {#each ['dark', 'light', 'gray'] as t}
+          {#each ['dark', 'light'] as t}
             <button
               class="btn btn-sm {$theme === t ? 'preset-filled' : 'preset-outlined'}"
               onclick={() => setTheme(t as ThemeName)}
-            >{t === 'dark' ? 'Dark' : t === 'light' ? 'Light' : 'Gray'}</button>
+            >{t === 'dark' ? 'Dark' : 'Light'}</button>
           {/each}
         </div>
       </div>

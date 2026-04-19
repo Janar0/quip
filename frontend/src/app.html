@@ -4,20 +4,24 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>QUIP</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="apple-touch-icon" href="/favicon.svg" />
+		<meta name="theme-color" content="#060606" />
 		<link rel="preconnect" href="/api" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" />
-		<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+		<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 		<script>
 			(function() {
-				var t = localStorage.getItem('quip_theme') || 'gray';
-				if (t !== 'dark' && t !== 'light' && t !== 'gray') t = 'gray';
+				var t = localStorage.getItem('quip_theme') || 'dark';
+				if (t === 'gray') t = 'dark';
+				if (t !== 'dark' && t !== 'light') t = 'dark';
 				document.documentElement.dataset.theme = 'quip-' + t;
 				if (t !== 'light') document.documentElement.classList.add('dark');
 				// Inline background color so the splash screen matches the theme
 				// before the CSS file loads (prevents a flash of the wrong color).
-				var bg = t === 'light' ? '#ffffff' : t === 'gray' ? '#161616' : '#020617';
+				var bg = t === 'light' ? '#f2f2f4' : '#060606';
 				document.documentElement.style.background = bg;
 				document.documentElement.style.setProperty('--quip-splash-bg', bg);
 			})();

@@ -210,12 +210,15 @@
     {#if $showSidebar}
       <aside
         class="{isMobile ? 'fixed inset-y-0 left-0 z-30' : ''} w-64 border-r flex flex-col overflow-hidden shrink-0"
-        style="background: var(--quip-sidebar-bg, var(--quip-bg)); border-color: var(--quip-border)"
+        style="background: var(--quip-sidebar-bg, var(--quip-bg)); border-color: var(--quip-glass-border); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);"
         transition:fly={{ x: -260, duration: D3, easing: easeOut }}
       >
         <!-- Header: Logo + Collapse -->
-        <div class="h-14 flex items-center justify-between px-5 border-b shrink-0" style="border-color: var(--quip-border)">
-          <span class="text-lg font-bold tracking-tighter font-headline" style="color: var(--quip-text)">QUIP</span>
+        <div class="h-14 flex items-center justify-between px-4 shrink-0">
+          <span class="flex items-center gap-2.5">
+            <span class="quip-brand-mark">Q</span>
+            <span class="font-headline text-[15px] font-extrabold tracking-tight" style="color: var(--quip-text)">QUIP</span>
+          </span>
           <button
             class="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded-lg transition-colors"
             onclick={toggleSidebar}
@@ -226,11 +229,11 @@
         </div>
 
         <!-- New Chat Button -->
-        <div class="px-3 pt-4 pb-2 shrink-0">
+        <div class="px-3 pt-2 pb-2 shrink-0">
           <a
             href="/chat"
-            class="flex items-center justify-between w-full px-3 py-2.5 rounded-lg transition-all active:scale-[0.98] group text-sm font-medium"
-            style="background: var(--quip-bg-raised); border: 1px solid var(--quip-border-strong); color: var(--quip-text)"
+            class="flex items-center justify-between w-full px-3 py-2.5 rounded-[11px] transition-all active:scale-[0.98] group text-[13.5px] font-medium hover:bg-white/[.06]"
+            style="background: rgba(255,255,255,.03); border: 1px solid var(--quip-border-strong); color: var(--quip-text); backdrop-filter: blur(6px);"
             onclick={clearSearch}
           >
             <span class="flex items-center gap-2.5">
@@ -404,7 +407,7 @@
       <!-- Hamburger button when sidebar is hidden -->
       {#if !$showSidebar}
         <button
-          class="fixed top-3 left-3 z-10 p-2 rounded-lg transition-colors backdrop-blur-sm"
+          class="fixed top-3 left-3 z-20 p-2 rounded-lg transition-colors backdrop-blur-sm"
           style="background: var(--quip-input-bg); border: 1px solid var(--quip-border); color: var(--quip-text-dim)"
           onclick={toggleSidebar}
           aria-label="Open sidebar"

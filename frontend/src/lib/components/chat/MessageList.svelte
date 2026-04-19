@@ -59,7 +59,7 @@
   });
 </script>
 
-<div bind:this={container} class="flex-1 overflow-y-auto py-6 relative" onscroll={checkScroll}>
+<div bind:this={container} class="flex-1 overflow-y-auto pt-20 pb-44 relative" onscroll={checkScroll}>
   <div class="max-w-4xl mx-auto w-full space-y-8">
     {#each thread as message (message.id)}
       <div>
@@ -91,7 +91,8 @@
 
   {#if !isAtBottom}
     <button
-      class="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 p-2 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 backdrop-blur-sm transition-all shadow-lg text-slate-300"
+      class="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 p-1.5 rounded-full transition-all text-slate-400 hover:text-slate-200"
+      style="background: rgba(22,22,26,0.5); border: 1px solid var(--quip-glass-border); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4);"
       onclick={scrollToBottom}
       title={$t('chat.scrollToBottom')}
       aria-label={$t('chat.scrollToBottom')}

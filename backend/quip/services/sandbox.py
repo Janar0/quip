@@ -61,6 +61,9 @@ def _validate_path(chat_id: str, path: str) -> str:
 
 class SandboxManager:
     def __init__(self):
+        # Cache of (container_id, chat_id) tuples for which mkdir already ran
+        # this process. Eliminates a Docker exec on every chat turn.
+        self._chat_dirs_ready: set[tuple[str, str]] = set()
         if not _DOCKER_AVAILABLE:
             logger.warning("Docker SDK not installed (pip install docker)")
             self.client = None
@@ -118,8 +121,9 @@ class SandboxManager:
     ) -> str:
         """Create and start a Docker container (sync, run in thread)."""
         image = image_tag or SANDBOX_IMAGE
-        mem_limit = get_setting("sandbox_memory_limit", "512m")
-        cpu_limit = float(get_setting("sandbox_cpu_limit", "1.0"))
+        from quip.services.skill_store import get_skill_setting
+        mem_limit = get_skill_setting("sandbox", "memory_limit", None) or get_setting("sandbox_memory_limit", "512m")
+        cpu_limit = float(get_skill_setting("sandbox", "cpu_limit", None) or get_setting("sandbox_cpu_limit", "1.0"))
 
         # Remove old container if exists
         try:
@@ -194,9 +198,13 @@ class SandboxManager:
             await db.commit()
 
     async def ensure_chat_dir(self, sandbox: Sandbox, chat_id: str) -> None:
-        """Create chat subdirectory in workspace if it doesn't exist."""
+        """Create chat subdirectory in workspace if it doesn't exist (cached)."""
         safe_id = str(chat_id).replace("/", "").replace("..", "")
+        cache_key = (str(sandbox.container_id or ""), safe_id)
+        if cache_key in self._chat_dirs_ready:
+            return
         await self._exec(sandbox, f"mkdir -p /workspace/{safe_id}")
+        self._chat_dirs_ready.add(cache_key)
 
     async def execute(
         self,
@@ -207,7 +215,8 @@ class SandboxManager:
         timeout: int = 30,
     ) -> ExecutionResult:
         """Execute code in the sandbox, within the chat's directory."""
-        max_timeout = int(get_setting("sandbox_exec_timeout", "30"))
+        from quip.services.skill_store import get_skill_setting
+        max_timeout = int(get_skill_setting("sandbox", "exec_timeout", None) or get_setting("sandbox_exec_timeout", "30"))
         timeout = min(timeout, max_timeout)
         workdir = f"/workspace/{chat_id}"
 
@@ -557,7 +566,8 @@ async def sandbox_cleanup_loop() -> None:
             if not sandbox_manager.available:
                 continue
 
-            timeout_seconds = int(get_setting("sandbox_idle_timeout", "600"))
+            from quip.services.skill_store import get_skill_setting
+            timeout_seconds = int(get_skill_setting("sandbox", "idle_timeout", None) or get_setting("sandbox_idle_timeout", "600"))
             cutoff = datetime.now(timezone.utc).timestamp() - timeout_seconds
 
             async with async_session() as db:

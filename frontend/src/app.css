@@ -215,60 +215,86 @@
 	--color-surface-contrast-950: var(--color-surface-contrast-light);
 }
 
-/* ── Dark Theme (Slate Blue-Gray) ─────────────────────────────────── */
+/* ── Dark Theme (Liquid Glass v5) ──────────────────────────────────── */
 [data-theme='quip-dark'] {
-	--quip-bg: #020617;
-	--quip-sidebar-bg: #020617;
-	--quip-bg-raised: #0f172a;
-	--quip-bg-elevated: rgba(30, 41, 59, 0.5);
-	--quip-input-bg: rgba(15, 23, 42, 0.8);
-	--quip-input-border: rgba(30, 41, 59, 0.6);
-	--quip-user-msg: rgba(30, 41, 59, 0.8);
-	--quip-text: #f8fafc;
-	--quip-text-dim: #94a3b8;
-	--quip-text-muted: #475569;
-	--quip-border: rgba(30, 41, 59, 0.6);
-	--quip-border-strong: #1e293b;
-	--quip-hover: rgba(148, 163, 184, 0.08);
-	--quip-scrollbar: #1e293b;
-	--quip-scrollbar-hover: #334155;
-	--quip-code-bg: rgba(15, 23, 42, 0.8);
-	--quip-code-border: rgba(30, 41, 59, 0.6);
-	--quip-link: #94a3b8;
-	--quip-link-hover: #cbd5e1;
-	--quip-gradient-from: #0b1120;
-	--quip-gradient-to: #020617;
-	--quip-glow: rgba(148, 163, 184, 0.04);
-	--quip-btn-primary-bg: #f1f5f9;
-	--quip-btn-primary-text: #0f172a;
+	--quip-bg: #0a0a0a;
+	--quip-body-bg: #060606;
+	--quip-sidebar-bg: rgba(8, 8, 10, 0.55);
+	--quip-bg-raised: rgba(30, 30, 34, 0.55);
+	--quip-bg-elevated: rgba(40, 40, 46, 0.55);
+	--quip-glass-bg: rgba(22, 22, 26, 0.42);
+	--quip-glass-border: rgba(255, 255, 255, 0.07);
+	--quip-glass-border-strong: rgba(255, 255, 255, 0.12);
+	--quip-glass-highlight: rgba(255, 255, 255, 0.08);
+	--quip-input-bg: rgba(22, 22, 26, 0.5);
+	--quip-input-border: rgba(255, 255, 255, 0.08);
+	--quip-user-msg: rgba(30, 30, 34, 0.55);
+	--quip-text: #f5f5f5;
+	--quip-text-dim: #a3a3a3;
+	--quip-text-muted: #6b6b74;
+	--quip-border: rgba(255, 255, 255, 0.06);
+	--quip-border-strong: rgba(255, 255, 255, 0.10);
+	--quip-hover: rgba(255, 255, 255, 0.05);
+	--quip-scrollbar: rgba(255, 255, 255, 0.1);
+	--quip-scrollbar-hover: rgba(255, 255, 255, 0.2);
+	--quip-code-bg: rgba(10, 10, 12, 0.8);
+	--quip-code-border: rgba(255, 255, 255, 0.06);
+	--quip-link: #c4c8d2;
+	--quip-link-hover: #f5f5f5;
+	--quip-gradient-from: #0a0a0c;
+	--quip-gradient-to: #060606;
+	--quip-glow: rgba(165, 180, 252, 0.15);
+	--quip-btn-primary-bg: #ffffff;
+	--quip-btn-primary-text: #0a0a0a;
+	--quip-aurora-1: rgba(165, 180, 252, 0.34);
+	--quip-aurora-2: rgba(217, 70, 239, 0.14);
+	--quip-aurora-3: rgba(56, 189, 248, 0.12);
+	--quip-aurora-opacity: 0.95;
+	--quip-hero-gradient: linear-gradient(180deg, #ffffff 0%, #d7d9e0 55%, #8f93a0 100%);
+	--quip-noise-blend: overlay;
+	--quip-noise-opacity: 0.9;
+	--quip-success: #4ade80;
 }
 
-/* ── Light Theme (Clean White) ────────────────────────────────────── */
+/* ── Light Theme (Liquid Glass v5 — bright) ────────────────────────── */
 [data-theme='quip-light'] {
-	--quip-bg: #ffffff;
-	--quip-sidebar-bg: #ffffff;
-	--quip-bg-raised: #f8fafc;
-	--quip-bg-elevated: rgba(241, 245, 249, 0.7);
-	--quip-input-bg: rgba(255, 255, 255, 0.9);
-	--quip-input-border: rgba(203, 213, 225, 0.5);
-	--quip-user-msg: #f1f5f9;
-	--quip-text: #0f172a;
-	--quip-text-dim: #475569;
-	--quip-text-muted: #94a3b8;
-	--quip-border: rgba(203, 213, 225, 0.5);
-	--quip-border-strong: #e2e8f0;
-	--quip-hover: rgba(15, 23, 42, 0.04);
-	--quip-scrollbar: #cbd5e1;
-	--quip-scrollbar-hover: #94a3b8;
-	--quip-code-bg: #f8fafc;
-	--quip-code-border: rgba(203, 213, 225, 0.5);
-	--quip-link: #475569;
-	--quip-link-hover: #1e293b;
-	--quip-gradient-from: #f8fafc;
-	--quip-gradient-to: #ffffff;
-	--quip-glow: rgba(100, 116, 139, 0.06);
-	--quip-btn-primary-bg: #0f172a;
-	--quip-btn-primary-text: #f8fafc;
+	--quip-bg: #f7f7f8;
+	--quip-body-bg: #ececee;
+	--quip-sidebar-bg: rgba(255, 255, 255, 0.6);
+	--quip-bg-raised: rgba(255, 255, 255, 0.7);
+	--quip-bg-elevated: rgba(255, 255, 255, 0.85);
+	--quip-glass-bg: rgba(255, 255, 255, 0.55);
+	--quip-glass-border: rgba(10, 10, 14, 0.08);
+	--quip-glass-border-strong: rgba(10, 10, 14, 0.12);
+	--quip-glass-highlight: rgba(255, 255, 255, 0.6);
+	--quip-input-bg: rgba(255, 255, 255, 0.75);
+	--quip-input-border: rgba(10, 10, 14, 0.10);
+	--quip-user-msg: rgba(255, 255, 255, 0.75);
+	--quip-text: #0f0f12;
+	--quip-text-dim: #5a5d66;
+	--quip-text-muted: #8b8f99;
+	--quip-border: rgba(10, 10, 14, 0.08);
+	--quip-border-strong: rgba(10, 10, 14, 0.14);
+	--quip-hover: rgba(10, 10, 14, 0.04);
+	--quip-scrollbar: rgba(10, 10, 14, 0.15);
+	--quip-scrollbar-hover: rgba(10, 10, 14, 0.3);
+	--quip-code-bg: rgba(245, 245, 247, 0.85);
+	--quip-code-border: rgba(10, 10, 14, 0.08);
+	--quip-link: #4b4f5a;
+	--quip-link-hover: #0f0f12;
+	--quip-gradient-from: #f7f7f8;
+	--quip-gradient-to: #ececee;
+	--quip-glow: rgba(99, 102, 241, 0.10);
+	--quip-btn-primary-bg: #0f0f12;
+	--quip-btn-primary-text: #f5f5f5;
+	--quip-aurora-1: rgba(99, 102, 241, 0.18);
+	--quip-aurora-2: rgba(217, 70, 239, 0.10);
+	--quip-aurora-3: rgba(56, 189, 248, 0.10);
+	--quip-aurora-opacity: 0.55;
+	--quip-hero-gradient: linear-gradient(180deg, #1a1a1f 0%, #4a4d57 55%, #8b8f99 100%);
+	--quip-noise-blend: multiply;
+	--quip-noise-opacity: 0.35;
+	--quip-success: #16a34a;
 }
 
 /* ── Gray Theme (Neutral Dark) ────────────────────────────────────── */
@@ -500,4 +526,420 @@
   content: ''; position: absolute; inset: 0;
   background: radial-gradient(ellipse at 50% 40%, var(--quip-glow) 0%, transparent 60%);
   pointer-events: none;
+}
+
+/* ── Body bg uses theme token ──────────────────────────────────────── */
+html, body {
+  background: var(--quip-body-bg, var(--quip-bg));
+}
+
+/* ── Liquid Glass v5 utilities ─────────────────────────────────────── */
+
+/* Aurora wash — indigo + fuchsia + sky radial gradients behind hero */
+.quip-aurora {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.quip-aurora::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140%;
+  height: 140%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 40% 35% at 50% 45%, var(--quip-aurora-1) 0%, transparent 70%),
+    radial-gradient(ellipse 35% 30% at 40% 55%, var(--quip-aurora-2) 0%, transparent 70%),
+    radial-gradient(ellipse 35% 30% at 60% 55%, var(--quip-aurora-3) 0%, transparent 70%);
+  filter: blur(28px) saturate(1.3);
+  opacity: var(--quip-aurora-opacity, 0.95);
+}
+
+/* Grain noise overlay */
+.quip-grain {
+  position: relative;
+}
+.quip-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: var(--quip-noise-blend, overlay);
+  opacity: var(--quip-noise-opacity, 0.9);
+}
+
+/* Glass surface (bubble, composer, card) */
+.quip-glass {
+  background: linear-gradient(180deg, var(--quip-glass-highlight), rgba(0, 0, 0, 0));
+  background-color: var(--quip-glass-bg);
+  border: 1px solid var(--quip-glass-border);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 var(--quip-glass-highlight),
+    0 10px 30px -10px rgba(0, 0, 0, 0.4);
+}
+.quip-glass-strong {
+  background: rgba(22, 22, 26, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(28px) saturate(1.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+[data-theme='quip-light'] .quip-glass-strong {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(10, 10, 14, 0.10);
+  backdrop-filter: blur(28px) saturate(1.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Floating composer scrim — full-width frosted band behind the pill with
+   soft mask-fade at the top so the transition from unblurred scroll content
+   to the blurred band feels seamless (Telegram / iOS liquid-glass style). */
+.quip-composer-scrim {
+  position: absolute;
+  inset: -64px 0 0 0;
+  backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-mask-image: linear-gradient(to top, black 45%, transparent 100%);
+  mask-image: linear-gradient(to top, black 45%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Top header scrim — mirror of composer scrim with the fade flipped downward. */
+.quip-header-scrim {
+  position: absolute;
+  inset: 0 0 -56px 0;
+  backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Hero wordmark — gradient text per theme.
+   NOTE: drop-shadow(...) on background-clip:text hides the text in
+   Chrome/Blink because the compositor rasterises an empty glyph mask.
+   Use text-shadow instead — cheaper and actually visible. */
+.quip-hero-word {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.065em;
+  line-height: 0.92;
+  background-image: var(--quip-hero-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 0 60px rgba(255, 255, 255, 0.04);
+}
+[data-theme='quip-dark'] .quip-hero-word::after,
+[data-theme='quip-light'] .quip-hero-word::after { display: none; }
+
+/* Brand mark chip (the "Q" square) */
+.quip-brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #fafafa, #d4d4d8);
+  color: #0a0a0a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: -0.05em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Mono labels (meta, provider:name) */
+.quip-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Segmented control (Chat/Search) */
+.quip-seg {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--quip-hover);
+  border: 1px solid var(--quip-border);
+  backdrop-filter: blur(8px);
+}
+.quip-seg button {
+  background: transparent;
+  border: 0;
+  color: var(--quip-text-muted);
+  padding: 5px 12px;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 999px;
+  font-size: 12px;
+  transition: color var(--quip-d-1), background var(--quip-d-1);
+}
+.quip-seg button.on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
+  color: var(--quip-text);
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+[data-theme='quip-light'] .quip-seg button.on {
+  background: linear-gradient(180deg, #ffffff, rgba(255, 255, 255, 0.75));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 8px rgba(10, 10, 14, 0.10);
+}
+.quip-seg button:hover:not(.on) {
+  color: var(--quip-text);
+}
+
+/* Send button — gradient-white pill */
+.quip-send-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #d4d4d8 100%);
+  color: #0a0a0a;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform var(--quip-d-1), opacity var(--quip-d-1);
+}
+[data-theme='quip-light'] .quip-send-btn {
+  background: linear-gradient(180deg, #0f0f12 0%, #2a2a30 100%);
+  color: #f5f5f5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px rgba(10, 10, 14, 0.15);
+}
+.quip-send-btn:active { transform: scale(0.92); }
+.quip-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Tool chip (pill-shaped, dot + mono label + meta) */
+.quip-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--quip-glass-border);
+  background: var(--quip-glass-bg);
+  backdrop-filter: blur(8px);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--quip-text-dim);
+}
+.quip-tool-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--quip-success);
+  box-shadow: 0 0 8px var(--quip-success);
+}
+.quip-tool-meta { color: var(--quip-text-muted); font-size: 11px; }
+
+/* Model pill (chat header + start picker) */
+.quip-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px 7px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
+  background: linear-gradient(180deg, var(--quip-glass-highlight), rgba(0, 0, 0, 0));
+  background-color: var(--quip-glass-bg);
+  border: 1px solid var(--quip-glass-border-strong);
+  color: var(--quip-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+}
+.quip-model-pill:hover { border-color: var(--quip-border-strong); }
+.quip-model-pill .provider,
+.quip-model-pill .sub {
+  color: var(--quip-text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.quip-model-pill .sep { color: var(--quip-border-strong); }
+
+/* Provider brand logo inside model pill / picker.
+   SVG is monochrome black from lobe-icons static assets. Invert in dark theme
+   so it reads as light on dark; leave as-is on light theme. */
+.quip-provider-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  object-fit: contain;
+  opacity: 0.85;
+  filter: invert(1);
+}
+[data-theme='quip-light'] .quip-provider-icon {
+  filter: none;
+}
+
+/* Big model picker (start screen pill with chevron) */
+.quip-model-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px 8px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--quip-glass-border-strong);
+  color: var(--quip-text);
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 24px -8px rgba(0, 0, 0, 0.5);
+  transition: background var(--quip-d-1), border-color var(--quip-d-1);
+}
+[data-theme='quip-light'] .quip-model-picker {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.55));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 20px -8px rgba(10, 10, 14, 0.15);
+}
+.quip-model-picker:hover { border-color: var(--quip-border-strong); }
+.quip-model-picker .provider,
+.quip-model-picker .sub {
+  color: var(--quip-text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+}
+.quip-model-picker .sep { color: var(--quip-border-strong); }
+
+/* Model dropdown menu — glass panel, grouped options.
+   Uses position:fixed + JS-computed coords so stacking contexts created
+   by backdrop-filter parents (chat header, composer) can't occlude it. */
+.quip-export-menu {
+  background: rgba(22, 22, 26, 0.55);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  border: 1px solid var(--quip-glass-border-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 20px 40px -10px rgba(0, 0, 0, 0.5);
+}
+[data-theme='quip-light'] .quip-export-menu {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.quip-model-menu {
+  position: fixed;
+  background: rgba(22, 22, 26, 0.55);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  border: 1px solid var(--quip-glass-border-strong);
+  border-radius: 16px;
+  padding: 6px;
+  width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 30px 60px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+}
+[data-theme='quip-light'] .quip-model-menu {
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 20px 50px rgba(10, 10, 14, 0.18);
+}
+.quip-model-menu .group-lbl {
+  padding: 10px 10px 4px;
+  font-size: 10px;
+  color: var(--quip-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.quip-model-menu .opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--quip-text);
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  transition: background var(--quip-d-1);
+}
+.quip-model-menu .opt:hover { background: var(--quip-hover); }
+.quip-model-menu .opt.sel { background: rgba(255, 255, 255, 0.06); }
+[data-theme='quip-light'] .quip-model-menu .opt.sel { background: rgba(10, 10, 14, 0.05); }
+.quip-model-menu .opt .l {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.quip-model-menu .opt .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quip-model-menu .opt .meta {
+  font-size: 11px;
+  color: var(--quip-text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  flex-shrink: 0;
+}
+.quip-model-menu .opt .check {
+  width: 14px;
+  height: 14px;
+  color: transparent;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.quip-model-menu .opt.sel .check { color: var(--quip-success); }
+
+/* Beta pill (top-right of hero) */
+.quip-beta {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: #c4b5fd;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(165, 180, 252, 0.3);
+  backdrop-filter: blur(8px);
+}
+[data-theme='quip-light'] .quip-beta {
+  color: #4f46e5;
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+/* User bubble (asymmetric glass) */
+.quip-user-bubble {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  background-color: var(--quip-user-msg);
+  border: 1px solid var(--quip-glass-border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 20px -6px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(14px);
+  border-radius: 16px 16px 5px 16px;
+}
+[data-theme='quip-light'] .quip-user-bubble {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.75));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 20px -8px rgba(10, 10, 14, 0.12);
 }

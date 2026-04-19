@@ -47,3 +47,16 @@ export async function tryRefresh(): Promise<boolean> {
   localStorage.removeItem('refresh_token');
   return false;
 }
+
+export async function apiJson<T>(path: string, fallback: T, options: RequestInit = {}): Promise<T> {
+  const res = await api(path, options);
+  if (res.ok) return res.json() as Promise<T>;
+  return fallback;
+}
+
+export async function apiOk(path: string, method: string, body?: unknown): Promise<boolean> {
+  const init: RequestInit = { method };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await api(path, init);
+  return res.ok;
+}

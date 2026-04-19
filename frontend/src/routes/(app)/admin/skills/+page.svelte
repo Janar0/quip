@@ -2,13 +2,16 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
+  import Mustache from 'mustache';
   import {
     getSkills,
     createSkill,
     updateSkill,
     deleteSkill,
+    generateSkillDraft,
     type SkillInfo,
     type SkillUpsertData,
+    type SkillSettingField,
   } from '$lib/api/admin';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
@@ -16,17 +19,28 @@
   let loading = $state(true);
 
   // Modal state
+  type Tab = 'general' | 'prompt' | 'template' | 'api' | 'settings' | 'preview';
   let modalOpen = $state(false);
   let editingSkill = $state<SkillInfo | null>(null);
-  let activeTab = $state<'general' | 'prompt' | 'template' | 'api'>('general');
+  let activeTab = $state<Tab>('general');
   let saving = $state(false);
 
   // Delete state
   let deleteConfirmOpen = $state(false);
   let skillToDelete = $state<SkillInfo | null>(null);
 
-  // Form fields
-  let form = $state<SkillUpsertData & { id: string }>({
+  // AI generator state
+  let aiModalOpen = $state(false);
+  let aiPrompt = $state('');
+  let aiGenerating = $state(false);
+
+  type FormShape = SkillUpsertData & {
+    id: string;
+    settings_schema: SkillSettingField[] | null;
+    settings: Record<string, unknown> | null;
+  };
+
+  const emptyForm = (): FormShape => ({
     id: '',
     name: '',
     description: '',
@@ -39,6 +53,22 @@
     template_html: null,
     template_css: null,
     api_config: null,
+    settings_schema: null,
+    settings: null,
+  });
+
+  let form = $state<FormShape>(emptyForm());
+
+  // Live-rendered preview (widget category only)
+  let previewHtml = $derived.by(() => {
+    if (form.category !== 'widget' || !form.template_html) return '';
+    const schema = form.data_schema || {};
+    const sample = ((schema as Record<string, unknown>).example as Record<string, unknown>) || schema;
+    try {
+      return Mustache.render(form.template_html, sample);
+    } catch (e) {
+      return `<pre style="color:#f87171">Preview error: ${String(e)}</pre>`;
+    }
   });
 
   onMount(async () => {
@@ -53,20 +83,7 @@
 
   function openCreate() {
     editingSkill = null;
-    form = {
-      id: '',
-      name: '',
-      description: '',
-      category: 'widget',
-      icon: null,
-      type: 'content',
-      enabled: true,
-      prompt_instructions: '',
-      data_schema: null,
-      template_html: null,
-      template_css: null,
-      api_config: null,
-    };
+    form = emptyForm();
     activeTab = 'general';
     modalOpen = true;
   }
@@ -86,6 +103,8 @@
       template_html: skill.template_html,
       template_css: skill.template_css,
       api_config: skill.api_config,
+      settings_schema: skill.settings_schema,
+      settings: skill.settings || {},
     };
     activeTab = 'general';
     modalOpen = true;
@@ -94,7 +113,7 @@
   async function save() {
     saving = true;
     if (editingSkill) {
-      const { id: _id, ...updateData } = form;
+      const { id: _id, settings_schema: _ss, ...updateData } = form;
       const ok = await updateSkill(editingSkill.id, updateData);
       if (ok) {
         toast.success($t('admin.skills.saved'));
@@ -146,14 +165,79 @@
     if (category === 'tool') return 'preset-filled-secondary-500';
     return 'preset-outlined';
   }
+
+  function setSetting(key: string, value: unknown) {
+    form.settings = { ...(form.settings || {}), [key]: value };
+  }
+
+  function getSetting(key: string, def: unknown): unknown {
+    const cur = (form.settings || {})[key];
+    return cur === undefined ? def : cur;
+  }
+
+  async function runAiGenerate() {
+    if (!aiPrompt.trim()) return;
+    aiGenerating = true;
+    const draft = await generateSkillDraft(aiPrompt);
+    aiGenerating = false;
+    if (!draft) {
+      toast.error($t('common.error'));
+      return;
+    }
+    aiModalOpen = false;
+    // Pre-fill the create modal with the draft
+    editingSkill = null;
+    form = {
+      id: (draft.id as string) || '',
+      name: (draft.name as string) || '',
+      description: (draft.description as string) || '',
+      category: (draft.category as string) || 'widget',
+      icon: null,
+      type: (draft.type as string) || 'content',
+      enabled: true,
+      prompt_instructions: (draft.prompt_instructions as string) || '',
+      data_schema: draft.data_schema || null,
+      template_html: draft.template_html || null,
+      template_css: draft.template_css || null,
+      api_config: draft.api_config || null,
+      settings_schema: draft.settings_schema || null,
+      settings: {},
+    };
+    activeTab = 'preview';
+    modalOpen = true;
+    aiPrompt = '';
+  }
+
+  const ALL_TABS: Tab[] = ['general', 'prompt', 'template', 'api', 'settings', 'preview'];
+  function visibleTabs(f: FormShape): Tab[] {
+    return ALL_TABS.filter((tab) => {
+      if (tab === 'template' && f.category !== 'widget') return false;
+      if (tab === 'api' && f.type !== 'api') return false;
+      if (tab === 'settings' && !(f.settings_schema && f.settings_schema.length)) return false;
+      if (tab === 'preview' && f.category !== 'widget') return false;
+      return true;
+    });
+  }
+
+  function tabLabel(tab: Tab): string {
+    if (tab === 'api') return $t('admin.skills.apiConfig');
+    if (tab === 'settings') return $t('admin.skills.settings');
+    if (tab === 'preview') return $t('admin.skills.preview');
+    return $t(`admin.skills.${tab}`);
+  }
 </script>
 
 <div class="p-8 max-w-6xl mx-auto space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">{$t('admin.skills.title')}</h1>
-    <button class="btn preset-filled-primary-500" onclick={openCreate}>
-      + {$t('admin.skills.add')}
-    </button>
+    <div class="flex gap-2">
+      <button class="btn preset-outlined" onclick={() => { aiModalOpen = true; aiPrompt = ''; }}>
+        ✨ {$t('admin.skills.generateAi')}
+      </button>
+      <button class="btn preset-filled-primary-500" onclick={openCreate}>
+        + {$t('admin.skills.add')}
+      </button>
+    </div>
   </div>
 
   {#if loading}
@@ -220,7 +304,7 @@
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="card w-full max-w-2xl max-h-[90vh] flex flex-col"
+      class="card w-full max-w-3xl max-h-[92vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
     >
       <div class="p-4 border-b border-surface-500/20 flex items-center justify-between">
@@ -231,20 +315,14 @@
       </div>
 
       <!-- Tabs -->
-      <div class="flex gap-1 px-4 pt-3 border-b border-surface-500/20">
-        {#each (['general', 'prompt', 'template', 'api'] as const) as tab}
-          {#if tab === 'template' && form.category !== 'widget'}
-            <!-- hide template tab for non-widget skills -->
-          {:else if tab === 'api' && form.type !== 'api'}
-            <!-- hide api tab for content skills -->
-          {:else}
-            <button
-              class="btn btn-sm {activeTab === tab ? 'preset-filled' : 'preset-outlined'}"
-              onclick={() => (activeTab = tab)}
-            >
-              {$t(`admin.skills.${tab === 'api' ? 'apiConfig' : tab}`)}
-            </button>
-          {/if}
+      <div class="flex gap-1 px-4 pt-3 border-b border-surface-500/20 flex-wrap">
+        {#each visibleTabs(form) as tab}
+          <button
+            class="btn btn-sm {activeTab === tab ? 'preset-filled' : 'preset-outlined'}"
+            onclick={() => (activeTab = tab)}
+          >
+            {tabLabel(tab)}
+          </button>
         {/each}
       </div>
 
@@ -334,6 +412,56 @@
               placeholder={'{"url": "https://api.example.com/...", "method": "GET", ..."}'}
             ></textarea>
           </label>
+
+        {:else if activeTab === 'settings'}
+          {#if form.settings_schema && form.settings_schema.length}
+            {#each form.settings_schema as field (field.key)}
+              <label class="label">
+                <span class="text-sm">{field.label || field.key}</span>
+                {#if field.type === 'select'}
+                  <select class="select" value={getSetting(field.key, field.default ?? '')}
+                    onchange={(e) => setSetting(field.key, e.currentTarget.value)}>
+                    {#each (field.options || []) as opt}
+                      <option value={opt}>{opt}</option>
+                    {/each}
+                  </select>
+                {:else if field.type === 'boolean'}
+                  <input type="checkbox" class="checkbox"
+                    checked={!!getSetting(field.key, field.default ?? false)}
+                    onchange={(e) => setSetting(field.key, e.currentTarget.checked)} />
+                {:else if field.type === 'number'}
+                  <input type="number" class="input"
+                    value={getSetting(field.key, field.default ?? 0) as number}
+                    oninput={(e) => setSetting(field.key, Number(e.currentTarget.value))} />
+                {:else}
+                  <input
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    class="input"
+                    value={getSetting(field.key, field.default ?? '') as string}
+                    oninput={(e) => setSetting(field.key, e.currentTarget.value)}
+                  />
+                {/if}
+                {#if field.help}
+                  <span class="text-xs opacity-60 mt-1 block">{field.help}</span>
+                {/if}
+              </label>
+            {/each}
+          {:else}
+            <p class="text-sm opacity-60">{$t('admin.skills.noSettings')}</p>
+          {/if}
+
+        {:else if activeTab === 'preview'}
+          {#if form.template_css}
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html `<style>${form.template_css}</style>`}
+          {/if}
+          <div class="widget-card p-0 rounded-lg border border-surface-500/30 bg-surface-900/40 overflow-hidden">
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html previewHtml}
+          </div>
+          <p class="text-xs opacity-60">
+            {$t('admin.skills.previewHint')}
+          </p>
         {/if}
       </div>
 
@@ -341,6 +469,41 @@
         <button class="btn preset-outlined" onclick={() => (modalOpen = false)}>{$t('common.cancel')}</button>
         <button class="btn preset-filled-primary-500" onclick={save} disabled={saving || !form.name || !form.id}>
           {saving ? '...' : $t('common.save')}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- AI Generator Modal -->
+{#if aiModalOpen}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="fixed inset-0 bg-black/60 z-40 flex items-center justify-center p-4"
+    tabindex="-1"
+    onclick={() => (aiModalOpen = false)}
+    onkeydown={(e) => e.key === 'Escape' && (aiModalOpen = false)}
+  >
+    <div class="card w-full max-w-xl flex flex-col" onclick={(e) => e.stopPropagation()}>
+      <div class="p-4 border-b border-surface-500/20">
+        <h2 class="text-lg font-semibold">✨ {$t('admin.skills.generateAi')}</h2>
+      </div>
+      <div class="p-4 space-y-3">
+        <label class="label">
+          <span class="text-sm">{$t('admin.skills.generateAiPrompt')}</span>
+          <textarea
+            class="textarea"
+            rows="6"
+            bind:value={aiPrompt}
+            placeholder={$t('admin.skills.generateAiPlaceholder')}
+          ></textarea>
+        </label>
+        <p class="text-xs opacity-60">{$t('admin.skills.generateAiHint')}</p>
+      </div>
+      <div class="p-4 border-t border-surface-500/20 flex justify-end gap-2">
+        <button class="btn preset-outlined" onclick={() => (aiModalOpen = false)}>{$t('common.cancel')}</button>
+        <button class="btn preset-filled-primary-500" onclick={runAiGenerate} disabled={aiGenerating || !aiPrompt.trim()}>
+          {aiGenerating ? '...' : $t('admin.skills.generate')}
         </button>
       </div>
     </div>

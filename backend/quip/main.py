@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 import os
 
@@ -20,6 +21,7 @@ from quip.routers.sandbox import router as sandbox_router
 from quip.routers.files import router as files_router
 from quip.routers.images import router as images_router
 from quip.routers.audio import router as audio_router
+from quip.routers.icons import router as icons_router
 from quip.services.sandbox import sandbox_cleanup_loop
 import quip.models  # noqa: F401 — register all models with Base
 
@@ -38,6 +40,17 @@ async def lifespan(app: FastAPI):
                 await conn.execute(text(stmt))
             except Exception:
                 pass  # Index may already exist with this name
+    # Lightweight migrations for columns added after the DB was created.
+    # create_all does not add columns to existing tables.
+    async with engine.begin() as conn:
+        for stmt in [
+            "ALTER TABLE skill ADD COLUMN settings_schema JSON",
+            "ALTER TABLE skill ADD COLUMN settings JSON",
+        ]:
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass  # Column already exists
     await run_migration_if_needed()
     await load_settings()
     from quip.services.skill_store import seed_builtin_skills
@@ -59,12 +72,15 @@ app = FastAPI(
 
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["ETag"],
 )
 
 app.include_router(auth_router)
@@ -78,6 +94,7 @@ app.include_router(sandbox_router)
 app.include_router(files_router)
 app.include_router(images_router)
 app.include_router(audio_router)
+app.include_router(icons_router)
 
 
 @app.get("/health")

@@ -127,6 +127,23 @@
     $hljsLoaded; $katexLoaded; // re-run when lazy libs load
     return isUser ? '' : renderMarkdown(extracted.cleanContent, extracted.sources, message.chat_id);
   });
+  // Cache rendered reasoning HTML — re-runs only when reasoning text changes,
+  // not on every parent re-render during streaming.
+  let renderedReasoning = $derived.by(() => {
+    $hljsLoaded; $katexLoaded;
+    return message.reasoning ? renderMarkdown(message.reasoning) : '';
+  });
+  // Pre-render text blocks once per content/sources change. Avoids re-parsing
+  // markdown for every block on every SSE chunk.
+  let renderedTextBlocks = $derived.by(() => {
+    $hljsLoaded; $katexLoaded;
+    if (!message.contentBlocks) return [] as string[];
+    return message.contentBlocks.map((b) => {
+      if (b.type !== 'text') return '';
+      const text = stripMusicWidgetRefs(stripArtifactTags(b.content));
+      return text.trim() ? renderMarkdown(text, sources, message.chat_id) : '';
+    });
+  });
   let primarySource = $derived(primarySourceResult.primarySource);
   let imageMode = $derived(imageResolved.imageMode);
   let sources = $derived(extracted.sources);
@@ -190,7 +207,7 @@
   <!-- ═══ USER MESSAGE ═══ -->
   <div class="group flex justify-end px-4" in:fly={entryParams}>
     <div class="max-w-[75%]">
-      <div class="rounded-2xl rounded-tr-sm px-4 py-3" style="background: var(--quip-user-msg); border: 1px solid var(--quip-border)">
+      <div class="quip-user-bubble px-[14px] py-[11px]">
         {#if hasAttachments}
           {#if imageAttachments.length}
             <div class="flex flex-wrap gap-2 mb-2">
@@ -244,7 +261,7 @@
           {#if timestamp}
             <span class="text-xs opacity-0 group-hover:opacity-30 transition-opacity mr-1 text-slate-500" title={fullDate}>{timestamp}</span>
           {/if}
-          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div class="flex gap-1">
             <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
               <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             </button>
@@ -297,7 +314,7 @@
           >
             <div class="overflow-hidden">
               <div class="mt-1.5 text-sm text-slate-400 break-words border-l-2 border-slate-800 pl-3 prose prose-invert prose-sm max-w-none">
-                {@html renderMarkdown(message.reasoning ?? '')}
+                {@html renderedReasoning}
               </div>
             </div>
           </div>
@@ -361,9 +378,8 @@
         <!-- ═══ INLINE CONTENT BLOCKS — tools/results appear in stream order ═══ -->
         {#each message.contentBlocks! as block, i (i)}
           {#if block.type === 'text'}
-            {@const blockText = stripMusicWidgetRefs(stripArtifactTags(block.content))}
-            {#if blockText.trim()}
-              <div class="prose prose-invert prose-sm max-w-none break-words">{@html renderMarkdown(blockText, sources, message.chat_id)}</div>
+            {#if renderedTextBlocks[i]}
+              <div class="prose prose-invert prose-sm max-w-none break-words">{@html renderedTextBlocks[i]}</div>
             {/if}
           {:else if block.type === 'tool'}
             {@const exec = execById.get(block.executionId)}
@@ -528,40 +544,39 @@
         </div>
       {/if}
 
-      {#if totalCost > 0}
-        <div class="text-xs text-slate-600 mt-1 text-right flex items-center justify-end gap-2">
-          {#if toolsCost > 0 && message.cost}
-            <span title="LLM">${Number(message.cost).toFixed(4)}</span>
-            {#if imageGenExecs.some((e) => (e.result as Record<string,unknown> | undefined)?.cost)}
-              <span title="Image generation">+${imageGenExecs.reduce((s,e) => s + Number((e.result as Record<string,unknown>|undefined)?.cost ?? 0), 0).toFixed(4)} img</span>
-            {/if}
-            {#if musicGenExecs.some((e) => (e.result as Record<string,unknown> | undefined)?.cost)}
-              <span title="Music generation">+${musicGenExecs.reduce((s,e) => s + Number((e.result as Record<string,unknown>|undefined)?.cost ?? 0), 0).toFixed(4)} ♪</span>
-            {/if}
-            <span class="opacity-40">=</span>
-            <span>${totalCost.toFixed(4)}</span>
-          {:else}
-            <span>${totalCost.toFixed(4)}</span>
-          {/if}
-        </div>
-      {/if}
-
-      <!-- Assistant action buttons -->
-      {#if hasContent && !$isStreaming && message.id !== 'streaming' && message.id !== 'temp-user'}
-        <div class="flex items-center gap-1 mt-1.5 ml-0">
-          {#if timestamp}
-            <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity mr-1 text-slate-600" title={fullDate}>{timestamp}</span>
-          {/if}
-          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
-              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            </button>
-            {#if onRegenerate}
-              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={() => onRegenerate(message.id)} title={$t('chat.regenerate')} aria-label={$t('chat.regenerate')}>
-                <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+      <!-- Action bar: buttons left, cost right, same row, aligned -->
+      {#if (hasContent && !$isStreaming && message.id !== 'streaming' && message.id !== 'temp-user') || totalCost > 0}
+        <div class="flex items-center justify-between mt-1.5 min-h-[28px]">
+          <div class="flex items-center gap-1">
+            {#if hasContent && !$isStreaming && message.id !== 'streaming' && message.id !== 'temp-user'}
+              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
+                <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               </button>
+              {#if onRegenerate}
+                <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={() => onRegenerate(message.id)} title={$t('chat.regenerate')} aria-label={$t('chat.regenerate')}>
+                  <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                </button>
+              {/if}
+              {#if timestamp}
+                <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-slate-600" title={fullDate}>{timestamp}</span>
+              {/if}
             {/if}
           </div>
+          {#if totalCost > 0}
+            <div class="text-xs text-slate-600 flex items-center gap-2">
+              {#if toolsCost > 0 && message.cost}
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity" title="LLM">${Number(message.cost).toFixed(4)}</span>
+                {#if imageGenExecs.some((e) => (e.result as Record<string,unknown> | undefined)?.cost)}
+                  <span class="opacity-0 group-hover:opacity-100 transition-opacity" title="Image generation">+${imageGenExecs.reduce((s,e) => s + Number((e.result as Record<string,unknown>|undefined)?.cost ?? 0), 0).toFixed(4)} img</span>
+                {/if}
+                {#if musicGenExecs.some((e) => (e.result as Record<string,unknown> | undefined)?.cost)}
+                  <span class="opacity-0 group-hover:opacity-100 transition-opacity" title="Music generation">+${musicGenExecs.reduce((s,e) => s + Number((e.result as Record<string,unknown>|undefined)?.cost ?? 0), 0).toFixed(4)} ♪</span>
+                {/if}
+                <span class="opacity-0 group-hover:opacity-40 transition-opacity">=</span>
+              {/if}
+              <span>${totalCost.toFixed(4)}</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

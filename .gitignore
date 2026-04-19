@@ -27,6 +27,9 @@ backend/data/
 uploads/
 backend/uploads/
 
+# Cached third-party provider logos (lobe-icons SVGs fetched on demand)
+backend/provider_icons/
+
 # GeoIP database
 backend/quip/data/*.mmdb
 
@@ -45,3 +48,4 @@ Thumbs.db
 # Git worktrees
 .worktrees/
 
+quip/

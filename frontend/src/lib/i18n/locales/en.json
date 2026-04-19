@@ -1,10 +1,8 @@
 {
-  "common.appName": "Q.U.I.P.",
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.loading": "Loading...",
   "common.error": "Something went wrong",
-
   "auth.login": "Sign In",
   "auth.register": "Create Account",
   "auth.email": "Email",
@@ -14,26 +12,18 @@
   "auth.noAccount": "Don't have an account?",
   "auth.hasAccount": "Already have an account?",
   "auth.logout": "Sign Out",
-
-  "nav.home": "Home",
   "nav.newChat": "New Chat",
-  "nav.chat": "Chat",
   "nav.search": "Search",
-  "nav.deepResearch": "Deep Research",
   "nav.settings": "Settings",
   "nav.admin": "Admin",
-  "sidebar.collapse": "Collapse sidebar",
-
   "home.subtitle": "Your agent-first AI assistant",
-  "home.tagline": "The Silent Intelligence",
   "home.startChat": "Start a new conversation",
-
+  "chat.replyPlaceholder": "Reply…",
   "toast.copied": "Copied to clipboard",
   "toast.chatDeleted": "Chat deleted",
   "toast.chatRenamed": "Chat renamed",
   "toast.settingsSaved": "Settings saved",
   "toast.exported": "Chat exported",
-
   "sidebar.today": "Today",
   "sidebar.yesterday": "Yesterday",
   "sidebar.week": "Previous 7 days",
@@ -42,32 +32,24 @@
   "sidebar.rename": "Rename",
   "sidebar.confirmDelete": "Delete this chat?",
   "sidebar.confirmDeleteMsg": "This action cannot be undone.",
-
   "confirm.delete": "Delete",
-
   "chat.scrollToBottom": "Scroll to bottom",
-  "chat.thinking": "Thinking...",
   "chat.export": "Export",
   "chat.exportJSON": "Export JSON",
   "chat.exportMarkdown": "Export Markdown",
   "chat.primarySource": "Primary source",
-  "chat.usingTools": "Using tools",
-  "chat.usedTools": "Used tools",
   "tool.skill": "skill",
-
   "settings.title": "Settings",
   "settings.displayName": "Display Name",
   "settings.defaultModel": "Default Model",
   "settings.language": "Language",
   "settings.theme": "Theme",
-
   "admin.tabs.skills": "Skills",
   "admin.skills.title": "Skills",
   "admin.skills.add": "Add Skill",
   "admin.skills.edit": "Edit Skill",
   "admin.skills.delete": "Delete Skill",
   "admin.skills.deleteConfirm": "Are you sure you want to delete this skill?",
-  "admin.skills.general": "General",
   "admin.skills.prompt": "Prompt",
   "admin.skills.template": "Template",
   "admin.skills.apiConfig": "API Config",
@@ -76,18 +58,11 @@
   "admin.skills.description": "Description",
   "admin.skills.category": "Category",
   "admin.skills.type": "Type",
-  "admin.skills.icon": "Icon (SVG path)",
   "admin.skills.enabled": "Enabled",
   "admin.skills.promptInstructions": "Prompt Instructions",
   "admin.skills.templateHtml": "HTML Template",
   "admin.skills.templateCss": "CSS",
-  "admin.skills.sampleData": "Sample Data (JSON)",
   "admin.skills.preview": "Preview",
-  "admin.skills.apiUrl": "API URL",
-  "admin.skills.apiMethod": "Method",
-  "admin.skills.apiHeaders": "Headers",
-  "admin.skills.apiParams": "Params Mapping",
-  "admin.skills.apiResponse": "Response Mapping",
   "admin.skills.typeApi": "API",
   "admin.skills.typeContent": "Content",
   "admin.skills.saved": "Skill saved",
@@ -95,18 +70,20 @@
   "admin.skills.deleted": "Skill deleted",
   "admin.skills.builtin": "Built-in",
   "admin.skills.empty": "No skills found.",
-  "admin.settings.widgetsSection": "Widgets",
-  "admin.settings.weatherApiKey": "Gismeteo API Key",
-  "admin.settings.gismeteoApiKey": "Gismeteo API Key",
-
+  "admin.skills.settings": "Settings",
+  "admin.skills.noSettings": "This skill has no configurable settings.",
+  "admin.skills.previewHint": "Preview uses data_schema.example. Adjust the example in the Template tab to refine.",
+  "admin.skills.generateAi": "Generate with AI",
+  "admin.skills.generate": "Generate",
+  "admin.skills.generateAiPrompt": "Describe the skill",
+  "admin.skills.generateAiPlaceholder": "e.g. A widget that shows GitHub repo stats: stars, forks, open issues, and the top contributor.",
+  "admin.skills.generateAiHint": "The AI will produce a draft with prompt, template, schema and settings. You can review and edit before saving.",
   "sidebar.pinned": "Pinned",
   "sidebar.pin": "Pin",
   "sidebar.unpin": "Unpin",
   "sidebar.noChats": "No chats yet",
-  "sidebar.loadMore": "Load more",
   "toast.chatPinned": "Chat pinned",
   "toast.chatUnpinned": "Chat unpinned",
-
   "shortcuts.title": "Keyboard Shortcuts",
   "shortcuts.focusInput": "Focus chat input",
   "shortcuts.newChat": "New chat",
@@ -114,7 +91,6 @@
   "shortcuts.showShortcuts": "Show shortcuts",
   "shortcuts.sendMessage": "Send message",
   "shortcuts.newLine": "New line",
-
   "migrate.title": "Import from OpenWebUI",
   "migrate.description": "Upload your OpenWebUI chat export (JSON).",
   "migrate.dropzone": "Drag & drop your JSON file here",
@@ -127,7 +103,6 @@
   "migrate.skipped": "Skipped",
   "toast.importSuccess": "Import completed",
   "toast.importError": "Import failed",
-
   "admin.enableUser": "Enable user",
   "admin.disableUser": "Disable user",
   "admin.deleteUser": "Delete user",
@@ -136,41 +111,19 @@
   "toast.userEnabled": "User enabled",
   "toast.userDisabled": "User disabled",
   "toast.userDeleted": "User deleted",
-
   "admin.modelWhitelist": "Model Whitelist",
   "admin.modelWhitelistDesc": "Select which models are available to users. Leave empty to allow all.",
   "admin.modelWhitelistHint": "Empty = all models available",
   "admin.modelAliases": "Model Display Names",
   "admin.modelAliasesDesc": "Override the display name of a model in the selector. Leave blank to use the default name.",
   "admin.noModelsAvailable": "No models available. Configure an API key first.",
-
-  "admin.artifactsEnabled": "Artifacts",
-  "admin.artifactsEnabledDesc": "Allow models to generate interactive artifacts (charts, plots, diagrams, etc.)",
-
   "artifacts.expand": "Expand",
   "artifacts.download": "Download",
   "artifacts.copy": "Copy",
   "artifacts.close": "Close",
-  "artifacts.loading": "Rendering artifact...",
-
-  "sandbox.executing": "Executing...",
-  "sandbox.completed": "Execution completed",
-  "sandbox.error": "Execution failed",
-  "sandbox.installing": "Installing packages...",
-  "sandbox.exitCode": "Exit code",
-  "sandbox.filesCreated": "Files created",
-
   "chat.attach": "Attach files",
   "chat.dropFiles": "Drop files here...",
   "chat.uploadFailed": "File upload failed",
-
-  "admin.sandboxEnabled": "Code Sandbox",
-  "admin.sandboxEnabledDesc": "Allow models to execute code in isolated Docker containers",
-  "admin.sandboxMemory": "Memory Limit",
-  "admin.sandboxCpu": "CPU Limit",
-  "admin.sandboxTimeout": "Idle Timeout (min)",
-  "admin.sandboxExecTimeout": "Exec Timeout (sec)",
-
   "admin.ragEnabled": "RAG & Documents",
   "admin.ragEnabledDesc": "Automatically process uploaded documents for retrieval-augmented generation",
   "admin.embeddingProvider": "Embedding Provider",
@@ -178,13 +131,8 @@
   "admin.ragChunkSize": "Chunk Size (tokens)",
   "admin.ragChunkOverlap": "Chunk Overlap (tokens)",
   "admin.ragTopK": "Top-K Results",
-
   "admin.searchEnabled": "Web Search",
   "admin.searchEnabledDesc": "Allow AI to search the web for up-to-date information",
-  "admin.searchProvider": "Search Provider",
-  "admin.tavilyApiKey": "Tavily API Key",
-  "admin.searxngUrl": "SearXNG URL",
-
   "chat.deepResearch": "Deep Research",
   "research.decomposing": "Analyzing your question...",
   "research.searching": "Searching",
@@ -192,13 +140,11 @@
   "research.reading": "Reading pages...",
   "research.pagesRead": "Read {count} pages",
   "research.synthesizing": "Writing report...",
-
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
   "common.yes": "Yes",
   "common.no": "No",
   "common.copied": "Copied",
-
   "chat.copy": "Copy",
   "chat.edit": "Edit",
   "chat.regenerate": "Regenerate",
@@ -208,43 +154,33 @@
   "chat.hideThinking": "Hide thinking",
   "chat.chars": "chars",
   "chat.sources": "Sources",
-
   "models.loading": "Loading models...",
   "models.noModels": "No models (set API key in Admin)",
   "models.saveDefault": "Save as default model",
-
   "search.searching": "Searching...",
   "search.searched": "Searched",
   "search.results": "results",
   "search.searchChats": "Search chats...",
   "search.noResults": "No results",
-  "search.pageContent": "page content",
-  "search.fastMode": "Fast search",
   "search.openImage": "Open image",
   "search.viewSource": "View source",
-
   "chat.mode_auto": "Chat",
   "chat.mode_search": "Search",
   "chat.mode_research": "Research",
-
   "home.disclaimer": "AI can make mistakes. Verify important information.",
-
   "admin.tabs.settings": "Settings",
   "admin.tabs.models": "Models",
   "admin.tabs.users": "Users",
   "admin.tabs.usage": "Usage",
   "admin.tabs.budgets": "Budgets",
   "admin.tabs.import": "Import",
-
   "admin.users.lastActive": "Last active",
   "admin.users.changePassword": "Change password",
   "admin.users.newPassword": "New password",
   "admin.users.passwordChanged": "Password changed",
-
   "admin.tabApi": "API & Models",
   "admin.tabSystem": "System",
   "admin.tabTools": "Tools",
-
   "admin.openrouterKey": "OpenRouter API Key",
   "admin.connected": "Connected",
   "admin.noApiKey": "No API key set. Get one at",
@@ -259,15 +195,11 @@
   "admin.systemPrompt": "System Prompt",
   "admin.systemPromptDesc": "Default system prompt prepended to all conversations.",
   "admin.systemPromptPlaceholder": "You are a helpful assistant...",
-
   "admin.failedToSave": "Failed to save",
-
   "toast.apiKeySaved": "API key saved",
   "toast.apiKeyFailed": "Failed to save API key",
   "toast.ollamaSaved": "Ollama URL saved",
   "toast.systemPromptSaved": "System prompt saved",
-  "toast.sandboxSaved": "Sandbox settings saved",
-
   "admin.budgets": "Budgets",
   "admin.budgetsDesc": "Set spending limits per user or globally. Users exceeding their budget get a 429 error.",
   "admin.addBudget": "Add Budget",
@@ -283,7 +215,6 @@
   "toast.budgetDeleted": "Budget deleted",
   "toast.budgetFailed": "Failed to save budget",
   "toast.budgetDeleteFailed": "Failed to delete",
-
   "admin.usage": "Usage",
   "admin.usageTotalCost": "Total Cost",
   "admin.usageRequests": "Requests",
@@ -296,23 +227,13 @@
   "admin.usageCost": "Cost",
   "admin.usageReq": "req",
   "admin.usageFailedToLoad": "Failed to load usage data",
-
   "admin.usersSearch": "Search by name, email, username...",
   "admin.noUsersFound": "No users found",
   "toast.roleChanged": "Role updated",
   "toast.roleChangeFailed": "Failed to update role",
-
-  "admin.getKeyAt": "Get a key at",
-  "admin.freeSearches": "(1000 free searches/month)",
-  "admin.apiKeySet": "API key set",
-  "admin.searxngDesc": "URL of your SearXNG instance",
-
   "admin.budgetGlobal": "Global (all users)",
-
   "error.budgetExceeded": "Budget exceeded (${current} / ${limit} {period})",
-
   "search.clear": "Clear search",
-
   "admin.systemModels": "System Models",
   "admin.searchModel": "Search & Research Model",
   "admin.searchModelDesc": "Override model for web search and deep research. Use a fast, cheap model.",
@@ -323,16 +244,9 @@
   "admin.titleModel": "Title Generation Model",
   "admin.titleModelDesc": "Auto-generate chat titles after the first message using a cheap model.",
   "admin.titleModelNone": "Disabled (use message preview)",
-
   "admin.defaultModel": "Default Model",
   "admin.defaultModelDesc": "Model pre-selected for users who haven't chosen one, or whose saved model was removed.",
   "admin.defaultModelNone": "None (first available model)",
-
-  "admin.imageGeneration": "Image Generation",
-  "admin.imageGenerationDesc": "Set an OpenRouter image model to enable the generate_image tool. Recommended: google/gemini-2.0-flash-exp:free",
-  "admin.imageModelEnabled": "Enabled",
-  "admin.imageModelPlaceholder": "google/gemini-2.0-flash-exp:free",
-
   "chat.generatingMusic": "Generating music…",
   "chat.generatingImage": "Generating image…"
 }
