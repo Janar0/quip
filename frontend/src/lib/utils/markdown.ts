@@ -23,6 +23,8 @@ if (typeof window !== 'undefined') {
   setTimeout(() => {
     import('highlight.js').then(m => { _hljs = m.default; hljsLoaded.set(true); });
     import('katex').then(m => { _katex = m.default; katexLoaded.set(true); });
+    // KaTeX requires its stylesheet for correct glyph metrics/layout
+    import('katex/dist/katex.min.css');
   }, 0);
 }
 
@@ -79,21 +81,34 @@ renderer.codespan = function ({ text }: { text: string }) {
 
 marked.setOptions({ renderer });
 
-/** Render KaTeX math expressions */
-function renderMath(text: string): string {
-  if (!_katex) return text; // katex not loaded yet — re-render triggered once loaded
+// Placeholder sentinel for KaTeX output: survives marked's HTML-escape pass, gets swapped
+// back in renderMarkdown after marked.parse. Format: \u0000KATEX<index>\u0000
+const KATEX_PLACEHOLDER_RE = /\u0000KATEX(\d+)\u0000/g;
+
+/** Render KaTeX math expressions. Returns text with placeholders + ordered HTML list.
+ *  Placeholders are restored after marked.parse so the KaTeX HTML isn't escaped by the
+ *  anti-XSS renderer.html override. */
+function renderMath(text: string): { text: string; placeholders: string[] } {
+  const placeholders: string[] = [];
+  if (!_katex) return { text, placeholders }; // katex not loaded — re-render on load
+
+  const stash = (html: string): string => {
+    const i = placeholders.length;
+    placeholders.push(html);
+    return `\u0000KATEX${i}\u0000`;
+  };
 
   // Block math: $$...$$ or \[...\]
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
     try {
-      return _katex.renderToString(math.trim(), { displayMode: true, throwOnError: false });
+      return stash(_katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }));
     } catch {
       return `$$${math}$$`;
     }
   });
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
     try {
-      return _katex.renderToString(math.trim(), { displayMode: true, throwOnError: false });
+      return stash(_katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }));
     } catch {
       return `\\[${math}\\]`;
     }
@@ -102,7 +117,7 @@ function renderMath(text: string): string {
   // Inline math: $...$ (not $$) or \(...\)
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => {
     try {
-      return _katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
+      return stash(_katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }));
     } catch {
       return `\\(${math}\\)`;
     }
@@ -112,13 +127,13 @@ function renderMath(text: string): string {
     // Skip if it looks like currency ($100, $5.00)
     if (/^\d/.test(math.trim())) return `$${math}$`;
     try {
-      return _katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
+      return stash(_katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }));
     } catch {
       return `$${math}$`;
     }
   });
 
-  return text;
+  return { text, placeholders };
 }
 
 /** Render raw LaTeX commands outside of $ delimiters (e.g. \frac{a}{b}) */
@@ -403,9 +418,15 @@ function appendAuthTokenToMediaUrls(html: string): string {
 export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: string): string {
   if (!text) return '';
   _chatId = chatId ?? '';
-  // Render math before markdown to protect LaTeX from markdown parsing
-  text = renderMath(text);
-  let html = marked.parse(text) as string;
+  // Render math before markdown to protect LaTeX from markdown parsing.
+  // KaTeX output is stashed behind sentinel placeholders so marked's renderer.html
+  // (which escapes raw HTML to block XSS) doesn't escape the trusted KaTeX spans.
+  const { text: mathText, placeholders } = renderMath(text);
+  let html = marked.parse(mathText) as string;
+  // Restore KaTeX HTML now that marked is done escaping raw HTML tokens.
+  if (placeholders.length) {
+    html = html.replace(KATEX_PLACEHOLDER_RE, (_, i) => placeholders[Number(i)] ?? '');
+  }
   // Catch any bare LaTeX that survived markdown parsing
   html = renderBareLaTeX(html);
   // Style citation markers (with source badges if available)
