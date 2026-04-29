@@ -12,12 +12,18 @@
   let systemPrompt = $state('');
   let searchEnabled = $state(false);
   let researchEnabled = $state(true);
+  let toolGatingEnabled = $state(true);
   let ragEnabled = $state(true);
   let embeddingProvider = $state('openrouter');
   let embeddingModel = $state('openai/text-embedding-3-small');
   let ragChunkSize = $state(512);
   let ragChunkOverlap = $state(64);
   let ragTopK = $state(5);
+  let mistralApiKey = $state('');
+  let mistralKeyIsSet = $state(false);
+  let ocrProvider = $state('auto');
+  let ocrTesseractLangs = $state('eng+rus');
+  let archiveMaxMb = $state(150);
   let saving = $state(false);
   let loading = $state(true);
   let activeTab = $state<'api' | 'system' | 'tools'>('api');
@@ -30,14 +36,47 @@
     systemPrompt = settings.system_prompt ?? '';
     searchEnabled = settings.search_enabled ?? false;
     researchEnabled = settings.research_enabled ?? true;
+    toolGatingEnabled = settings.tool_gating_enabled ?? true;
     ragEnabled = settings.rag_enabled ?? true;
     embeddingProvider = settings.embedding_provider ?? 'openrouter';
     embeddingModel = settings.embedding_model ?? 'openai/text-embedding-3-small';
     ragChunkSize = settings.rag_chunk_size ?? 512;
     ragChunkOverlap = settings.rag_chunk_overlap ?? 64;
     ragTopK = settings.rag_top_k ?? 5;
+    mistralKeyIsSet = settings.mistral_api_key_set ?? false;
+    ocrProvider = settings.ocr_provider ?? 'auto';
+    ocrTesseractLangs = settings.ocr_tesseract_langs ?? 'eng+rus';
+    archiveMaxMb = settings.archive_max_mb ?? 150;
     loading = false;
   });
+
+  async function saveMistralKey() {
+    saving = true;
+    const ok = await updateSettings({ mistral_api_key: mistralApiKey });
+    if (ok) {
+      toast.success($t('toast.apiKeySaved'));
+      mistralKeyIsSet = true;
+      mistralApiKey = '';
+    } else {
+      toast.error($t('toast.apiKeyFailed'));
+    }
+    saving = false;
+  }
+
+  async function saveOcrSettings() {
+    const ok = await updateSettings({
+      ocr_provider: ocrProvider,
+      ocr_tesseract_langs: ocrTesseractLangs,
+    });
+    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
+  }
+
+  async function saveArchiveLimit() {
+    saving = true;
+    const ok = await updateSettings({ archive_max_mb: archiveMaxMb });
+    toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
+    saving = false;
+  }
 
   async function saveKey() {
     saving = true;
@@ -82,6 +121,15 @@
     const ok = await updateSettings({ research_enabled: researchEnabled });
     if (!ok) {
       researchEnabled = !researchEnabled;
+      toast.error($t('admin.failedToSave'));
+    }
+  }
+
+  async function toggleToolGating() {
+    toolGatingEnabled = !toolGatingEnabled;
+    const ok = await updateSettings({ tool_gating_enabled: toolGatingEnabled });
+    if (!ok) {
+      toolGatingEnabled = !toolGatingEnabled;
       toast.error($t('admin.failedToSave'));
     }
   }
@@ -187,6 +235,52 @@
 
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+          <h2 class="text-lg font-semibold">OCR</h2>
+        </div>
+        <p class="text-sm opacity-40">
+          OCR для сканов и изображений в документах. Tesseract — локально (бесплатно, нужен системный пакет). Mistral — облако (формулы, таблицы, нужен API-ключ).
+        </p>
+        <!-- OCR Provider -->
+        <div>
+          <span class="text-xs opacity-50">{$t('admin.ocrProvider')}</span>
+          <select class="select w-full" bind:value={ocrProvider} onchange={saveOcrSettings}>
+            <option value="auto">{$t('admin.ocrProviderAuto')}</option>
+            <option value="tess">{$t('admin.ocrProviderTess')}</option>
+            <option value="mistral">{$t('admin.ocrProviderMistral')}</option>
+            <option value="none">{$t('admin.ocrProviderNone')}</option>
+          </select>
+        </div>
+        <!-- Tesseract langs -->
+        {#if ocrProvider === 'tess' || ocrProvider === 'auto'}
+          <div>
+            <span class="text-xs opacity-50">{$t('admin.ocrTesseractLangs')}</span>
+            <input type="text" class="input w-full" bind:value={ocrTesseractLangs} placeholder="eng+rus" onchange={saveOcrSettings} />
+            <p class="text-xs opacity-40 mt-1">{$t('admin.ocrTesseractLangsDesc')}</p>
+          </div>
+        {/if}
+        <!-- Mistral key (when mistral or auto is selected) -->
+        {#if ocrProvider === 'mistral' || ocrProvider === 'auto'}
+          <div class="border-t pt-4" style="border-color: var(--quip-border)">
+            <p class="text-sm opacity-40 mb-2">API-ключ Mistral для формул и сложных таблиц.</p>
+            {#if mistralKeyIsSet}
+              <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
+                <span class="size-1.5 rounded-full bg-success-500"></span>
+                {$t('admin.connected')}
+              </span>
+            {/if}
+            <div class="flex gap-2 mt-2">
+              <input type="password" class="input flex-1" placeholder={mistralKeyIsSet ? $t('admin.enterNewKey') : 'mistral-...'} bind:value={mistralApiKey} />
+              <button class="btn preset-filled-primary-500" onclick={saveMistralKey} disabled={saving || !mistralApiKey.trim()}>
+                {saving ? '...' : $t('common.save')}
+              </button>
+            </div>
+          </div>
+        {/if}
+      </section>
+
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
           <h2 class="text-lg font-semibold">{$t('admin.ollama')}</h2>
         </div>
@@ -252,6 +346,19 @@
         </label>
       </section>
 
+      <!-- Tool Gating -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          <h2 class="text-lg font-semibold">{$t('admin.toolGating')}</h2>
+        </div>
+        <p class="text-sm opacity-40">{$t('admin.toolGatingDesc')}</p>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" class="checkbox" checked={toolGatingEnabled} onchange={toggleToolGating} />
+          <span class="text-sm">{toolGatingEnabled ? $t('common.enabled') : $t('common.disabled')}</span>
+        </label>
+      </section>
+
       <!-- RAG & Documents -->
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2">
@@ -294,6 +401,24 @@
             {saving ? '...' : $t('common.save')}
           </button>
         {/if}
+      </section>
+
+      <!-- Archive upload limit -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+          <h2 class="text-lg font-semibold">Archive uploads</h2>
+        </div>
+        <p class="text-sm opacity-40">
+          Лимит на загрузку архивов (zip / tar / gz / rar / 7z). Содержимое не извлекается на сервере — архив попадает в песочницу, и модель сама решает, что делать.
+        </p>
+        <label class="space-y-1 block">
+          <span class="text-xs opacity-50">Max size (MB)</span>
+          <input type="number" class="input w-full" min="1" max="2048" bind:value={archiveMaxMb} />
+        </label>
+        <button class="btn preset-filled-primary-500" onclick={saveArchiveLimit} disabled={saving}>
+          {saving ? '...' : $t('common.save')}
+        </button>
       </section>
     </div>
   {/if}

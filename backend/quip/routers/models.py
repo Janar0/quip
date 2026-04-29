@@ -126,4 +126,5 @@ async def get_features(user: User = Depends(get_current_user)):
     """Return feature flags visible to all authenticated users."""
     return {
         "search_enabled": get_bool_setting("search_enabled", False),
+        "tool_gating_enabled": get_bool_setting("tool_gating_enabled", True),
     }

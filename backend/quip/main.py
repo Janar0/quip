@@ -30,7 +30,6 @@ import quip.models  # noqa: F401 — register all models with Base
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # Ensure performance indexes exist on existing databases (separate transaction)
     async with engine.begin() as conn:
         for stmt in [
             "CREATE INDEX IF NOT EXISTS ix_usage_log_created ON usage_log(created_at)",
@@ -39,18 +38,18 @@ async def lifespan(app: FastAPI):
             try:
                 await conn.execute(text(stmt))
             except Exception:
-                pass  # Index may already exist with this name
-    # Lightweight migrations for columns added after the DB was created.
-    # create_all does not add columns to existing tables.
+                pass
     async with engine.begin() as conn:
         for stmt in [
             "ALTER TABLE skill ADD COLUMN settings_schema JSON",
             "ALTER TABLE skill ADD COLUMN settings JSON",
+            "ALTER TABLE document_chunks ADD COLUMN chunk_metadata JSON",
+            "ALTER TABLE document_chunks ADD COLUMN content_hash VARCHAR(64)",
         ]:
             try:
                 await conn.execute(text(stmt))
             except Exception:
-                pass  # Column already exists
+                pass
     await run_migration_if_needed()
     await load_settings()
     from quip.services.skill_store import seed_builtin_skills

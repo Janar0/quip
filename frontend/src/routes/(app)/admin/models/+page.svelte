@@ -104,9 +104,9 @@
         </div>
         <div class="flex items-center gap-2 text-xs">
           <span class="opacity-40">{whitelist.length === 0 ? $t('admin.modelWhitelistHint') : `${whitelist.length} / ${allModels.length}`}</span>
-          <button class="opacity-50 hover:opacity-100 transition-colors" onclick={selectAll}>All</button>
+          <button class="opacity-50 hover:opacity-100 transition-colors" onclick={selectAll}>{$t('common.all')}</button>
           <span class="opacity-30">·</span>
-          <button class="opacity-50 hover:opacity-100 transition-colors" onclick={selectNone}>None</button>
+          <button class="opacity-50 hover:opacity-100 transition-colors" onclick={selectNone}>{$t('common.none')}</button>
         </div>
       </div>
       <p class="text-sm opacity-40">{$t('admin.modelWhitelistDesc')}</p>
@@ -182,52 +182,52 @@
 
       <div class="space-y-4">
         <!-- Default model -->
-        <div class="space-y-1.5">
-          <label class="text-sm font-medium">{$t('admin.defaultModel')}</label>
-          <p class="text-xs opacity-40">{$t('admin.defaultModelDesc')}</p>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium block">{$t('admin.defaultModel')}</span>
+          <span class="text-xs opacity-40 block">{$t('admin.defaultModelDesc')}</span>
           <select class="select w-full text-sm" bind:value={defaultModel}>
             <option value="">{$t('admin.defaultModelNone')}</option>
             {#each allModels as m (m.id)}
               <option value={m.id}>{m.name}</option>
             {/each}
           </select>
-        </div>
+        </label>
 
         <!-- Search model -->
-        <div class="space-y-1.5">
-          <label class="text-sm font-medium">{$t('admin.searchModel')}</label>
-          <p class="text-xs opacity-40">{$t('admin.searchModelDesc')}</p>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium block">{$t('admin.searchModel')}</span>
+          <span class="text-xs opacity-40 block">{$t('admin.searchModelDesc')}</span>
           <select class="select w-full text-sm" bind:value={searchModel}>
             <option value="">{$t('admin.searchModelNone')}</option>
             {#each allModels as m (m.id)}
               <option value={m.id}>{m.name}</option>
             {/each}
           </select>
-        </div>
+        </label>
 
         <!-- Research model -->
-        <div class="space-y-1.5">
-          <label class="text-sm font-medium">{$t('admin.researchModel')}</label>
-          <p class="text-xs opacity-40">{$t('admin.researchModelDesc')}</p>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium block">{$t('admin.researchModel')}</span>
+          <span class="text-xs opacity-40 block">{$t('admin.researchModelDesc')}</span>
           <select class="select w-full text-sm" bind:value={researchModel}>
             <option value="">{$t('admin.researchModelNone')}</option>
             {#each allModels as m (m.id)}
               <option value={m.id}>{m.name}</option>
             {/each}
           </select>
-        </div>
+        </label>
 
         <!-- Title model -->
-        <div class="space-y-1.5">
-          <label class="text-sm font-medium">{$t('admin.titleModel')}</label>
-          <p class="text-xs opacity-40">{$t('admin.titleModelDesc')}</p>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium block">{$t('admin.titleModel')}</span>
+          <span class="text-xs opacity-40 block">{$t('admin.titleModelDesc')}</span>
           <select class="select w-full text-sm" bind:value={titleModel}>
             <option value="">{$t('admin.titleModelNone')}</option>
             {#each allModels as m (m.id)}
               <option value={m.id}>{m.name}</option>
             {/each}
           </select>
-        </div>
+        </label>
       </div>
 
       <button class="btn preset-filled-primary-500" onclick={saveSystemModels} disabled={savingSystemModels}>

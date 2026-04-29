@@ -159,20 +159,26 @@ async def search_chats(
     )
     chats = result.scalars().all()
 
-    # For each matching chat, find the matching message snippet
+    # Fetch one matching message per chat in a single query (was N+1).
+    chat_ids = [c.id for c in chats]
+    snippets_by_chat: dict[UUID, str] = {}
+    if chat_ids:
+        msgs_result = await db.execute(
+            select(Message.chat_id, Message.content)
+            .where(Message.chat_id.in_(chat_ids), Message.content.ilike(pattern))
+            .order_by(Message.created_at.desc())
+        )
+        for cid, content in msgs_result.all():
+            if cid not in snippets_by_chat:
+                snippets_by_chat[cid] = content
+
+    q_lower = q.lower()
     results = []
     for chat in chats:
         snippet = None
-        msg_result = await db.execute(
-            select(Message.content)
-            .where(Message.chat_id == chat.id, Message.content.ilike(pattern))
-            .limit(1)
-        )
-        msg = msg_result.scalar_one_or_none()
+        msg = snippets_by_chat.get(chat.id)
         if msg:
-            # Extract a snippet around the match
-            lower = msg.lower()
-            idx = lower.find(q.lower())
+            idx = msg.lower().find(q_lower)
             start = max(0, idx - 40)
             end = min(len(msg), idx + len(q) + 40)
             snippet = ("..." if start > 0 else "") + msg[start:end] + ("..." if end < len(msg) else "")

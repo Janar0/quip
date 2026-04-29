@@ -29,6 +29,16 @@ Rules:
 - Expression uses `x` as the variable.
 - Named params become interactive sliders the user can drag.
 - xRange is a 2-element array [min, max].
+
+USE WHEN:
+- Visualizing a mathematical function or equation
+- Showing how parameters affect a curve (interactive sliders)
+- Comparing multiple functions on the same axes
+
+DO NOT USE WHEN:
+- Displaying categorical data (use chart)
+- Showing tabular data (use table)
+- Simple inline notation that prose suffices for
 """,
     'data_schema': None,
     'template_html': None,

@@ -195,3 +195,21 @@ def build_tools_for_api(
         if search_enabled:
             tools.extend(search_tools)
     return tools
+
+
+def build_gated_tools_for_api(
+    base_tools: list[dict],
+    unlocked_gates: set[str],
+    gated_tool_map: dict[str, list[dict]],
+) -> list[dict]:
+    """Assemble base tools + tools for unlocked gates only.
+
+    Gated tools (web_search, sandbox, image_generation, music_generation)
+    only appear in the list after the model calls load_skill(skill_id).
+    """
+    tools = list(base_tools)
+    for skill_id in unlocked_gates:
+        skill_tools = gated_tool_map.get(skill_id)
+        if skill_tools:
+            tools.extend(skill_tools)
+    return tools

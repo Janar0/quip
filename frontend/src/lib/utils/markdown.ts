@@ -290,7 +290,7 @@ export interface SourceInfo {
 
 /** Parse a block of `[N] Title - URL` lines into SourceInfo[]. Unparseable
  *  lines are skipped silently — keeps streaming robust when the URL is still
- *  coming in. */
+ *  coming in. Lines without [N] prefix are auto-numbered. */
 function parseSourcesBlock(block: string): SourceInfo[] {
   const sources: SourceInfo[] = [];
   for (const line of block.split('\n')) {
@@ -329,7 +329,26 @@ function parseSourcesBlock(block: string): SourceInfo[] {
       }
     }
 
-    if (num && url) {
+    // Format: Title - URL  (no [N] prefix, auto-number)
+    if (!num) {
+      const noNumDash = trimmed.match(/^(.+?)\s*[-–—]\s*(https?:\/\/\S+)/);
+      if (noNumDash) {
+        title = noNumDash[1];
+        url = noNumDash[2];
+      }
+    }
+
+    // Format: Title URL  (no [N] prefix, space separated, auto-number)
+    if (!num) {
+      const noNumSpace = trimmed.match(/^(.+?)\s+(https?:\/\/\S+)/);
+      if (noNumSpace) {
+        title = noNumSpace[1];
+        url = noNumSpace[2];
+      }
+    }
+
+    if (url) {
+      if (!num) num = sources.length + 1;
       let domain = '';
       try {
         domain = new URL(url).hostname.replace(/^www\./, '');
@@ -349,7 +368,10 @@ function parseSourcesBlock(block: string): SourceInfo[] {
  *    1. TOP placement (new Perplexity-style prompt): `**Sources:**` block at the
  *       very start of the message, optionally followed by a `---` separator and
  *       then the prose. Extracted as soon as any `[N] Title - URL` line parses.
- *    2. BOTTOM placement (legacy fallback): `\n---\n**Sources:**` footer at end. */
+ *    2. BOTTOM placement (legacy fallback): `\n---\n**Sources:**` footer at end.
+ *    3. LOOSE placement (robustness): any `**Sources:**` / `**Источники:**` near
+ *       the end of the message, with source lines containing URLs. Handles models
+ *       that omit [N] prefixes or the --- separator. */
 export function extractSources(content: string): { cleanContent: string; sources: SourceInfo[] } {
   if (!content) return { cleanContent: content, sources: [] };
 
@@ -370,11 +392,33 @@ export function extractSources(content: string): { cleanContent: string; sources
   // BOTTOM placement (legacy). Kept so old messages still render correctly.
   const bottomPattern = /\n---\n\s*\*{0,2}(?:Sources|Источники):?\*{0,2}\s*\n([\s\S]*?)$/i;
   const bottomMatch = content.match(bottomPattern);
-  if (!bottomMatch) return { cleanContent: content, sources: [] };
+  if (bottomMatch) {
+    const cleanContent = content.slice(0, bottomMatch.index!).trimEnd();
+    const sources = parseSourcesBlock(bottomMatch[1]);
+    if (sources.length > 0) return { cleanContent, sources };
+  }
 
-  const cleanContent = content.slice(0, bottomMatch.index!).trimEnd();
-  const sources = parseSourcesBlock(bottomMatch[1]);
-  return { cleanContent, sources };
+  // LOOSE placement: **Sources:** / **Источники:** near the end, lines with URLs.
+  // Handles models that omit [N] prefixes or the --- separator.
+  const loosePattern = /\n\s*\*{0,2}(?:Sources|Источники):?\*{0,2}\s*\n((?:.*https?:\/\/\S+.*(?:\n|$))+)/gi;
+  let looseMatch: RegExpExecArray | null;
+  let bestMatch: { index: number; full: string; block: string } | null = null;
+  while ((looseMatch = loosePattern.exec(content)) !== null) {
+    const idx = looseMatch.index;
+    // Prefer match closest to the end of content (likely the real Sources block)
+    if (!bestMatch || idx > bestMatch.index) {
+      bestMatch = { index: idx, full: looseMatch[0], block: looseMatch[1] };
+    }
+  }
+  if (bestMatch) {
+    const sources = parseSourcesBlock(bestMatch.block);
+    if (sources.length > 0) {
+      const cleanContent = content.slice(0, bestMatch.index).trimEnd();
+      return { cleanContent, sources };
+    }
+  }
+
+  return { cleanContent: content, sources: [] };
 }
 
 /** Convert [N] or [N, M, K] citation markers to inline source badges.

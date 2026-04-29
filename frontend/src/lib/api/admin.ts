@@ -12,17 +12,23 @@ export interface SettingsPayload {
   rag_chunk_size?: number;
   rag_chunk_overlap?: number;
   rag_top_k?: number;
+  ocr_provider?: string;
+  ocr_tesseract_langs?: string;
   search_enabled?: boolean;
   research_enabled?: boolean;
+  tool_gating_enabled?: boolean;
   search_model?: string;
   research_model?: string;
   title_model?: string;
   default_model?: string | null;
+  mistral_api_key?: string;
+  archive_max_mb?: number;
 }
 
 export interface SettingsResponse extends SettingsPayload {
   openrouter_api_key_set: boolean;
   openrouter_key_info: Record<string, unknown> | null;
+  mistral_api_key_set?: boolean;
 }
 
 export const getSettings = (): Promise<SettingsResponse> =>

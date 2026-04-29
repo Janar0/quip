@@ -32,4 +32,18 @@ class DocumentChunk(Base):
     content = Column(Text, nullable=False)
     embedding = Column(JSON)
     token_count = Column(Integer)
+    chunk_metadata = Column(JSON, nullable=True)  # {"page": 3, "image_refs": [...], "source": "ocr"|"text"}
+    content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex — dedup across files
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentImage(Base):
+    __tablename__ = "document_images"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    file_id = Column(Uuid, ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
+    ref = Column(String(64), nullable=False, index=True)  # marker like "img_1"
+    page = Column(Integer, nullable=True)
+    storage_path = Column(String(1000), nullable=False)
+    mime = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

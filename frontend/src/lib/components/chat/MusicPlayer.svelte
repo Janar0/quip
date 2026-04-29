@@ -113,6 +113,7 @@
   <audio
     bind:this={audio}
     {src}
+    preload="metadata"
     onplay={() => (paused = false)}
     onpause={() => (paused = true)}
     onended={() => { paused = true; currentTime = 0; }}
@@ -127,7 +128,7 @@
     border: 1px solid var(--quip-border-strong);
     background: var(--quip-bg-raised);
     overflow: hidden;
-    my: 0.5rem;
+    margin: 0.5rem 0;
   }
 
   .header {
@@ -149,6 +150,7 @@
     color: var(--quip-text-dim);
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

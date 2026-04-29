@@ -63,8 +63,8 @@
 <div class="relative flex flex-col h-full">
   {#if hasMessages}
     {#if ChatPane}
-      <svelte:component
-        this={ChatPane}
+      {@const Pane = ChatPane}
+      <Pane
         chatId={chatId}
         onSend={handleSend}
         onRegenerate={handleRegenerate}

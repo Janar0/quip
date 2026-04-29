@@ -29,6 +29,15 @@ graph TD;
 </artifact>
 
 Good for flowcharts, sequence diagrams, state diagrams, class diagrams, gantt charts.
+
+USE WHEN:
+- Showing a flow, process, or sequence
+- Visualizing a state machine or class hierarchy
+- Creating a timeline or gantt chart
+
+DO NOT USE WHEN:
+- Data is numeric/categorical (use chart or table)
+- Simple relationship that prose suffices for
 """,
     'data_schema': None,
     'template_html': None,

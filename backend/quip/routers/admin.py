@@ -32,6 +32,7 @@ class SettingsUpdate(BaseModel):
     rag_enabled: bool | None = None
     search_enabled: bool | None = None
     research_enabled: bool | None = None
+    tool_gating_enabled: bool | None = None
     embedding_provider: str | None = None
     embedding_model: str | None = None
     rag_chunk_size: int | None = None
@@ -42,6 +43,10 @@ class SettingsUpdate(BaseModel):
     research_model: str | None = None
     title_model: str | None = None
     default_model: str | None = None
+    mistral_api_key: str | None = None
+    ocr_provider: str | None = None
+    ocr_tesseract_langs: str | None = None
+    archive_max_mb: int | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -63,6 +68,11 @@ class SettingsResponse(BaseModel):
     research_model: Optional[str] = None
     title_model: Optional[str] = None
     default_model: Optional[str] = None
+    mistral_api_key_set: bool = False
+    ocr_provider: str = "auto"
+    ocr_tesseract_langs: str = "eng+rus"
+    archive_max_mb: int = 150
+    tool_gating_enabled: bool = True
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -92,11 +102,16 @@ async def get_settings(user: User = Depends(get_admin_user)):
         research_model=get_setting("research_model") or None,
         title_model=get_setting("title_model") or None,
         default_model=get_setting("default_model") or None,
+        mistral_api_key_set=bool(get_setting("mistral_api_key")),
+        ocr_provider=get_setting("ocr_provider", "auto"),
+        ocr_tesseract_langs=get_setting("ocr_tesseract_langs", "eng+rus"),
+        archive_max_mb=int(get_setting("archive_max_mb", "150")),
+        tool_gating_enabled=get_bool_setting("tool_gating_enabled", True),
     )
 
 
 _JSON_SETTING_FIELDS = {"model_whitelist", "model_aliases"}
-_BOOL_SETTING_FIELDS = {"rag_enabled", "search_enabled", "research_enabled"}
+_BOOL_SETTING_FIELDS = {"rag_enabled", "search_enabled", "research_enabled", "tool_gating_enabled"}
 
 
 @router.put("/settings")
@@ -367,12 +382,17 @@ async def list_budgets(
 ):
     result = await db.execute(select(Budget).order_by(Budget.user_id))
     budgets = result.scalars().all()
+
+    # Batch-load user names to avoid N+1
+    user_ids = [b.user_id for b in budgets if b.user_id]
+    user_names: dict = {}
+    if user_ids:
+        u_result = await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))
+        user_names = {uid: name for uid, name in u_result.all()}
+
     items = []
     for b in budgets:
-        user_name = None
-        if b.user_id:
-            u = await db.execute(select(User.name).where(User.id == b.user_id))
-            user_name = u.scalar_one_or_none()
+        user_name = user_names.get(b.user_id) if b.user_id else None
         items.append(BudgetItem(
             id=str(b.id), user_id=str(b.user_id) if b.user_id else None,
             user_name=user_name, period=b.period, limit_usd=float(b.limit_usd),

@@ -113,7 +113,7 @@
         {#each data.by_model as row}
           <div class="space-y-1">
             <div class="flex justify-between text-sm">
-              <span class="truncate flex-1">{row.display_name}</span>
+              <span class="truncate flex-1 min-w-0">{row.display_name}</span>
               <span class="opacity-40 ml-2 text-xs">{fmtTokens(row.tokens)} tok</span>
               <span class="opacity-70 ml-2">{row.requests} {$t('admin.usageReq')}</span>
               <span class="ml-3 font-mono">${fmt(row.cost)}</span>

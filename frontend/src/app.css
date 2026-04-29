@@ -1,6 +1,18 @@
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 
+/* ── Self-hosted fonts (woff2 served from node_modules via Vite) ─── */
+@import '@fontsource/inter/300.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/manrope/500.css';
+@import '@fontsource/manrope/700.css';
+@import '@fontsource/manrope/800.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
 /* ── QUIP Slate Theme ─────────────────────────────────────────────── */
 [data-theme^='quip-'] {
 	--spacing: 0.25rem;
@@ -459,12 +471,28 @@
 
 /* ── Typing indicator dots ─────────────────────────────────────────── */
 @keyframes typing-dot {
-  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.7); }
   30% { opacity: 1; transform: scale(1); }
 }
-.typing-dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: currentColor; animation: typing-dot 1.4s infinite; }
+.typing-dots span {
+  display: inline-block; width: 7px; height: 7px; margin: 0 2.5px;
+  border-radius: 50%; background: var(--quip-text-muted);
+  animation: typing-dot 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Spinner ring (tool execution, search, etc.) ──────────────────── */
+@keyframes spin-ring {
+  to { transform: rotate(360deg); }
+}
+.spinner-ring {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1.5px solid var(--quip-border-strong);
+  border-top-color: var(--quip-text-muted);
+  border-radius: 50%;
+  animation: spin-ring 0.7s linear infinite;
+}
 
 /* ── Citations ─────────────────────────────────────────────────────── */
 .citation { color: var(--quip-text-dim); cursor: default; font-size: 0.75em; }

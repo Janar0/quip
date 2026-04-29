@@ -1,0 +1,13 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Janaro\\Desktop\\QUIP\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [34796] using WatchFiles
+Docker not available: Error while fetching server API version: (2, 'CreateFile', 'Не удается найти указанный файл.')
+GeoLite2-City.mmdb missing at C:\Users\Janaro\Desktop\QUIP\backend\quip\data\GeoLite2-City.mmdb — geo context disabled
+INFO:     Started server process [4352]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'quip\migrations\__init__.py', 'quip\migrations\versions\51b6f27d1839_initial_schema.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4352]

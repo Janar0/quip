@@ -277,11 +277,11 @@
               <span class="text-xs">{$t('admin.skills.enabled')}</span>
             </label>
             <div class="flex gap-1">
-              <button class="btn btn-sm preset-outlined" onclick={() => openEdit(skill)}>
+              <button class="btn btn-sm preset-outlined" onclick={() => openEdit(skill)} aria-label={$t('admin.skills.edit')} title={$t('admin.skills.edit')}>
                 ✎
               </button>
               {#if !skill.is_builtin}
-                <button class="btn btn-sm preset-filled-error-500" onclick={() => confirmDelete(skill)}>
+                <button class="btn btn-sm preset-filled-error-500" onclick={() => confirmDelete(skill)} aria-label={$t('admin.skills.delete')} title={$t('admin.skills.delete')}>
                   ✕
                 </button>
               {/if}
@@ -302,7 +302,7 @@
     onclick={() => (modalOpen = false)}
     onkeydown={(e) => e.key === 'Escape' && (modalOpen = false)}
   >
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div
       class="card w-full max-w-3xl max-h-[92vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
@@ -484,6 +484,7 @@
     onclick={() => (aiModalOpen = false)}
     onkeydown={(e) => e.key === 'Escape' && (aiModalOpen = false)}
   >
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="card w-full max-w-xl flex flex-col" onclick={(e) => e.stopPropagation()}>
       <div class="p-4 border-b border-surface-500/20">
         <h2 class="text-lg font-semibold">✨ {$t('admin.skills.generateAi')}</h2>

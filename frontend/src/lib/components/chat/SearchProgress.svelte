@@ -50,24 +50,23 @@
   );
 </script>
 
-<!-- Search progress — left-border accent style -->
 <div class="border-l-2 pl-3 mb-3 space-y-1" style="border-color: var(--quip-border-strong)">
-  <!-- Summary line -->
   <button
-    class="flex items-center gap-2 text-xs w-full text-left"
+    class="flex items-center gap-2 text-xs w-full text-left cursor-pointer"
+    style="color: var(--quip-text-muted)"
     onclick={() => (expanded = !expanded)}
+    onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-dim)' }}
+    onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-muted)' }}
   >
     {#if !allDone}
-      <span class="flex-shrink-0 w-3 h-3 flex items-center justify-center">
-        <span class="block w-2.5 h-2.5 rounded-full border border-slate-500 border-t-transparent animate-spin"></span>
-      </span>
+      <span class="spinner-ring flex-shrink-0" style="width: 12px; height: 12px; border-width: 1.5px"></span>
     {:else if hasError}
-      <svg class="w-3 h-3 text-error-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>
+      <svg class="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     {:else}
-      <svg class="w-3 h-3 text-success-400/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="w-3 h-3 flex-shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
     {/if}
 
-    <span style="color: var(--quip-text-muted)">
+    <span>
       {#if !allDone}
         {$t('search.searching')}
       {:else}
@@ -77,32 +76,30 @@
 
     {#if allDone}
       <svg
-        class="w-3 h-3 ml-1 transition-transform {expanded ? 'rotate-180' : ''}"
-        style="color: var(--quip-text-muted)"
-        fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
+        class="w-3 h-3 ml-1 flex-shrink-0 opacity-40"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+        style="transition: transform var(--quip-d-2) var(--quip-ease-out); transform: rotate({expanded ? 180 : 0}deg)"
       >
-        <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M19 9l-7 7-7-7" />
       </svg>
     {/if}
   </button>
 
-  <!-- Step lines (shown while running, hidden when done+collapsed) -->
+  <!-- Step lines -->
   {#if !allDone || expanded}
     <div class="space-y-0.5">
       {#each executions as exec (exec.id)}
         <div
           class="flex items-center gap-1.5 text-[11px]"
-          style="color: var(--quip-text-muted)"
           in:fly={{ y: 6, duration: D2, easing: easeOut }}
+          style="color: var(--quip-text-muted)"
         >
           {#if exec.status === 'running'}
-            <span class="flex-shrink-0 w-2.5 h-2.5 flex items-center justify-center">
-              <span class="block w-2 h-2 rounded-full border border-slate-500 border-t-transparent animate-spin"></span>
-            </span>
+            <span class="spinner-ring flex-shrink-0" style="width: 9px; height: 9px; border-width: 1.5px"></span>
           {:else if exec.status === 'error'}
-            <svg class="w-2.5 h-2.5 text-error-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>
+            <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           {:else}
-            <svg class="w-2.5 h-2.5 text-success-400/50 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="w-2.5 h-2.5 flex-shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
           {/if}
 
           <span class="opacity-50 truncate">{stepLabel(exec)}</span>

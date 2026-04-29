@@ -27,19 +27,35 @@ DOCUMENT_TYPES = {
     "text/markdown",
     "text/csv",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/epub+zip",
 }
 VIDEO_TYPES = {"video/mp4", "video/webm", "video/mpeg", "video/quicktime", "video/x-msvideo"}
 VIDEO_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
+ARCHIVE_TYPES = {
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-rar-compressed",
+    "application/vnd.rar",
+    "application/x-7z-compressed",
+}
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
 def _classify_file(content_type: str) -> str:
-    """Classify file as 'image', 'video', or 'document'."""
+    """Classify file as 'image', 'video', 'archive', or 'document'."""
     if content_type in IMAGE_TYPES or content_type.startswith("image/"):
         return "image"
     if content_type in VIDEO_TYPES or content_type.startswith("video/"):
         return "video"
+    if content_type in ARCHIVE_TYPES:
+        return "archive"
     if content_type in DOCUMENT_TYPES:
         return "document"
     if content_type.startswith("text/"):
@@ -102,11 +118,18 @@ async def upload_files(
         content_type = upload.content_type or "application/octet-stream"
         file_type = _classify_file(content_type)
 
-        # Resize large images; reject oversized videos
+        # Resize large images; reject oversized videos and archives
         if file_type == "image":
             data = _normalize_image(data, content_type)
         elif file_type == "video" and len(data) > VIDEO_MAX_BYTES:
             raise HTTPException(status_code=413, detail=f"Video file too large (max 100 MB)")
+        elif file_type == "archive":
+            archive_max = int(get_setting("archive_max_mb", "150")) * 1024 * 1024
+            if len(data) > archive_max:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Archive too large (max {archive_max // (1024*1024)} MB)",
+                )
 
         # Hash for dedup
         file_hash = hashlib.sha256(data).hexdigest()
@@ -118,9 +141,16 @@ async def upload_files(
         storage_name = f"{file_id}{ext}"
         storage_path = f"{user.id}/{storage_name}"
 
-        # Determine initial embedding status
-        if file_type in ("image", "video"):
+        # Determine initial embedding status.
+        # Archives go through process_file too (creates a sandbox marker chunk),
+        # so they're "pending" but won't be embedded.
+        if file_type == "video":
             embedding_status = "skipped"
+        elif file_type == "image":
+            # Standalone images: OCR them into RAG chunks if RAG is on
+            embedding_status = "pending" if get_bool_setting("rag_enabled", True) else "skipped"
+        elif file_type == "archive":
+            embedding_status = "pending"  # marker-only processing
         elif get_bool_setting("rag_enabled", True):
             embedding_status = "pending"
         else:

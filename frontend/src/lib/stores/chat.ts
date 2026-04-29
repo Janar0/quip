@@ -77,6 +77,10 @@ export const isLoading = writable<boolean>(false);
 export const selectedModel = writable<string>(_storedModel ?? '');
 export const abortController = writable<AbortController | null>(null);
 
+// Branch selections: parent_id → selected child id. Lifted to store so non-component
+// code (streamChat) can compute the current thread tail when adding optimistic messages.
+export const branchSelections = writable<Record<string, string>>({});
+
 export const searchEnabled = writable<boolean>(false);
 
 export type ModePreference = 'auto' | 'search' | 'research';

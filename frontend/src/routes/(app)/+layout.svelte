@@ -143,7 +143,9 @@
   });
 
   onMount(() => {
-    Promise.all([loadChats(), fetchModels(), fetchFeatures()]);
+    Promise.all([loadChats(), fetchModels(), fetchFeatures()]).catch((e) => {
+      console.error('Initial app load failed', e);
+    });
 
     const mql = window.matchMedia('(min-width: 768px)');
     const handler = (e: MediaQueryListEvent) => {

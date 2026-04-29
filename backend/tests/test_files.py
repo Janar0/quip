@@ -142,8 +142,8 @@ async def test_document_upload_triggers_background_processing(client, auth_heade
 
 
 @pytest.mark.asyncio
-async def test_image_upload_skips_embedding(client, auth_headers, tmp_upload_dir):
-    """Image uploads should not trigger background embedding."""
+async def test_image_upload_triggers_ocr_when_rag_enabled(client, auth_headers, tmp_upload_dir):
+    """Image uploads route through background OCR so the extracted text is searchable."""
     set_setting("rag_enabled", "true")
 
     with patch("quip.routers.files._process_file_background", new_callable=AsyncMock) as mock_bg:
@@ -153,7 +153,7 @@ async def test_image_upload_skips_embedding(client, auth_headers, tmp_upload_dir
             files=[("files", ("img.png", _png_bytes(), "image/png"))],
         )
     assert res.status_code == 200
-    mock_bg.assert_not_called()
+    mock_bg.assert_called_once()
 
 
 def _jpeg_with_exif_orientation(width=2, height=1, orientation=6):

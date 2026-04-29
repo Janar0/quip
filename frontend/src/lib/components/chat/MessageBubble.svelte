@@ -14,7 +14,7 @@
   } from '$lib/utils/markdown';
   import { stripArtifactTags } from '$lib/utils/artifacts';
   import { formatRelativeTime } from '$lib/utils/time';
-  import { getFileUrl, getGeneratedImageUrl, getGeneratedAudioUrl } from '$lib/api/files';
+  import { getGeneratedImageUrl, getGeneratedAudioUrl } from '$lib/api/files';
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import { fly } from 'svelte/transition';
@@ -27,6 +27,9 @@
   import PrimarySourceBanner from '$lib/components/chat/PrimarySourceBanner.svelte';
   import DeepResearchProgress from '$lib/components/chat/DeepResearchProgress.svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
+  import AttachmentGrid from '$lib/components/chat/AttachmentGrid.svelte';
+  import ReasoningSection from '$lib/components/chat/ReasoningSection.svelte';
+  import SourcesList from '$lib/components/chat/SourcesList.svelte';
 
   let {
     message,
@@ -43,8 +46,6 @@
   let hasReasoning = $derived(!!message.reasoning);
   let hasContent = $derived(!!message.content);
   let isStreamingEmpty = $derived(message.id === 'streaming' && !message.content);
-  let reasoningOpen = $state(false);
-  let sourcesOpen = $state(false);
   let editing = $state(false);
   let editText = $state('');
   const SEARCH_TOOLS = new Set(['web_search']);
@@ -100,13 +101,8 @@
     }
     return files;
   });
-  let imageAttachments = $derived(
-    (message.attachments ?? [])
-      .filter((a) => a.file_type === 'image')
-      .map((a) => ({ ...a, url: getFileUrl(a.file_id) })),
-  );
-  let docAttachments = $derived((message.attachments ?? []).filter((a) => a.file_type === 'document'));
-  let hasAttachments = $derived(imageAttachments.length > 0 || docAttachments.length > 0);
+  let attachmentsList = $derived(message.attachments ?? []);
+  let hasAttachments = $derived(attachmentsList.length > 0);
   // Always strip artifact tags — even during streaming when hasArtifacts is still false
   // (incomplete <artifact> tags contain raw HTML that would inject into the page via {@html})
   let stripped = $derived(isUser ? message.content : stripArtifactTags(message.content));
@@ -209,37 +205,7 @@
     <div class="max-w-[75%]">
       <div class="quip-user-bubble px-[14px] py-[11px]">
         {#if hasAttachments}
-          {#if imageAttachments.length}
-            <div class="flex flex-wrap gap-2 mb-2">
-              {#each imageAttachments as img (img.file_id)}
-                <div class="relative">
-                  <a href={img.url} target="_blank" rel="noopener" class="block">
-                    <img
-                      src={img.url}
-                      alt={img.filename}
-                      loading="lazy"
-                      class="max-w-[300px] max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity"
-                      onerror={(e) => { const el = e.currentTarget as HTMLImageElement; el.style.display = 'none'; el.nextElementSibling?.classList.remove('hidden'); }}
-                    />
-                    <div class="hidden items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
-                      <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                      <span class="truncate max-w-48">{img.filename}</span>
-                    </div>
-                  </a>
-                </div>
-              {/each}
-            </div>
-          {/if}
-          {#if docAttachments.length}
-            <div class="flex flex-wrap gap-2 mb-2">
-              {#each docAttachments as att (att.file_id)}
-                <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
-                  <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  <span class="truncate max-w-48">{att.filename}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
+          <AttachmentGrid attachments={attachmentsList} mb="mb-2" />
         {/if}
         {#if editing}
           <textarea
@@ -293,66 +259,11 @@
       </div>
 
       {#if hasReasoning}
-        <div class="mb-3">
-          <button
-            type="button"
-            class="text-xs text-slate-500 hover:text-slate-400 select-none transition-colors flex items-center gap-1"
-            aria-expanded={reasoningOpen}
-            onclick={() => (reasoningOpen = !reasoningOpen)}
-          >
-            <span
-              class="inline-block transition-transform"
-              style:transform={reasoningOpen ? 'rotate(90deg)' : ''}
-              style:transition-duration="var(--quip-d-1)"
-            >▸</span>
-            {reasoningOpen ? $t('chat.hideThinking') : $t('chat.showThinking')} ({message.reasoning?.length} {$t('chat.chars')})
-          </button>
-          <div
-            class="grid"
-            style:grid-template-rows={reasoningOpen ? '1fr' : '0fr'}
-            style:transition="grid-template-rows var(--quip-d-2) var(--quip-ease-out)"
-          >
-            <div class="overflow-hidden">
-              <div class="mt-1.5 text-sm text-slate-400 break-words border-l-2 border-slate-800 pl-3 prose prose-invert prose-sm max-w-none">
-                {@html renderedReasoning}
-              </div>
-            </div>
-          </div>
-        </div>
+        <ReasoningSection reasoning={message.reasoning ?? ''} html={renderedReasoning} />
       {/if}
 
       {#if hasAttachments}
-        {#if imageAttachments.length}
-          <div class="flex flex-wrap gap-2 mb-3">
-            {#each imageAttachments as img (img.file_id)}
-              <div class="relative">
-                <a href={img.url} target="_blank" rel="noopener" class="block">
-                  <img
-                    src={img.url}
-                    alt={img.filename}
-                    loading="lazy"
-                    class="max-w-[300px] max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-80 transition-opacity"
-                    onerror={(e) => { const el = e.currentTarget as HTMLImageElement; el.style.display = 'none'; el.nextElementSibling?.classList.remove('hidden'); }}
-                  />
-                  <div class="hidden items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
-                    <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                    <span class="truncate max-w-48">{img.filename}</span>
-                  </div>
-                </a>
-              </div>
-            {/each}
-          </div>
-        {/if}
-        {#if docAttachments.length}
-          <div class="flex flex-wrap gap-2 mb-3">
-            {#each docAttachments as att (att.file_id)}
-              <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
-                <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                <span class="truncate max-w-48">{att.filename}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
+        <AttachmentGrid attachments={attachmentsList} mb="mb-3" />
       {/if}
 
       {#if hasResearch}
@@ -376,7 +287,7 @@
         </div>
       {:else if hasContentBlocks}
         <!-- ═══ INLINE CONTENT BLOCKS — tools/results appear in stream order ═══ -->
-        {#each message.contentBlocks! as block, i (i)}
+        {#each message.contentBlocks! as block, i (block.type === 'tool' ? `tool-${block.executionId}` : `text-${i}`)}
           {#if block.type === 'text'}
             {#if renderedTextBlocks[i]}
               <div class="prose prose-invert prose-sm max-w-none break-words">{@html renderedTextBlocks[i]}</div>
@@ -392,8 +303,14 @@
                   </div>
                 {:else if exec.status === 'running'}
                   <div class="flex items-center gap-2 text-sm py-1" style="color: var(--quip-text-muted)">
-                    <span class="animate-pulse">♪</span>
-                    <span>{$t('chat.generatingMusic')}</span>
+                    <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 18V5l12-2v13"/>
+                      <circle cx="6" cy="18" r="3"/>
+                      <circle cx="18" cy="16" r="3"/>
+                    </svg>
+                    <span class="typing-dots text-[7px]">
+                      <span></span><span></span><span></span>
+                    </span>
                   </div>
                 {/if}
               {:else if exec.name === 'generate_image'}
@@ -404,12 +321,21 @@
                   <div class="flex flex-wrap gap-2 my-2">
                     {#each res.urls as imgUrl (imgUrl)}
                       <a href={getGeneratedImageUrl(imgUrl as string)} target="_blank" rel="noopener">
-                        <img src={getGeneratedImageUrl(imgUrl as string)} alt="AI generated" class="rounded-xl max-w-full max-h-96 object-contain" style="border: 1px solid var(--quip-border)" />
+                        <img src={getGeneratedImageUrl(imgUrl as string)} alt="AI generated" loading="lazy" class="rounded-xl max-w-full max-h-96 object-contain" style="border: 1px solid var(--quip-border)" />
                       </a>
                     {/each}
                   </div>
                 {:else if exec.status === 'running'}
-                  <div class="text-sm opacity-50 animate-pulse my-1">{$t('chat.generatingImage')}</div>
+                  <div class="flex items-center gap-2 text-sm py-1" style="color: var(--quip-text-muted)">
+                    <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <path d="M21 15l-5-5L5 21"/>
+                    </svg>
+                    <span class="typing-dots text-[7px]">
+                      <span></span><span></span><span></span>
+                    </span>
+                  </div>
                 {/if}
               {:else if exec.name === 'use_widget'}
                 {@const res = exec.result as Record<string, unknown> | undefined}
@@ -418,7 +344,15 @@
                     <WidgetCard templateName={res.template as string ?? ''} data={res.data as Record<string, unknown> ?? {}} />
                   </div>
                 {:else if exec.status === 'running'}
-                  <div class="text-sm opacity-50 animate-pulse my-1">{$t('chat.buildingWidget') ?? 'Building widget…'}</div>
+                  <div class="flex items-center gap-2 text-sm py-1" style="color: var(--quip-text-muted)">
+                    <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                    </svg>
+                    <span class="typing-dots text-[7px]">
+                      <span></span><span></span><span></span>
+                    </span>
+                  </div>
                 {:else}
                   <div class="my-1 pl-1">
                     <ToolExecutionBlock execution={exec} chatId={message.chat_id} />
@@ -472,7 +406,16 @@
                   {#each res.urls as imgUrl (imgUrl)}<a href={getGeneratedImageUrl(imgUrl as string)} target="_blank" rel="noopener"><img src={getGeneratedImageUrl(imgUrl as string)} alt="AI generated" class="rounded-xl max-w-full max-h-96 object-contain" style="border: 1px solid var(--quip-border)" /></a>{/each}
                 </div>
               {:else if exec.status === 'running'}
-                <div class="text-sm opacity-50 animate-pulse">{$t('chat.generatingImage')}</div>
+                <div class="flex items-center gap-2 text-sm py-1" style="color: var(--quip-text-muted)">
+                  <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <path d="M21 15l-5-5L5 21"/>
+                  </svg>
+                  <span class="typing-dots text-[7px]">
+                    <span></span><span></span><span></span>
+                  </span>
+                </div>
               {/if}
             {/each}
           </div>
@@ -485,7 +428,14 @@
                 <MusicPlayer src={getGeneratedAudioUrl(res.url as string)} label={res.prompt as string ?? ''} />
               {:else if exec.status === 'running'}
                 <div class="flex items-center gap-2 text-sm py-1" style="color: var(--quip-text-muted)">
-                  <span class="animate-pulse">♪</span><span>{$t('chat.generatingMusic')}</span>
+                  <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18V5l12-2v13"/>
+                    <circle cx="6" cy="18" r="3"/>
+                    <circle cx="18" cy="16" r="3"/>
+                  </svg>
+                  <span class="typing-dots text-[7px]">
+                    <span></span><span></span><span></span>
+                  </span>
                 </div>
               {/if}
             {/each}
@@ -500,48 +450,7 @@
       {/if}
 
       {#if sources.length > 0}
-        <div class="mt-3 pt-2 border-t border-slate-800/50">
-          <button
-            type="button"
-            class="text-xs text-slate-500 hover:text-slate-400 select-none transition-colors flex items-center gap-1"
-            onclick={() => (sourcesOpen = !sourcesOpen)}
-          >
-            <span
-              class="inline-block transition-transform"
-              style:transform={sourcesOpen ? 'rotate(90deg)' : ''}
-              style:transition-duration="var(--quip-d-1)"
-            >▸</span>
-            {$t('chat.sources')} ({sources.length})
-          </button>
-          <div
-            class="grid"
-            style:grid-template-rows={sourcesOpen ? '1fr' : '0fr'}
-            style:transition="grid-template-rows var(--quip-d-2) var(--quip-ease-out)"
-          >
-            <div class="overflow-hidden">
-              <div class="mt-1.5 flex flex-col gap-1.5">
-                {#each sources as src (src.num)}
-                  <a href={src.url} target="_blank" rel="noopener noreferrer" class="source-card">
-                    <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--quip-hover)">
-                      <img src="https://www.google.com/s2/favicons?domain={src.domain}&sz=32" alt="" class="w-5 h-5 rounded-sm" />
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium truncate" style="color: var(--quip-text)">{src.title}</div>
-                      <div class="text-xs truncate" style="color: var(--quip-text-muted)">{src.domain}</div>
-                    </div>
-                    <div class="flex-shrink-0 source-card-icon">
-                      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" y1="14" x2="21" y2="3"/>
-                      </svg>
-                    </div>
-                  </a>
-                {/each}
-              </div>
-            </div>
-          </div>
-        </div>
+        <SourcesList {sources} />
       {/if}
 
       <!-- Action bar: buttons left, cost right, same row, aligned -->

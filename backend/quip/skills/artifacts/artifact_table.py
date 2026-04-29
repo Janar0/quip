@@ -28,6 +28,15 @@ Format:
 Rules:
 - columns is an array of {key, label}.
 - rows is an array of objects whose keys match column keys.
+
+USE WHEN:
+- Displaying structured data with columns and rows
+- User needs to sort or scan specific values
+- Comparing items across multiple attributes
+
+DO NOT USE WHEN:
+- Data fits better as a chart (use chart)
+- Only 1-2 rows of data (inline markdown table suffices)
 """,
     'data_schema': None,
     'template_html': None,

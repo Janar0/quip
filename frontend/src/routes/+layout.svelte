@@ -21,12 +21,19 @@
     if (hasRefreshToken) await tryRefresh();
   }
 
-  onMount(async () => {
+  onMount(() => {
     document.getElementById('splash')?.remove();
     setTheme($theme);
     if ($authToken) {
-      await fetchMe();
-      await loadWidgetTemplates();
+      // Fire-and-forget — auth bootstrap shouldn't block cleanup registration
+      (async () => {
+        try {
+          await fetchMe();
+          await loadWidgetTemplates();
+        } catch (e) {
+          console.error('Bootstrap failed', e);
+        }
+      })();
     }
 
     // Refresh token on tab focus (user returns to tab after being away)

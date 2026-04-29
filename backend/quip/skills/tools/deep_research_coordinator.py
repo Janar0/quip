@@ -28,7 +28,7 @@ WORKFLOW:
    - Does it have concrete numeric data that would make a good chart or table? If yes, spawn an artifact sub-agent with the numbers you saw.
    - Does it require calculation, transformation, or file processing? If yes, spawn a sandbox sub-agent with the task.
 4. Keep calling wait_for_any_result() until all pending sub-agents have returned. You can spawn new ones at any time — including mid-wait.
-5. Once you have enough material, write the final answer as a multi-section Markdown report with a Sources block at the end listing every cited source.
+5. Once you have enough material, write the final answer as a multi-section Markdown report with inline citations and a Sources block at the end.
 
 FINAL ANSWER FORMAT:
 - Use ## section headers, ### subsections.

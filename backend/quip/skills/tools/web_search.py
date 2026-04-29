@@ -29,13 +29,15 @@ WORKFLOW:
 
 CITATION RULES:
 - Cite every claim from search results inline with [1], [2], etc.
-- At the end of your response, list every source you cited:
+- At the end, append a Sources block — strict format, one source per line:
   ---
   **Sources:**
-  [1] Title - URL
-  [2] Title - URL
-- Translate the "Sources:" label into the user's interface language when appropriate.
-- Never fabricate URLs, titles, or quotes.
+  [1] Exact page title - https://full-url.com/page
+  [2] Exact page title - https://another-url.org/doc
+- Translate "Sources:" label into the user's language.
+- When you search multiple times, number sources sequentially: first search = [1]...[N], second = [N+1]...[M].
+- CRITICAL: every line must start with [N]. Use " - " between title and full URL. Never split across lines. Never use domain names or site descriptions (like "Facebook Group", "Reddit") as URLs — always use the full real URL.
+- Only present what the search actually returned.
 """,
     'data_schema': None,
     'template_html': None,

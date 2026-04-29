@@ -20,13 +20,19 @@
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tailwindcss/vite": "^4.2.2",
 		"@types/mustache": "^4.2.6",
+		"@vite-pwa/sveltekit": "^1.1.0",
+		"sharp": "^0.34.5",
 		"svelte": "^5.54.0",
 		"svelte-check": "^4.4.2",
 		"tailwindcss": "^4.2.2",
 		"typescript": "^5.9.3",
-		"vite": "^7.3.1"
+		"vite": "^7.3.1",
+		"vite-plugin-pwa": "^1.2.0"
 	},
 	"dependencies": {
+		"@fontsource/inter": "^5.2.8",
+		"@fontsource/jetbrains-mono": "^5.2.8",
+		"@fontsource/manrope": "^5.2.8",
 		"chart.js": "^4.5.1",
 		"highlight.js": "^11.11.1",
 		"katex": "^0.16.45",

@@ -8,7 +8,7 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y nginx supervisor && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y nginx supervisor tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
 

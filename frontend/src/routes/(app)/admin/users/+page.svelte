@@ -21,12 +21,12 @@
     const d = new Date(ts);
     const diff = Date.now() - d.getTime();
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1) return $t('time.justNow');
+    if (mins < 60) return $t('time.minutesAgo', { values: { n: mins } });
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
+    if (hrs < 24) return $t('time.hoursAgo', { values: { n: hrs } });
     const days = Math.floor(hrs / 24);
-    if (days < 7) return `${days}d ago`;
+    if (days < 7) return $t('time.daysAgo', { values: { n: days } });
     return d.toLocaleDateString();
   }
 
@@ -122,16 +122,18 @@
     <div class="card p-6 w-full max-w-sm space-y-4 mx-4">
       <h2 class="font-semibold">{$t('admin.users.changePassword')}</h2>
       <p class="text-sm opacity-50">{passwordUser.name} · {passwordUser.email}</p>
+      <!-- svelte-ignore a11y_autofocus -->
       <input
         type="password"
         class="input w-full"
         placeholder={$t('admin.users.newPassword')}
+        aria-label={$t('admin.users.newPassword')}
         bind:value={newPassword}
         onkeydown={(e) => e.key === 'Enter' && submitPasswordChange()}
         autofocus
       />
       {#if newPassword.length > 0 && newPassword.length < 8}
-        <p class="text-xs text-error-400">Min 8 characters</p>
+        <p class="text-xs text-error-400">{$t('admin.users.minChars', { values: { n: 8 } })}</p>
       {/if}
       <div class="flex gap-2 justify-end">
         <button class="btn" onclick={() => { passwordUser = null; newPassword = ''; }}>{$t('common.cancel')}</button>
@@ -151,7 +153,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between gap-4">
     <h1 class="text-2xl font-bold">{$t('admin.tabs.users')}</h1>
-    <span class="text-sm opacity-40">{users.length} total</span>
+    <span class="text-sm opacity-40">{users.length} {$t('common.total')}</span>
   </div>
 
   <!-- Search -->
@@ -178,24 +180,25 @@
       <table class="table text-sm">
         <thead>
           <tr class="border-b border-slate-800">
-            {#each [['name', 'Name'], ['email', 'Email'], ['role', 'Role']] as [col, label]}
-              <th
-                class="px-4 py-3 cursor-pointer select-none hover:bg-slate-800/30 transition-colors"
-                onclick={() => toggleSort(col as 'name' | 'email' | 'role')}
-              >
-                <div class="flex items-center gap-1.5">
+            {#each [['name', $t('admin.users.colName')], ['email', $t('admin.users.colEmail')], ['role', $t('admin.users.colRole')]] as [col, label]}
+              <th class="px-4 py-3 select-none">
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 w-full hover:bg-slate-800/30 transition-colors -mx-1 px-1 py-0.5 rounded"
+                  onclick={() => toggleSort(col as 'name' | 'email' | 'role')}
+                >
                   {label}
                   {#if sortBy === col}
                     <svg class="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                       {#if sortAsc}<path d="M18 15l-6-6-6 6"/>{:else}<path d="M6 9l6 6 6-6"/>{/if}
                     </svg>
                   {/if}
-                </div>
+                </button>
               </th>
             {/each}
-            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">{$t('admin.users.colStatus')}</th>
             <th class="px-4 py-3">{$t('admin.users.lastActive')}</th>
-            <th class="px-4 py-3 w-40">Actions</th>
+            <th class="px-4 py-3 w-40">{$t('admin.users.colActions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -216,7 +219,7 @@
               <td class="px-4 py-3 opacity-60">{user.email}</td>
               <td class="px-4 py-3">
                 <span class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full uppercase tracking-wide {roleBadge[user.role] ?? 'bg-slate-800/40 text-slate-400'}">
-                  {user.role}
+                  {$t('admin.users.role.' + user.role) ?? user.role}
                 </span>
               </td>
               <td class="px-4 py-3">
@@ -248,9 +251,9 @@
                     value={user.role}
                     onchange={(e) => changeRole(user, e.currentTarget.value)}
                   >
-                    <option value="admin">admin</option>
-                    <option value="user">user</option>
-                    <option value="pending">pending</option>
+                    <option value="admin">{$t('admin.users.role.admin')}</option>
+                    <option value="user">{$t('admin.users.role.user')}</option>
+                    <option value="pending">{$t('admin.users.role.pending')}</option>
                   </select>
                   <button
                     class="p-1 rounded opacity-40 hover:opacity-100 hover:text-primary-400 transition-colors"

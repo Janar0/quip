@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { messages, isStreaming } from '$lib/stores/chat';
+  import { messages, isStreaming, branchSelections } from '$lib/stores/chat';
   import { t } from 'svelte-i18n';
   import { buildThread, type ThreadMessage } from '$lib/utils/thread';
   import MessageBubble from './MessageBubble.svelte';
@@ -17,15 +17,12 @@
   let isAtBottom = $state(true);
   let userSentMessage = $state(false);
 
-  // Branch selections: parentId → selectedChildId
-  let branchSelections = $state<Record<string, string>>({});
-
-  // Build thread from messages + selections
-  let thread = $derived(buildThread($messages, branchSelections));
+  // Build thread from messages + selections (selections in store, shared with streamChat)
+  let thread = $derived(buildThread($messages, $branchSelections));
 
   function selectSibling(parentId: string | null | undefined, siblingId: string) {
     const key = parentId ?? '__root__';
-    branchSelections = { ...branchSelections, [key]: siblingId };
+    branchSelections.update((s) => ({ ...s, [key]: siblingId }));
   }
 
   function checkScroll() {

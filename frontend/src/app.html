@@ -5,13 +5,14 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>QUIP</title>
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="apple-touch-icon" href="/favicon.svg" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.webmanifest" />
 		<meta name="theme-color" content="#060606" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="QUIP" />
 		<link rel="preconnect" href="/api" />
-		<link rel="preconnect" href="https://fonts.googleapis.com" />
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" />
-		<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 		<script>
 			(function() {
 				var t = localStorage.getItem('quip_theme') || 'dark';
@@ -27,6 +28,15 @@
 			})();
 		</script>
 		%sveltekit.head%
+		<script>
+			if ('serviceWorker' in navigator) {
+				window.addEventListener('load', function () {
+					navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function (err) {
+						console.warn('SW registration failed', err);
+					});
+				});
+			}
+		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<!-- Splash screen — background is injected inline by the theme script above -->

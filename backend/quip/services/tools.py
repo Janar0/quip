@@ -21,6 +21,27 @@ SANDBOX_TOOL_NAMES = {
 }
 
 
+GET_DOCUMENT_IMAGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_document_image",
+        "description": (
+            "Fetch the base64 data URL of an image referenced in retrieved document context "
+            "(e.g. when a chunk contains `[image: img_3]`). Use when visual content is needed "
+            "beyond the OCR/extracted text."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Image ref like 'img_3' from the chunk text"},
+                "file_id": {"type": "string", "description": "Source document file_id"},
+            },
+            "required": ["ref", "file_id"],
+        },
+    },
+}
+
+
 LOAD_SKILL_TOOL = {
     "type": "function",
     "function": {
@@ -49,7 +70,12 @@ SANDBOX_TOOLS = [
         "type": "function",
         "function": {
             "name": "sandbox_execute",
-            "description": "Run code in an isolated sandbox (Python/Node/bash). Call load_skill('sandbox') for details.",
+            "description": (
+                "Run code in an isolated sandbox (Python/Node/bash). "
+                "USE ONLY: real computation, file generation, data analysis, processing uploaded files. "
+                "DO NOT USE: simple questions needing only text answers. "
+                "Call load_skill('sandbox') for full usage instructions."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -141,7 +167,12 @@ SEARCH_TOOLS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web. Call load_skill('web_search') for usage details.",
+            "description": (
+                "Search the web for current information. "
+                "USE ONLY: recent facts, current events, prices, data you cannot verify from training data. "
+                "DO NOT USE: general knowledge, definitions, stable facts, arithmetic, creative tasks, opinions. "
+                "Call load_skill('web_search') for full usage instructions."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,7 +213,11 @@ GENERATE_MUSIC_TOOL = {
     "type": "function",
     "function": {
         "name": "generate_music",
-        "description": "Generate AI music/audio. Call load_skill('music_generation') for details.",
+        "description": (
+            "Generate AI music or audio. "
+            "USE ONLY: user explicitly asks for music, audio, or sound generation. "
+            "Call load_skill('music_generation') for full usage instructions."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -200,7 +235,12 @@ GENERATE_IMAGE_TOOL = {
     "type": "function",
     "function": {
         "name": "generate_image",
-        "description": "Generate or edit images with AI. Call load_skill('image_generation') for details.",
+        "description": (
+            "Generate or edit images with AI. "
+            "USE ONLY: user explicitly asks to create, draw, visualize, edit, or transform an image. "
+            "DO NOT USE: textual or data-only questions. "
+            "Call load_skill('image_generation') for full usage instructions."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -266,6 +306,16 @@ WIDGET_TOOL = {
             "required": ["name"],
         },
     },
+}
+
+
+# Mapping from skill ID to the list of tool dicts gated behind load_skill.
+# Tools not listed here are always available (base tools: load_skill, read_url, use_widget, get_document_image).
+GATED_TOOL_MAP: dict[str, list[dict]] = {
+    "web_search": list(SEARCH_TOOLS),
+    "sandbox": list(SANDBOX_TOOLS),
+    "image_generation": [dict(GENERATE_IMAGE_TOOL)],
+    "music_generation": [dict(GENERATE_MUSIC_TOOL)],
 }
 
 
@@ -352,6 +402,43 @@ async def execute_tool_call(
                 result["data_schema"] = skill.data_schema
                 result["widget_type"] = skill.type
             return json.dumps(result)
+
+        if tool_name == "get_document_image":
+            from quip.models.file import DocumentImage
+            from quip.routers.files import UPLOAD_DIR
+            from sqlalchemy import select as _select
+            import base64 as _b64
+            from uuid import UUID as _UUID
+
+            ref = (args.get("ref") or "").strip()
+            file_id_raw = (args.get("file_id") or "").strip()
+            if not ref or not file_id_raw:
+                return json.dumps({"error": "missing ref or file_id"})
+            try:
+                fid = _UUID(file_id_raw)
+            except ValueError:
+                return json.dumps({"error": "invalid file_id"})
+
+            if db is None:
+                return json.dumps({"error": "no db session"})
+            res = await db.execute(
+                _select(DocumentImage).where(DocumentImage.file_id == fid, DocumentImage.ref == ref)
+            )
+            img = res.scalar_one_or_none()
+            if not img:
+                return json.dumps({"error": f"image not found: {ref}"})
+            try:
+                blob = (UPLOAD_DIR / img.storage_path).read_bytes()
+            except Exception as e:
+                return json.dumps({"error": f"read failed: {e}"})
+            data_url = f"data:{img.mime or 'image/png'};base64,{_b64.b64encode(blob).decode('ascii')}"
+            return json.dumps({
+                "image_data_url": data_url,
+                "ref": ref,
+                "file_id": file_id_raw,
+                "page": img.page,
+                "mime": img.mime,
+            })
 
         # Search tools (no sandbox needed)
         if tool_name == "web_search":
@@ -458,21 +545,20 @@ async def execute_tool_call(
         elif tool_name == "use_widget":
             from quip.services.skill_store import get_skill
             from quip.services.widget_api import execute_widget_api
+            from quip.skills import HANDLERS
             widget_name = args.get("name", "")
             skill = get_skill(widget_name)
             if not skill or skill.category != "widget" or not skill.enabled or skill.is_internal:
                 return json.dumps({"error": f"Unknown widget: {widget_name}"})
 
-            if skill.type == "api":
+            handler = HANDLERS.get(widget_name)
+            if handler:
+                # Handler receives: {"params": ..., "data": ...}
+                data = await handler({"params": args.get("params", {}), "data": args.get("data", {})})
+            elif skill.type == "api":
                 data = await execute_widget_api(skill, args.get("params", {}))
             else:
                 data = args.get("data", {})
-                # Post-processing for poll: compute percent
-                if widget_name == "poll":
-                    total = sum(o.get("votes", 0) for o in data.get("options", []))
-                    for o in data.get("options", []):
-                        o["percent"] = round(o["votes"] / total * 100) if total > 0 else 0
-                    data["total_votes"] = total
 
             data = _normalize_widget_strings(data)
 

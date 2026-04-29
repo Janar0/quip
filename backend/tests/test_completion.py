@@ -58,7 +58,7 @@ async def test_completion_creates_chat(client, auth_headers):
     set_setting("artifacts_enabled", "false")
     set_setting("sandbox_enabled", "false")
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=_fake_stream):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -106,7 +106,7 @@ async def test_completion_with_image_attachment(client, auth_headers, tmp_upload
         yield StreamChunk(finish_reason="stop")
         yield StreamChunk(usage=UsageInfo(prompt_tokens=20, completion_tokens=8, cost=0.0002))
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=capturing_stream):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -177,7 +177,7 @@ async def test_completion_with_rag_context(client, auth_headers, tmp_upload_dir,
 
     with patch("quip.services.rag.get_embeddings", new_callable=AsyncMock,
                return_value=[[0.9, 0.1, 0.0]]), \
-         patch("quip.routers.completion.openrouter.stream_completion", new=capturing_stream):
+         patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -210,7 +210,7 @@ async def test_completion_links_files_to_new_chat(client, auth_headers, tmp_uplo
     )
     file_id = res.json()["files"][0]["id"]
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=_fake_stream):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -246,7 +246,7 @@ async def test_completion_saves_attachment_metadata(client, auth_headers, tmp_up
     )
     file_id = res.json()["files"][0]["id"]
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=_fake_stream):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -279,7 +279,7 @@ async def test_completion_saves_attachment_metadata(client, auth_headers, tmp_up
 @pytest.mark.asyncio
 async def test_build_multimodal_message_openrouter(tmp_upload_dir):
     """_build_multimodal_message produces correct OpenRouter format."""
-    from quip.routers.completion import _build_multimodal_message
+    from quip.services.multimodal import build_multimodal_message as _build_multimodal_message
 
     # Create test image on disk
     user_dir = tmp_upload_dir / "user1"
@@ -295,7 +295,7 @@ async def test_build_multimodal_message_openrouter(tmp_upload_dir):
         "storage_path": "user1/img.png",
     }]
 
-    result = _build_multimodal_message(msg, attachments, is_ollama=False)
+    result, _ = await _build_multimodal_message(msg, attachments, is_ollama=False)
     assert isinstance(result["content"], list)
     types = [p["type"] for p in result["content"]]
     assert "text" in types
@@ -307,7 +307,7 @@ async def test_build_multimodal_message_openrouter(tmp_upload_dir):
 @pytest.mark.asyncio
 async def test_build_multimodal_message_ollama(tmp_upload_dir):
     """_build_multimodal_message produces correct Ollama format (images list)."""
-    from quip.routers.completion import _build_multimodal_message
+    from quip.services.multimodal import build_multimodal_message as _build_multimodal_message
 
     user_dir = tmp_upload_dir / "user1"
     user_dir.mkdir()
@@ -322,18 +322,21 @@ async def test_build_multimodal_message_ollama(tmp_upload_dir):
         "storage_path": "user1/img.png",
     }]
 
-    result = _build_multimodal_message(msg, attachments, is_ollama=True)
+    result, _ = await _build_multimodal_message(msg, attachments, is_ollama=True)
     assert "images" in result
     assert len(result["images"]) == 1
     assert result["content"] == "Describe"  # text stays as string
 
 
-def test_build_multimodal_no_images():
-    """Message without image attachments passes through unchanged."""
-    from quip.routers.completion import _build_multimodal_message
+@pytest.mark.asyncio
+async def test_build_multimodal_no_images():
+    """Document attachment without storage_path / db falls through unchanged."""
+    from quip.services.multimodal import build_multimodal_message as _build_multimodal_message
 
     msg = {"role": "user", "content": "Just text"}
+    # No storage_path → extraction returns "" → no doc block, msg unchanged
     attachments = [{"file_type": "document", "content_type": "text/plain"}]
 
-    result = _build_multimodal_message(msg, attachments, is_ollama=False)
+    result, ids = await _build_multimodal_message(msg, attachments, is_ollama=False)
     assert result["content"] == "Just text"
+    assert ids == []

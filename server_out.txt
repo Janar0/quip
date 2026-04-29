@@ -1,0 +1,28 @@
+
+> frontend@0.0.1 dev
+> vite dev
+
+Port 5173 is in use, trying another one...
+
+  [32m[1mVITE[22m v7.3.2[39m  [2mready in [0m[1m790[22m[2m[0m ms[22m
+
+  [32mâžœ[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5174[22m/[39m
+ [migration] Already done (marker: C:\Users\Janaro\Desktop\QUIP\backend\webui.db.migrated) — skipping
+INFO:     127.0.0.1:61815 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61817 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
+Using SQLite (no Docker needed)
+Docker not available — sandbox features disabled
+Starting backend on :8000...
+Starting frontend on :5173...
+
+  Q.U.I.P. is running!
+  Database:  SQLite (quip.db)
+  Sandbox:   Disabled (Docker not found)
+  Frontend:  http://localhost:5173
+  Backend:   http://localhost:8000
+  API docs:  http://localhost:8000/docs
+
+  Press Ctrl+C to stop.
+
+
+Shutting down...

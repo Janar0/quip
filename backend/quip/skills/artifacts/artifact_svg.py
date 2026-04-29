@@ -28,6 +28,16 @@ Format:
 </artifact>
 
 Good for icons, logos, simple diagrams that don't fit the other types.
+
+USE WHEN:
+- Creating a custom icon, logo, or illustration
+- Drawing a simple diagram that doesn't fit chart/mermaid
+- Need precise control over vector graphics
+
+DO NOT USE WHEN:
+- Data visualization (use chart)
+- Flowcharts or sequence diagrams (use mermaid)
+- Mathematical plots (use plot)
 """,
     'data_schema': None,
     'template_html': None,

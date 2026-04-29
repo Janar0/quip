@@ -18,7 +18,6 @@
     const token = localStorage.getItem('access_token') || '';
     if (!token) return html;
     const enc = encodeURIComponent(token);
-    // Matches /api/images/... /api/audio/... /api/files/... ending at a quote, whitespace, or closing paren
     return html.replace(
       /((?:https?:\/\/[^\s"'()]+)?\/api\/(?:images|audio|files)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)/g,
       (url) => {
@@ -27,6 +26,21 @@
         return `${url}${sep}token=${enc}`;
       },
     );
+  }
+
+  function extractAndRunScripts(element: HTMLElement) {
+    const scripts = element.querySelectorAll('script');
+    scripts.forEach(s => {
+      const code = s.textContent || '';
+      s.remove();
+      if (!code.trim()) return;
+      try {
+        const fn = new Function('root', code);
+        fn(element);
+      } catch (e) {
+        console.warn('Widget script error:', e);
+      }
+    });
   }
 
   let renderedHtml = $derived.by(() => {
@@ -46,59 +60,10 @@
   });
 
   $effect(() => {
-    // re-run when HTML changes
     renderedHtml;
     if (!rootEl) return;
-    if (templateName === 'recipe') {
-      initRecipe(rootEl);
-    }
+    extractAndRunScripts(rootEl);
   });
-
-  function formatAmount(n: number): string {
-    if (!isFinite(n)) return '';
-    if (Number.isInteger(n)) return String(n);
-    const r = Math.round(n * 100) / 100;
-    return String(r).replace(/\.?0+$/, '');
-  }
-
-  function initRecipe(root: HTMLElement) {
-    const val = root.querySelector<HTMLElement>('[data-wr-serv-val]');
-    const dec = root.querySelector<HTMLButtonElement>('[data-wr-serv="-"]');
-    const inc = root.querySelector<HTMLButtonElement>('[data-wr-serv="+"]');
-    if (val && dec && inc) {
-      const base = parseFloat(val.dataset.wrServBase || val.textContent || '1') || 1;
-      let current = base;
-      const amounts = Array.from(root.querySelectorAll<HTMLElement>('[data-wr-base-amount]'));
-      const update = () => {
-        val.textContent = String(Math.round(current));
-        dec.disabled = current <= 1;
-        amounts.forEach(el => {
-          const raw = (el.dataset.wrBaseAmount || '').trim();
-          const unit = el.dataset.wrUnit || '';
-          const suffix = unit ? ` ${unit}` : '';
-          // Scale only if the amount is a pure number (optional decimal/comma)
-          if (/^-?\d+([.,]\d+)?$/.test(raw)) {
-            const baseAmt = parseFloat(raw.replace(',', '.'));
-            const scaled = baseAmt * current / base;
-            el.textContent = formatAmount(scaled) + suffix;
-          } else {
-            el.textContent = raw + suffix;
-          }
-        });
-      };
-      dec.onclick = () => { if (current > 1) { current -= 1; update(); } };
-      inc.onclick = () => { current += 1; update(); };
-      update();
-    }
-
-    root.querySelectorAll<HTMLElement>('[data-wr-step]').forEach(step => {
-      const toggle = () => step.classList.toggle('wr-step-done');
-      step.onclick = toggle;
-      step.onkeydown = (e: KeyboardEvent) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-      };
-    });
-  }
 </script>
 
 <div bind:this={rootEl} class="widget-card overflow-hidden my-1">

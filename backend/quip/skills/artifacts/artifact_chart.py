@@ -29,6 +29,15 @@ Rules:
 - chartType is one of: line, bar, pie, doughnut.
 - labels is an array of category names.
 - datasets is an array; each entry has a label and a data array parallel to labels.
+
+USE WHEN:
+- Visualizing categorical data with labels
+- Comparing multiple data series
+- Showing proportions (pie/doughnut) or trends (line)
+
+DO NOT USE WHEN:
+- Plotting mathematical functions (use plot)
+- Showing tabular data (use table)
 """,
     'data_schema': None,
     'template_html': None,

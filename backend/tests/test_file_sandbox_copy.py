@@ -8,7 +8,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_copy_attachments_writes_to_sandbox(tmp_upload_dir):
     """Happy path: attachment metadata → sandbox_manager.copy_host_file called with right args."""
-    from quip.routers.completion import _copy_attachments_to_sandbox
+    from quip.services.completion.service import _copy_attachments_to_sandbox
 
     user_id = uuid4()
     fake_file_id = uuid4()
@@ -30,8 +30,10 @@ async def test_copy_attachments_writes_to_sandbox(tmp_upload_dir):
     ]
 
     fake_sandbox = MagicMock()
-    with patch("quip.routers.completion.sandbox_manager") as sm, \
-         patch("quip.routers.completion.get_setting", return_value="true"):
+    fake_skill = MagicMock(enabled=True)
+    with patch("quip.services.completion.service.sandbox_manager") as sm, \
+         patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill), \
+         patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir):
         sm.available = True
         sm.get_or_create = AsyncMock(return_value=fake_sandbox)
         sm.ensure_chat_dir = AsyncMock()
@@ -50,13 +52,13 @@ async def test_copy_attachments_writes_to_sandbox(tmp_upload_dir):
 
 @pytest.mark.asyncio
 async def test_copy_skipped_when_sandbox_disabled():
-    """sandbox_enabled=false → helper exits early, no sandbox interaction."""
-    from quip.routers.completion import _copy_attachments_to_sandbox
+    """sandbox skill disabled → helper exits early, no sandbox interaction."""
+    from quip.services.completion.service import _copy_attachments_to_sandbox
 
     attachments = [{"file_id": str(uuid4()), "filename": "x.txt", "storage_path": "u/x.txt"}]
 
-    with patch("quip.routers.completion.sandbox_manager") as sm, \
-         patch("quip.routers.completion.get_setting", return_value="false"):
+    with patch("quip.services.completion.service.sandbox_manager") as sm, \
+         patch("quip.services.completion.service.get_skill_by_name", return_value=None):
         sm.available = True
         sm.get_or_create = AsyncMock()
         sm.copy_host_file = AsyncMock()
@@ -70,7 +72,7 @@ async def test_copy_skipped_when_sandbox_disabled():
 @pytest.mark.asyncio
 async def test_copy_handles_filename_collisions(tmp_upload_dir):
     """Two attachments with the same filename → second one gets a disambiguating suffix."""
-    from quip.routers.completion import _copy_attachments_to_sandbox
+    from quip.services.completion.service import _copy_attachments_to_sandbox
 
     user_id = uuid4()
     user_dir = tmp_upload_dir / str(user_id)
@@ -97,8 +99,10 @@ async def test_copy_handles_filename_collisions(tmp_upload_dir):
         },
     ]
 
-    with patch("quip.routers.completion.sandbox_manager") as sm, \
-         patch("quip.routers.completion.get_setting", return_value="true"):
+    fake_skill = MagicMock(enabled=True)
+    with patch("quip.services.completion.service.sandbox_manager") as sm, \
+         patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill), \
+         patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir):
         sm.available = True
         sm.get_or_create = AsyncMock(return_value=MagicMock())
         sm.ensure_chat_dir = AsyncMock()

@@ -30,6 +30,7 @@ category: one of "distance", "weight", "temperature", "volume", "currency", "are
     'data_schema': {'from_value': 'number', 'from_unit': 'string', 'from_label': 'string', 'to_value': 'number', 'to_unit': 'string', 'to_label': 'string', 'formula': 'string', 'category': 'string'},
     'api_config': None,
     'template_html': """<div class="widget-converter">
+  {{#category}}<div class="wc-cat">{{category}}</div>{{/category}}
   <div class="wc-row">
     <div class="wc-side">
       <div class="wc-value">{{from_value}}</div>
@@ -37,7 +38,7 @@ category: one of "distance", "weight", "temperature", "volume", "currency", "are
       <div class="wc-label">{{from_label}}</div>
     </div>
     <div class="wc-arrow">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-4-4l4 4-4 4"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
     </div>
     <div class="wc-side">
       <div class="wc-value wc-result">{{to_value}}</div>
@@ -45,15 +46,63 @@ category: one of "distance", "weight", "temperature", "volume", "currency", "are
       <div class="wc-label">{{to_label}}</div>
     </div>
   </div>
-  <div class="wc-formula">{{formula}}</div>
+  {{#formula}}<div class="wc-formula">{{formula}}</div>{{/formula}}
 </div>""",
-    'template_css': """.widget-card .widget-converter { padding: 1.25rem; font-family: system-ui, sans-serif; text-align: center; }
-.widget-card .wc-row { display: flex; align-items: center; justify-content: center; gap: 1.5rem; }
-.widget-card .wc-side { flex: 1; max-width: 200px; }
-.widget-card .wc-value { font-size: 2rem; font-weight: 700; color: var(--quip-text, #e2e8f0); }
-.widget-card .wc-result { color: var(--quip-link, #60a5fa); }
-.widget-card .wc-unit { font-size: 1rem; font-weight: 600; color: var(--quip-text-dim, #94a3b8); }
-.widget-card .wc-label { font-size: 0.75rem; color: var(--quip-text-muted, #64748b); margin-top: 0.15rem; }
-.widget-card .wc-arrow { color: var(--quip-text-muted, #64748b); flex-shrink: 0; }
-.widget-card .wc-formula { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--quip-border, #1e293b); font-size: 0.8rem; color: var(--quip-text-muted, #64748b); }""",
+    'template_css': """.widget-card .widget-converter {
+  padding: 1.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  text-align: center;
+  background: var(--quip-glass-bg, rgba(22,22,26,0.42));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--quip-glass-border, rgba(255,255,255,0.07));
+  border-radius: var(--quip-radius, 12px);
+}
+.widget-card .wc-cat {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--quip-text-muted, #6b6b74);
+  margin-bottom: 0.75rem;
+}
+.widget-card .wc-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+}
+.widget-card .wc-side { flex: 1; max-width: 180px; }
+.widget-card .wc-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--quip-text, #f5f5f5);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.widget-card .wc-result {
+  color: var(--quip-link, #c4c8d2);
+}
+.widget-card .wc-unit {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--quip-text-dim, #a3a3a3);
+  margin-top: 0.15rem;
+}
+.widget-card .wc-label {
+  font-size: 0.75rem;
+  color: var(--quip-text-muted, #6b6b74);
+  margin-top: 0.2rem;
+}
+.widget-card .wc-arrow {
+  color: var(--quip-text-muted, #6b6b74);
+  flex-shrink: 0;
+}
+.widget-card .wc-formula {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--quip-glass-border, rgba(255,255,255,0.07));
+  font-size: 0.8rem;
+  color: var(--quip-text-muted, #6b6b74);
+}""",
 }

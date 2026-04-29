@@ -1,6 +1,7 @@
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock } from '$lib/stores/chat';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
+import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { UploadedFile } from '$lib/api/files';
@@ -56,6 +57,7 @@ export async function loadChat(chatId: string): Promise<void> {
         return mapped;
       });
       messages.set(msgs);
+      branchSelections.set({});
     }
   } finally {
     isLoading.set(false);
@@ -365,6 +367,12 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
     ? uploadedFiles.map((f) => ({ file_id: f.id, filename: f.filename, file_type: f.file_type, content_type: f.content_type }))
     : undefined;
 
+  // Compute current thread tail so optimistic temps attach as a continuation
+  // rather than appearing as new root branches in the tree builder.
+  const currentMsgs = get(messages);
+  const currentThread = buildThread(currentMsgs, get(branchSelections));
+  const tailId = currentThread.length ? currentThread[currentThread.length - 1].id : null;
+
   // Add user message with temp ID
   messages.update((msgs) => [
     ...msgs,
@@ -373,12 +381,13 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
       chat_id: chatId ?? '',
       role: 'user' as const,
       content: text,
+      parent_id: tailId,
       created_at: new Date().toISOString(),
       ...(attachments ? { attachments } : {}),
     },
   ]);
 
-  // Add streaming assistant placeholder
+  // Add streaming assistant placeholder, chained to the temp user message
   messages.update((msgs) => [
     ...msgs,
     {
@@ -387,6 +396,7 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
       role: 'assistant' as const,
       content: '',
       model,
+      parent_id: 'temp-user',
       created_at: new Date().toISOString(),
     },
   ]);

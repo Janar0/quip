@@ -362,9 +362,12 @@ class SandboxManager:
         else:
             target = base
 
+        # POSIX-compatible listing: works on both GNU and BusyBox find
         result = await self._exec(
             sandbox,
-            f"find {target} -maxdepth 1 -not -name '_run.*' -printf '%s %y %f\\n'",
+            f"cd {target} 2>/dev/null; for f in *; do [ -e \"$f\" ] || continue; "
+            f"case \"$f\" in _run.*) continue;; esac; "
+            f"if [ -d \"$f\" ]; then echo \"0 d $f\"; else wc -c < \"$f\" | tr -d ' '; echo \" f $f\"; fi; done",
         )
         files = []
         for line in result["stdout"].strip().split("\n"):

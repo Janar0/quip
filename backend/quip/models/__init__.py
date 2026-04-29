@@ -5,6 +5,6 @@ from quip.models.usage import UsageLog
 from quip.models.skill import Skill
 from quip.models.budget import Budget
 from quip.models.sandbox import Sandbox
-from quip.models.file import File, DocumentChunk
+from quip.models.file import File, DocumentChunk, DocumentImage
 
-__all__ = ["User", "Auth", "ApiKey", "Config", "Chat", "Message", "UsageLog", "Skill", "Budget", "Sandbox", "File", "DocumentChunk"]
+__all__ = ["User", "Auth", "ApiKey", "Config", "Chat", "Message", "UsageLog", "Skill", "Budget", "Sandbox", "File", "DocumentChunk", "DocumentImage"]

@@ -33,6 +33,15 @@ Rules:
 - Use dark theme colors — the rendering container has a dark background.
 - Avoid external scripts; inline everything.
 - Use this only when plot/chart/table/mermaid/svg don't fit the requirement.
+
+USE WHEN:
+- No other artifact type fits the requirement
+- Need custom interactive widget or complex layout
+- Combining multiple visual elements in one display
+
+DO NOT USE WHEN:
+- Any other artifact type fits (plot, chart, table, mermaid, code, svg)
+- Simple text formatting (use markdown)
 """,
     'data_schema': None,
     'template_html': None,

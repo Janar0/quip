@@ -23,7 +23,7 @@
   let language = $derived(parsedArgs.language ?? '');
 
   let highlightedCode = $derived.by(() => {
-    $hljsLoaded; // re-run when hljs loads
+    $hljsLoaded;
     if (!codeContent) return '';
     const hljs = getHljs();
     if (!hljs) return codeContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -39,8 +39,8 @@
 
   let toolLabel = $derived.by(() => {
     const labels: Record<string, string> = {
-      load_skill: `${$t('tool.skill')}: ${parsedArgs.name ?? ''}`,
-      generate_music: `♪ ${(parsedArgs.prompt as string | undefined)?.slice(0, 48) ?? ''}`,
+      load_skill: `skill: ${parsedArgs.name ?? ''}`,
+      generate_music: `generate music: ${(parsedArgs.prompt as string | undefined)?.slice(0, 48) ?? ''}`,
       sandbox_execute: language ? `run ${language}` : 'execute',
       sandbox_install: `pip install ${parsedArgs.packages?.join(' ') ?? ''}`,
       sandbox_write_file: `write ${parsedArgs.path ?? ''}`,
@@ -55,11 +55,8 @@
 
   let exitCode = $derived((r?.exit_code as number | undefined));
 
-  let dotClass = $derived(
-    isRunning ? 'animate-pulse' : ''
-  );
-  let dotColor = $derived(
-    isRunning ? '#60a5fa' : isError ? '#f87171' : isSuccess ? '#34d399' : '#475569'
+  let statusColor = $derived(
+    isRunning ? 'var(--quip-text-muted)' : isError ? '#f87171' : isSuccess ? '#34d399' : 'var(--quip-text-muted)'
   );
 
   function getFileUrl(path: string): string {
@@ -71,32 +68,47 @@
 <div class="group/tool">
   <!-- Header row -->
   <button
-    class="flex items-center gap-2 w-full px-1 py-1 rounded transition-colors text-left"
-    style="hover:background: var(--quip-hover)"
-    onmouseenter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--quip-hover)'}
-    onmouseleave={(e) => (e.currentTarget as HTMLElement).style.background = ''}
+    class="flex items-center gap-2 w-full py-1 rounded transition-colors text-left cursor-pointer"
+    style="color: var(--quip-text-muted)"
+    onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-dim)' }}
+    onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-muted)' }}
     onclick={() => (expanded = !expanded)}
   >
-    <!-- Status dot -->
-    <span
-      class="flex-shrink-0 w-1.5 h-1.5 rounded-full {dotClass}"
-      style="background: {dotColor}"
-    ></span>
+    <!-- Status indicator -->
+    <span class="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center">
+      {#if isRunning}
+        <span class="spinner-ring" style="width: 9px; height: 9px; border-width: 1.5px; border-top-color: {statusColor}"></span>
+      {:else if isError}
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      {:else if isSuccess}
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      {:else}
+        <span class="block w-1.5 h-1.5 rounded-full" style="background: {statusColor}"></span>
+      {/if}
+    </span>
 
     <!-- Tool label -->
-    <span class="font-mono text-[11px] flex-1 min-w-0 truncate" style="color: var(--quip-text-dim)">{toolLabel}</span>
+    <span class="font-mono text-[11px] flex-1 min-w-0 truncate opacity-50">{toolLabel}</span>
 
     <!-- Exit code badge -->
     {#if !isRunning && exitCode !== undefined && exitCode !== 0}
       <span class="text-[9px] font-mono px-1 py-0.5 rounded flex-shrink-0" style="background: rgba(127,29,29,0.4); color: #f87171">exit {exitCode}</span>
     {/if}
 
-    <!-- Expand chevron — only show if there's expandable content -->
+    <!-- Expand chevron -->
     {#if codeContent || r?.stdout || r?.stderr || (r?.files_created as string[] | undefined)?.length}
-      <span
-        class="flex-shrink-0 text-[10px] transition-transform"
-        style="color: var(--quip-text-muted); transform: {expanded ? 'rotate(90deg)' : 'rotate(0deg)'}; transition-duration: 150ms"
-      >▶</span>
+      <svg
+        class="w-3 h-3 flex-shrink-0 opacity-40"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        style="transition: transform var(--quip-d-2) var(--quip-ease-out); transform: rotate({expanded ? 90 : 0}deg)"
+      >
+        <path d="M9 5l7 7-7 7" />
+      </svg>
     {/if}
   </button>
 
@@ -104,7 +116,7 @@
   <div
     class="grid"
     style:grid-template-rows={expanded ? '1fr' : '0fr'}
-    style:transition="grid-template-rows 150ms ease-out"
+    style:transition="grid-template-rows var(--quip-d-2) var(--quip-ease-out)"
   >
     <div class="overflow-hidden">
       <!-- Code block -->

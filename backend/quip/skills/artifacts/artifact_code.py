@@ -29,6 +29,15 @@ def hello():
 Rules:
 - The `language` attribute drives syntax highlighting.
 - Use this when the user asks for runnable code, scripts, or snippets they'll copy.
+
+USE WHEN:
+- User asks for runnable code, scripts, or snippets
+- Showing implementation examples with syntax highlighting
+- User needs to copy or download the code
+
+DO NOT USE WHEN:
+- Inline code snippets (use markdown code fences)
+- Configuration or logs better shown as plain text
 """,
     'data_schema': None,
     'template_html': None,

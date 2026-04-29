@@ -34,12 +34,13 @@ async def test_tavily_search():
         instance.__aexit__ = AsyncMock(return_value=False)
         MockClient.return_value = instance
 
-        results = await web_search("python web framework", max_results=2)
+        results, images = await web_search("python web framework", max_results=2)
 
     assert len(results) == 2
     assert results[0].title == "Python Docs"
     assert results[0].url == "https://python.org"
     assert results[1].title == "FastAPI"
+    assert images == []
 
 
 @pytest.mark.asyncio
@@ -66,10 +67,11 @@ async def test_searxng_search():
         instance.__aexit__ = AsyncMock(return_value=False)
         MockClient.return_value = instance
 
-        results = await web_search("test query", max_results=2)
+        results, images = await web_search("test query", max_results=2)
 
     assert len(results) == 2
     assert results[0].title == "Result 1"
+    assert images == []
 
 
 @pytest.mark.asyncio
@@ -78,8 +80,8 @@ async def test_search_provider_routing():
     set_setting("tavily_api_key", "key")
     set_setting("searxng_url", "http://searx")
 
-    with patch("quip.services.search._tavily_search", new_callable=AsyncMock, return_value=[]) as tavily, \
-         patch("quip.services.search._searxng_search", new_callable=AsyncMock, return_value=[]) as searxng:
+    with patch("quip.services.search._tavily_search", new_callable=AsyncMock, return_value=([], [])) as tavily, \
+         patch("quip.services.search._searxng_search", new_callable=AsyncMock, return_value=([], [])) as searxng:
 
         set_setting("search_provider", "tavily")
         await web_search("test")
@@ -141,11 +143,9 @@ async def test_search_tool_execution():
     """execute_tool_call dispatches web_search correctly."""
     from quip.services.tools import execute_tool_call
 
-    mock_results = [
-        SearchResult(title="Result", url="https://example.com", snippet="A snippet", content="Full content")
-    ]
+    mock_results = [SearchResult(title="Result", url="https://example.com", snippet="A snippet", content="Full content")]
 
-    with patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=mock_results):
+    with patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=(mock_results, [])) as mock_search:
         result_str = await execute_tool_call(
             None, None, "chat-id",
             "web_search", json.dumps({"query": "test"}),
@@ -192,8 +192,8 @@ async def test_completion_with_search(client, auth_headers):
 
     mock_results = [SearchResult(title="Test", url="https://test.com", snippet="A result")]
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=mock_stream), \
-         patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=mock_results):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream), \
+         patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=(mock_results, [])):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -225,7 +225,7 @@ async def test_search_disabled_no_tools(client, auth_headers):
         yield StreamChunk(finish_reason="stop")
         yield StreamChunk(usage=UsageInfo(prompt_tokens=10, completion_tokens=5, cost=0.0001))
 
-    with patch("quip.routers.completion.openrouter.stream_completion", new=capturing_stream):
+    with patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -233,5 +233,7 @@ async def test_search_disabled_no_tools(client, auth_headers):
         )
 
     assert res.status_code == 200
-    # Tools should be None when both sandbox and search are disabled
-    assert captured_kwargs.get("tools") is None
+    # Search tools should NOT be in the tool list when search is disabled
+    tool_names = [t.get("function", {}).get("name") for t in (captured_kwargs.get("tools") or [])]
+    assert "web_search" not in tool_names
+    assert "fast_search" not in tool_names
