@@ -8,9 +8,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - quip_data:/app/data
+      - ./data/sandbox:/app/data/sandbox
     restart: unless-stopped
     depends_on:
       sandbox_build:

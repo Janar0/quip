@@ -12,7 +12,7 @@ RUN uv pip install --system -e ".[dev]"
 
 # Copy real source (overwrites the stub)
 COPY backend/ ./
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/data/sandbox
 EXPOSE 8000
 
 CMD ["uvicorn", "quip.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -3,7 +3,9 @@ import asyncio
 import io
 import json
 import logging
+import os
 import posixpath
+import shutil
 import tarfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -30,6 +32,14 @@ logger = logging.getLogger(__name__)
 
 SANDBOX_IMAGE = "quip-sandbox:latest"
 INSTALL_NETWORK = "quip-install-net"
+
+# Host path for sandbox workspace persistence (bind-mounted into app container at /app/data/sandbox)
+# This path is used as the bind-mount source when creating sandbox containers via Docker API.
+# Set QUIP_HOST_SANDBOX_DIR in your .env to the absolute host path, e.g. /opt/quip/data/sandbox.
+# When unset, falls back to CONTAINER_SANDBOX_DIR — files survive as long as the app container.
+QUIP_HOST_SANDBOX_DIR = os.environ.get("QUIP_HOST_SANDBOX_DIR", "")
+# Container-accessible path to the same directory (via docker-compose bind mount)
+CONTAINER_SANDBOX_DIR = "/app/data/sandbox"
 
 
 @dataclass
@@ -95,12 +105,21 @@ class SandboxManager:
         # Create new sandbox
         uid_short = str(user_id)[:8]
         container_name = f"quip-sandbox-{uid_short}"
-        volume_name = f"quip-sandbox-vol-{uid_short}"
+
+        if QUIP_HOST_SANDBOX_DIR:
+            workspace_host_dir = f"{QUIP_HOST_SANDBOX_DIR}/{uid_short}"
+        else:
+            # Fallback: use Docker named volume when host dir is not configured
+            workspace_host_dir = f"quip-sandbox-vol-{uid_short}"
+
+        # Ensure workspace directory exists (via container bind mount path when using host dir)
+        if QUIP_HOST_SANDBOX_DIR:
+            os.makedirs(f"{CONTAINER_SANDBOX_DIR}/{uid_short}", exist_ok=True)
 
         sandbox = Sandbox(
             user_id=user_id,
             container_name=container_name,
-            volume_name=volume_name,
+            volume_name=workspace_host_dir,
             status="creating",
         )
         db.add(sandbox)
@@ -108,7 +127,7 @@ class SandboxManager:
 
         # Create in background thread (Docker SDK is sync)
         container_id = await asyncio.to_thread(
-            self._create_container, container_name, volume_name, None
+            self._create_container, container_name, workspace_host_dir, None
         )
         sandbox.container_id = container_id
         sandbox.status = "running"
@@ -117,9 +136,9 @@ class SandboxManager:
         return sandbox
 
     def _create_container(
-        self, name: str, volume_name: str, image_tag: Optional[str]
+        self, name: str, host_workspace_dir: str, image_tag: Optional[str]
     ) -> str:
-        """Create and start a Docker container (sync, run in thread)."""
+        """Create and start a Docker container with a bind-mounted workspace (sync, run in thread)."""
         image = image_tag or SANDBOX_IMAGE
         from quip.services.skill_store import get_skill_setting
         mem_limit = get_skill_setting("sandbox", "memory_limit", None) or get_setting("sandbox_memory_limit", "512m")
@@ -135,7 +154,7 @@ class SandboxManager:
         container = self.client.containers.create(
             image=image,
             name=name,
-            volumes={volume_name: {"bind": "/workspace", "mode": "rw"}},
+            volumes={host_workspace_dir: {"bind": "/workspace", "mode": "rw"}},
             mem_limit=mem_limit,
             cpu_period=100000,
             cpu_quota=int(cpu_limit * 100000),
@@ -152,47 +171,40 @@ class SandboxManager:
             },
             detach=True,
             stdin_open=True,
+            auto_remove=True,
         )
         container.start()
         return container.id
+
+    def _get_container(self, sandbox: Sandbox):
+        """Return running container, recreating it if stopped and auto-removed."""
+        try:
+            container = self.client.containers.get(sandbox.container_id)
+            if container.status != "running":
+                container.start()
+                import time
+                time.sleep(0.8)
+                container.reload()
+            return container
+        except (NotFound, APIError):
+            sandbox.container_id = self._create_container(
+                sandbox.container_name, sandbox.volume_name, sandbox.image_tag
+            )
+            return self.client.containers.get(sandbox.container_id)
 
     async def _ensure_running(self, sandbox: Sandbox, db: AsyncSession) -> None:
         """Ensure the sandbox container is running."""
         sandbox.last_active_at = datetime.now(timezone.utc)
 
-        if sandbox.status == "running" and sandbox.container_id:
-            # Verify container actually exists and is running
-            try:
-                container = await asyncio.to_thread(
-                    self.client.containers.get, sandbox.container_id
-                )
-                if container.status == "running":
-                    await db.commit()
-                    return
-                # Container exists but not running — try to start it
-                try:
-                    await asyncio.to_thread(container.start)
-                    await db.commit()
-                    return
-                except Exception:
-                    # Can't start — will recreate below
-                    logger.info(f"Cannot restart container {sandbox.container_id}, recreating")
-            except (NotFound, APIError):
-                logger.info(f"Container {sandbox.container_id} not found, recreating")
-
-        # Recreate container from committed image or base
         try:
-            container_id = await asyncio.to_thread(
-                self._create_container,
-                sandbox.container_name,
-                sandbox.volume_name,
-                sandbox.image_tag,
-            )
-            sandbox.container_id = container_id
-            sandbox.status = "running"
+            container = await asyncio.to_thread(self._get_container, sandbox)
+            if container.status == "running":
+                sandbox.status = "running"
+            else:
+                sandbox.status = "error"
         except Exception as e:
             sandbox.status = "error"
-            logger.error(f"Failed to create container: {e}")
+            logger.error(f"Failed to ensure sandbox container: {e}")
             raise
         finally:
             await db.commit()
@@ -294,7 +306,7 @@ class SandboxManager:
         return await asyncio.to_thread(self._read_file_sync, sandbox, full_path)
 
     def _read_file_sync(self, sandbox: Sandbox, full_path: str) -> bytes:
-        container = self.client.containers.get(sandbox.container_id)
+        container = self._get_container(sandbox)
         bits, _ = container.get_archive(full_path)
         # get_archive returns a tar stream
         buf = io.BytesIO()
@@ -424,12 +436,20 @@ class SandboxManager:
         except (NotFound, APIError):
             pass
 
-        # Remove volume
-        try:
-            vol = self.client.volumes.get(sandbox.volume_name)
-            vol.remove(force=True)
-        except (NotFound, APIError):
-            pass
+        # Remove workspace directory / volume
+        if sandbox.volume_name:
+            if QUIP_HOST_SANDBOX_DIR:
+                # Host bind mount — delete directory on host via container path
+                uid_short = sandbox.volume_name.rstrip("/").split("/")[-1] if "/" in sandbox.volume_name else sandbox.volume_name
+                if uid_short:
+                    shutil.rmtree(f"{CONTAINER_SANDBOX_DIR}/{uid_short}", ignore_errors=True)
+            else:
+                # Named Docker volume — remove it
+                try:
+                    vol = self.client.volumes.get(sandbox.volume_name)
+                    vol.remove(force=True)
+                except (NotFound, APIError):
+                    pass
 
         # Remove committed image
         if sandbox.image_tag:
@@ -454,27 +474,18 @@ class SandboxManager:
     ) -> dict:
         """Execute a command inside the container."""
         return await asyncio.to_thread(
-            self._exec_sync, sandbox.container_id, cmd, workdir, timeout
+            self._exec_sync, sandbox, cmd, workdir, timeout
         )
 
     def _exec_sync(
         self,
-        container_id: str,
+        sandbox: Sandbox,
         cmd: str,
         workdir: Optional[str] = None,
         timeout: int = 30,
     ) -> dict:
         try:
-            container = self.client.containers.get(container_id)
-            # Auto-restart if container stopped between calls
-            if container.status != "running":
-                logger.info(f"Container {container_id[:12]} not running (status={container.status}), restarting")
-                container.start()
-                import time
-                time.sleep(0.8)
-                container.reload()
-                if container.status != "running":
-                    return {"stdout": "", "stderr": "Container failed to restart", "exit_code": 1}
+            container = self._get_container(sandbox)
             exit_code, output = container.exec_run(
                 ["bash", "-c", cmd],
                 workdir=workdir,
@@ -501,7 +512,7 @@ class SandboxManager:
     def _write_file_sync(
         self, sandbox: Sandbox, full_path: str, content: bytes
     ) -> None:
-        container = self.client.containers.get(sandbox.container_id)
+        container = self._get_container(sandbox)
         dirname = posixpath.dirname(full_path)
         filename = posixpath.basename(full_path)
 
@@ -527,6 +538,7 @@ class SandboxManager:
             network = self.client.networks.get(INSTALL_NETWORK)
         except NotFound:
             network = self.client.networks.create(INSTALL_NETWORK, driver="bridge")
+        self._get_container(sandbox)
         network.connect(sandbox.container_id)
 
     async def _disconnect_install_network(self, sandbox: Sandbox) -> None:
@@ -550,9 +562,12 @@ class SandboxManager:
             await db.commit()
 
     def _commit_sync(self, container_id: str, tag: str) -> None:
-        container = self.client.containers.get(container_id)
-        repo, tag_name = tag.rsplit(":", 1)
-        container.commit(repository=repo, tag=tag_name)
+        try:
+            container = self.client.containers.get(container_id)
+            repo, tag_name = tag.rsplit(":", 1)
+            container.commit(repository=repo, tag=tag_name)
+        except NotFound:
+            logger.warning(f"Cannot commit: container {container_id[:12]} not found")
 
 
 # Singleton
@@ -560,7 +575,7 @@ sandbox_manager = SandboxManager()
 
 
 async def sandbox_cleanup_loop() -> None:
-    """Background task: stop idle sandbox containers."""
+    """Background task: stop idle containers, then destroy stopped ones after a grace period."""
     from quip.database import async_session
 
     while True:
@@ -570,17 +585,32 @@ async def sandbox_cleanup_loop() -> None:
                 continue
 
             from quip.services.skill_store import get_skill_setting
-            timeout_seconds = int(get_skill_setting("sandbox", "idle_timeout", None) or get_setting("sandbox_idle_timeout", "600"))
-            cutoff = datetime.now(timezone.utc).timestamp() - timeout_seconds
+
+            # Phase 1: stop running containers idle longer than idle_timeout
+            idle_timeout = int(get_skill_setting("sandbox", "idle_timeout", None) or get_setting("sandbox_idle_timeout", "600"))
+            stop_cutoff = datetime.now(timezone.utc).timestamp() - idle_timeout
 
             async with async_session() as db:
                 result = await db.execute(
                     select(Sandbox).where(Sandbox.status == "running")
                 )
                 for sb in result.scalars().all():
-                    if sb.last_active_at and sb.last_active_at.timestamp() < cutoff:
+                    if sb.last_active_at and sb.last_active_at.timestamp() < stop_cutoff:
                         logger.info(f"Stopping idle sandbox: {sb.container_name}")
                         await sandbox_manager.stop(sb, db)
+
+            # Phase 2: destroy stopped containers after a longer grace period
+            destroy_timeout = int(get_skill_setting("sandbox", "destroy_timeout", None) or get_setting("sandbox_destroy_timeout", "604800"))
+            destroy_cutoff = datetime.now(timezone.utc).timestamp() - destroy_timeout
+
+            async with async_session() as db:
+                result = await db.execute(
+                    select(Sandbox).where(Sandbox.status == "stopped")
+                )
+                for sb in result.scalars().all():
+                    if sb.last_active_at and sb.last_active_at.timestamp() < destroy_cutoff:
+                        logger.info(f"Destroying stale stopped sandbox: {sb.container_name}")
+                        await sandbox_manager.destroy(sb.user_id, db)
         except asyncio.CancelledError:
             break
         except Exception as e:

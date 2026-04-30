@@ -17,7 +17,7 @@ RUN mkdir -p quip && touch quip/__init__.py
 RUN uv pip install --system -e ".[dev]"
 
 COPY backend/ ./
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/data/sandbox
 
 COPY --from=frontend-build /app/build /usr/share/nginx/html
 
