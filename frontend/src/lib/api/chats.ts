@@ -339,9 +339,15 @@ async function processSSEStream(
               subAgents.update((agents) => {
                 const a = agents[data.task_id];
                 if (!a) return agents;
+                const raw = data.result;
+                const formatted = typeof raw === 'object' && raw !== null
+                  ? (typeof (raw as Record<string, unknown>).summary === 'string'
+                      ? (raw as Record<string, unknown>).summary as string
+                      : JSON.stringify(raw, null, 2))
+                  : String(raw ?? '');
                 return {
                   ...agents,
-                  [data.task_id]: { ...a, status: 'done', result: data.result ?? '' },
+                  [data.task_id]: { ...a, status: 'done', result: formatted },
                 };
               });
             } else if (currentEvent === 'subagent_error') {
