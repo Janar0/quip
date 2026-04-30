@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock } from '$lib/stores/chat';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, subAgents, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock, type SubAgentHandle } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
@@ -134,6 +134,25 @@ export function stopGeneration(): void {
     abortController.set(null);
   }
   isStreaming.set(false);
+}
+
+/** Parse [[research_plan]]...[[/research_plan]] from content. Returns parsed plan or null. */
+function parseResearchPlan(content: string): { title: string; questions: string[]; approach?: string } | null {
+  const re = /\[\[research_plan\]\]\s*([\s\S]*?)\s*\[\[\/research_plan\]\]/;
+  const m = content.match(re);
+  if (!m) return null;
+  try {
+    const plan = JSON.parse(m[1]);
+    if (plan.title && Array.isArray(plan.questions)) {
+      return plan;
+    }
+  } catch {}
+  return null;
+}
+
+/** Strip research_plan markers from content */
+function stripResearchPlan(content: string): string {
+  return content.replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim();
 }
 
 /** Parse SSE stream, update the streaming message, return real message IDs */
@@ -296,6 +315,44 @@ async function processSSEStream(
                   return { ...m, researchStatus: status, researchHistory: history };
                 }),
               );
+            } else if (currentEvent === 'subagent_spawned') {
+              subAgents.update((agents) => ({
+                ...agents,
+                [data.task_id]: {
+                  task_id: data.task_id,
+                  type: data.agent_type ?? 'search',
+                  status: 'running',
+                  goal: data.goal ?? '',
+                  detail: data.detail ?? '',
+                },
+              }));
+            } else if (currentEvent === 'subagent_progress') {
+              subAgents.update((agents) => {
+                const a = agents[data.task_id];
+                if (!a) return agents;
+                return {
+                  ...agents,
+                  [data.task_id]: { ...a, detail: data.detail ?? a.detail },
+                };
+              });
+            } else if (currentEvent === 'subagent_result') {
+              subAgents.update((agents) => {
+                const a = agents[data.task_id];
+                if (!a) return agents;
+                return {
+                  ...agents,
+                  [data.task_id]: { ...a, status: 'done', result: data.result ?? '' },
+                };
+              });
+            } else if (currentEvent === 'subagent_error') {
+              subAgents.update((agents) => {
+                const a = agents[data.task_id];
+                if (!a) return agents;
+                return {
+                  ...agents,
+                  [data.task_id]: { ...a, status: 'error', error: data.message ?? '' },
+                };
+              });
             } else if (currentEvent === 'usage') {
               const targetId = messageId || 'streaming';
               messages.update((msgs) =>
@@ -328,6 +385,20 @@ async function processSSEStream(
     }
   }
 
+  // Detect and strip research plan markers — keeps only non-marker content
+  if (fullContent) {
+    const plan = parseResearchPlan(fullContent);
+    if (plan) {
+      fullContent = stripResearchPlan(fullContent);
+      const targetId = messageId || 'streaming';
+      messages.update((msgs) =>
+        msgs.map((m) =>
+          m.id === targetId ? { ...m, content: fullContent, researchProposal: plan as unknown as Record<string, unknown> } : m,
+        ),
+      );
+    }
+  }
+
   // If model sent only reasoning with no content, promote reasoning to content
   if (!fullContent && fullReasoning) {
     fullContent = fullReasoning;
@@ -355,12 +426,14 @@ function updateStreamingContent(
   );
 }
 
-export async function streamChat(text: string, chatId?: string, fileIds?: string[], uploadedFiles?: UploadedFile[], branchFromMessageId?: string): Promise<string | undefined> {
+export async function streamChat(text: string, chatId?: string, fileIds?: string[], uploadedFiles?: UploadedFile[], branchFromMessageId?: string, deepResearch = false): Promise<string | undefined> {
   const model = get(selectedModel);
   const mode = get(modePreference);
   const ctrl = new AbortController();
   abortController.set(ctrl);
   isStreaming.set(true);
+
+  if (deepResearch) subAgents.set({});
 
   // Build attachment info for the temp user message
   const attachments: AttachmentInfo[] | undefined = uploadedFiles?.length
@@ -405,6 +478,7 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
     const body: Record<string, unknown> = { chat_id: chatId || null, model, message: text };
     if (fileIds?.length) body.file_ids = fileIds;
     if (mode !== 'auto') body.mode_hint = mode;
+    if (deepResearch) body.deep_research = true;
     if (branchFromMessageId) body.branch_from_message_id = branchFromMessageId;
 
     const res = await fetch('/api/chat/completions', {
