@@ -15,7 +15,7 @@ from quip.models.usage import UsageLog
 from quip.models.budget import Budget
 from quip.models.file import File, DocumentChunk
 from quip.schemas.chat import CompletionRequest, RegenerateRequest
-from quip.services.config import get_setting, get_bool_setting
+from quip.core.config import get_setting, get_bool_setting
 from quip.services.sandbox import sandbox_manager
 from quip.services.multimodal import build_multimodal_message
 from quip.services.streaming import is_ollama_model, sse_event

@@ -5,8 +5,10 @@ module exports a `SKILL` dict. `discover_skills()` walks the registry at startup
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from quip.models.skill import Skill
+
+from quip.core.skill_manifest import SkillDef
 from quip.database import async_session
+from quip.models.skill import Skill
 from quip.skills import discover_skills
 
 # Cache loaded from DB at startup
@@ -213,3 +215,34 @@ def build_gated_tools_for_api(
         if skill_tools:
             tools.extend(skill_tools)
     return tools
+
+
+# ---- SkillDef helpers (convenience wrappers over cache) ----
+
+_INTERNAL_SKILLS = {"search_sub_agent", "sandbox_sub_agent", "artifact_sub_agent"}
+
+
+def get_skill_def(name: str) -> SkillDef | None:
+    """Load skill instructions as a SkillDef."""
+    skill = _skills_cache.get(name)
+    if not skill:
+        return None
+    return SkillDef(
+        name=skill.id,
+        summary=skill.description or "",
+        when_to_use="",
+        body=skill.prompt_instructions or "",
+    )
+
+
+def list_skill_index_markdown(enabled: set[str]) -> str:
+    """Render a one-line-per-skill markdown index (skips internal skills)."""
+    lines = []
+    for name in sorted(enabled):
+        if name in _INTERNAL_SKILLS:
+            continue
+        skill = _skills_cache.get(name)
+        if not skill:
+            continue
+        lines.append(f"- `{name}` — {skill.description or ''}.")
+    return "\n".join(lines)

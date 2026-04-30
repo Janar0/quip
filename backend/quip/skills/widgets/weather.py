@@ -1,7 +1,7 @@
 """Skill: weather — Get current weather and forecast for any location. Use when user asks about weat"""
 import httpx
 from datetime import datetime
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 
 
 async def _fetch_weather(params: dict) -> dict:

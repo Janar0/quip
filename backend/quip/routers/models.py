@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from quip.models.user import User
 from quip.services.permissions import get_current_user
-from quip.services.config import get_setting, get_bool_setting
+from quip.core.config import get_setting, get_bool_setting
 from quip.providers.openrouter import list_models as or_list_models
 from quip.providers.ollama import list_models as ollama_list_models
 

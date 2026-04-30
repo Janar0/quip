@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.models.file import File, DocumentChunk, DocumentImage
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 
 logger = logging.getLogger(__name__)
 

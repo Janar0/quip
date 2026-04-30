@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.models.user import User
-from quip.services.config import get_setting, get_bool_setting
+from quip.core.config import get_setting, get_bool_setting
 from quip.services.skill_store import (
     list_skill_index,
     get_skill,

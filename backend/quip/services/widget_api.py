@@ -1,7 +1,7 @@
 """External API dispatcher for API-backed widgets."""
 import httpx
 import re
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 from quip.models.skill import Skill
 from quip.skills import HANDLERS
 

@@ -16,7 +16,7 @@ from quip.models.user import User
 from quip.models.file import File, DocumentChunk
 from quip.services.permissions import get_current_user
 from quip.services.auth import decode_token
-from quip.services.config import get_setting, get_bool_setting
+from quip.core.config import get_setting, get_bool_setting
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "uploads"
 

@@ -6,17 +6,17 @@ Pipeline:
 """
 import asyncio
 import logging
-import math
 import time
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from quip.models.file import File, DocumentChunk
-from quip.services.config import get_setting
+from quip.core.vector_utils import cosine_similarity
+from quip.models.file import DocumentChunk, File
+from quip.core.config import get_setting
 from quip.services.embeddings import get_embeddings
-from quip.services.vector_store import get_vector_store
+from quip.core.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +36,6 @@ MMR_LAMBDA_DEFAULT = 0.7
 # Max tokens for formatted RAG context. At ~4 chars/token for English, 3000
 # tokens ≈ 12KB of text — enough for 5-8 dense chunks without blowing context.
 FORMAT_MAX_TOKENS = 3000
-
-
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
 
 
 def _score_rows(query_vec: list[float], rows: list) -> list[dict]:

@@ -15,7 +15,7 @@ from quip.models.usage import UsageLog
 from quip.models.budget import Budget
 from quip.models.user import User, Auth
 from quip.services.permissions import get_admin_user
-from quip.services.config import get_setting, set_setting, save_settings, get_bool_setting
+from quip.core.config import get_setting, set_setting, save_settings, get_bool_setting
 from quip.services.auth import hash_password
 from quip.providers.openrouter import list_models as or_list_models, get_key_info
 

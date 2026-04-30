@@ -3,14 +3,14 @@ import pytest
 from uuid import UUID
 from unittest.mock import patch, AsyncMock
 
+from quip.core.vector_utils import cosine_similarity
 from quip.services.rag import (
-    cosine_similarity,
     format_rag_context,
     retrieve_context,
     _score_rows,
     _mmr_rerank,
 )
-from quip.services.config import set_setting
+from quip.core.config import set_setting
 from quip.models.file import File, DocumentChunk
 from quip.models.user import User
 from quip.models.chat import Chat

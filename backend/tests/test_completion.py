@@ -8,7 +8,7 @@ from io import BytesIO
 from unittest.mock import patch, AsyncMock
 
 from quip.providers.openrouter import StreamChunk, UsageInfo
-from quip.services.config import set_setting
+from quip.core.config import set_setting
 from quip.models.file import File, DocumentChunk
 from quip.models.chat import Chat, Message
 

@@ -3,7 +3,7 @@ import json
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from quip.services.config import set_setting
+from quip.core.config import set_setting
 from quip.services.search import web_search, SearchResult
 from quip.services.scraper import read_url
 

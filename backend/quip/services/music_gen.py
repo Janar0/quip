@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 
 from quip.providers.openrouter import OPENROUTER_BASE, OPENROUTER_API_KEY
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 
 GENERATED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "generated"
 MUSIC_MODEL_DEFAULT = "google/lyria-3-clip-preview"

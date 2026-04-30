@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 
 logger = logging.getLogger(__name__)
 

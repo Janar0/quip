@@ -78,7 +78,7 @@ def tmp_upload_dir(tmp_path):
 @pytest.fixture(autouse=True)
 def _reset_settings():
     """Reset in-memory config settings between tests."""
-    from quip.services import config
+    from quip.core import config
     saved = dict(config._settings)
     yield
     config._settings.clear()

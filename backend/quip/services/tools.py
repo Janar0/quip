@@ -515,7 +515,7 @@ async def execute_tool_call(
 
         elif tool_name == "generate_image":
             from quip.services.image_gen import generate_image
-            from quip.services.config import get_setting
+            from quip.core.config import get_setting
             from quip.services.skill_store import get_skill_setting
             model = get_skill_setting("image_generation", "model", "") or "google/gemini-2.0-flash-exp:free"
             api_key = get_setting("openrouter_api_key", "")
@@ -534,7 +534,7 @@ async def execute_tool_call(
 
         elif tool_name == "generate_music":
             from quip.services.music_gen import generate_music
-            from quip.services.config import get_setting
+            from quip.core.config import get_setting
             api_key = get_setting("openrouter_api_key", "")
             result = await generate_music(
                 prompt=args.get("prompt", ""),

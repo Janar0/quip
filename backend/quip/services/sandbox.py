@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.models.sandbox import Sandbox
-from quip.services.config import get_setting
+from quip.core.config import get_setting
 
 logger = logging.getLogger(__name__)
 

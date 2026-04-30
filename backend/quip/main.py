@@ -8,7 +8,7 @@ from sqlalchemy import text
 import os
 
 from quip.database import engine, Base
-from quip.services.config import load_settings
+from quip.core.config import load_settings
 from quip.services.openwebui_migration import run_migration_if_needed
 from quip.routers.auth import router as auth_router
 from quip.routers.chats import router as chats_router
