@@ -71,7 +71,17 @@
   let hasMusicGenExecs = $derived(musicGenExecs.length > 0);
   let hasRunningTools = $derived(sandboxExecs.some((e) => e.status === 'running'));
   let hasResearch = $derived(!!(message.researchHistory?.length && message.researchStatus));
-  let researchPlan = $derived(message.researchProposal ?? null);
+  let researchPlan = $derived.by(() => {
+    if (message.researchProposal) return message.researchProposal;
+    const re = /\[\[research_plan\]\]\s*([\s\S]*?)\s*\[\[\/research_plan\]\]/;
+    const m = message.content.match(re);
+    if (!m) return null;
+    try {
+      const plan = JSON.parse(m[1]);
+      if (plan.title && Array.isArray(plan.questions)) return plan;
+    } catch {}
+    return null;
+  });
   let hasResearchPlan = $derived(!!researchPlan);
   let execById = $derived(new Map((message.toolExecutions ?? []).map((e) => [e.id, e])));
   let hasContentBlocks = $derived(!!(message.contentBlocks?.length));
