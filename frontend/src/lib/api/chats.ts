@@ -576,3 +576,68 @@ export async function editMessage(chatId: string, messageId: string, newContent:
   // message's parent, making it a true sibling of the original.
   await streamChat(newContent, chatId, undefined, undefined, messageId);
 }
+
+/**
+ * Start deep research without creating a visible user message.
+ * Adds a streaming assistant placeholder as sibling of the last user message,
+ * then sends deep_research: true to the backend.
+ */
+export async function startDeepResearch(chatId: string, query: string): Promise<void> {
+  const model = get(selectedModel);
+  const ctrl = new AbortController();
+  abortController.set(ctrl);
+  isStreaming.set(true);
+  subAgents.set({});
+
+  // Find parent user message for correct threading
+  const allMsgs = get(messages);
+  const lastUserMsg = [...allMsgs].reverse().find((m) => m.role === 'user');
+  const parentId = lastUserMsg?.id ?? null;
+
+  // Add streaming placeholder only (no temp-user)
+  messages.update((msgs) => [
+    ...msgs,
+    {
+      id: 'streaming',
+      chat_id: chatId ?? '',
+      role: 'assistant' as const,
+      content: '',
+      model,
+      parent_id: parentId,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  try {
+    const res = await fetch('/api/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+      },
+      body: JSON.stringify({
+        chat_id: chatId || null,
+        model,
+        message: query,
+        deep_research: true,
+      }),
+      signal: ctrl.signal,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+      updateStreamingContent(undefined, `Error: ${formatError(err, res.status)}`);
+      return;
+    }
+
+    await processSSEStream(res);
+  } catch (e) {
+    if (!(e instanceof DOMException && e.name === 'AbortError')) {
+      updateStreamingContent(undefined, `Error: ${e}`);
+    }
+  } finally {
+    isStreaming.set(false);
+    abortController.set(null);
+    await loadChats();
+  }
+}

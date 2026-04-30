@@ -3,7 +3,7 @@
   import { artifactPanelOpen } from '$lib/stores/artifacts';
   import { subAgents, isStreaming } from '$lib/stores/chat';
   import type { UploadedFile } from '$lib/api/files';
-  import { streamChat } from '$lib/api/chats';
+  import { startDeepResearch } from '$lib/api/chats';
   import MessageList from './MessageList.svelte';
   import ChatInput from './ChatInput.svelte';
   import ArtifactPanel from '$lib/components/artifacts/ArtifactPanel.svelte';
@@ -32,7 +32,7 @@
 
   function startResearch(query: string) {
     researchPanelOpen = true;
-    streamChat(query, chatId, undefined, undefined, undefined, true);
+    startDeepResearch(chatId!, query);
   }
 </script>
 

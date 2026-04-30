@@ -71,16 +71,7 @@
   let hasMusicGenExecs = $derived(musicGenExecs.length > 0);
   let hasRunningTools = $derived(sandboxExecs.some((e) => e.status === 'running'));
   let hasResearch = $derived(!!(message.researchHistory?.length && message.researchStatus));
-  let researchPlan = $derived.by(() => {
-    const re = /\[\[research_plan\]\]\s*([\s\S]*?)\s*\[\[\/research_plan\]\]/;
-    const m = message.content.match(re);
-    if (!m) return null;
-    try {
-      const plan = JSON.parse(m[1]);
-      if (plan.title && Array.isArray(plan.questions)) return plan;
-    } catch {}
-    return null;
-  });
+  let researchPlan = $derived(message.researchProposal ?? null);
   let hasResearchPlan = $derived(!!researchPlan);
   let execById = $derived(new Map((message.toolExecutions ?? []).map((e) => [e.id, e])));
   let hasContentBlocks = $derived(!!(message.contentBlocks?.length));
@@ -154,7 +145,7 @@
     if (!message.contentBlocks) return [] as string[];
     return message.contentBlocks.map((b) => {
       if (b.type !== 'text') return '';
-      const text = stripMusicWidgetRefs(stripArtifactTags(b.content));
+      const text = stripMusicWidgetRefs(stripArtifactTags(b.content)).replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim();
       return text.trim() ? renderMarkdown(text, sources, message.chat_id) : '';
     });
   });
@@ -288,7 +279,7 @@
         <DeepResearchProgress history={message.researchHistory!} current={message.researchStatus!} />
       {/if}
       {#if hasResearchPlan && onStartResearch}
-        <ResearchProposal plan={researchPlan!} onStart={() => onStartResearch(message.content)} />
+        <ResearchProposal plan={researchPlan!} onStart={() => onStartResearch(researchPlan!.title)} />
       {/if}
       {#if hasSearchExecs}
         <SearchProgress executions={searchExecs} />
