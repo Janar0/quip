@@ -83,7 +83,7 @@ async def _run_sub_stream_loop(
             if chunk.content:
                 round_content += chunk.content
                 await session.emit(ResearchEvent(progress_event_type, {
-                    "task_id": task_id, "delta": chunk.content,
+                    "task_id": task_id, "detail": chunk.content,
                 }))
             if chunk.tool_calls:
                 accumulate_tool_calls(accumulated, chunk.tool_calls)

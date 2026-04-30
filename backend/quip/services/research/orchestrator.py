@@ -119,6 +119,27 @@ async def run_deep_research(
                     "content": result_str,
                 })
 
+        # Force one final synthesis round if the last message was a tool result
+        # (LLM may have gotten stuck calling wait_for_any_result after all agents done).
+        if messages and messages[-1]["role"] == "tool" and session.handles:
+            alive = [h for h in session.handles.values() if h.status == "running"]
+            if not alive:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "All sub-agents have returned their results. There are no more pending agents. "
+                        "Do NOT call any tools. Write the final answer now using the results above."
+                    ),
+                })
+                stream = await _stream(session, messages, ORCHESTRATOR_TOOLS)
+                async for chunk in stream:
+                    if chunk.content:
+                        await emit(ResearchEvent("content", {"text": chunk.content}))
+                    if chunk.reasoning:
+                        await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
+                    if chunk.usage:
+                        session.add_usage(chunk.usage)
+
         # Final usage event so the SSE handler can persist it.
         await emit(ResearchEvent("usage", {
             "prompt_tokens": session.total_usage.prompt_tokens,
