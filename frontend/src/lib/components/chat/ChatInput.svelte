@@ -3,7 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { fade } from 'svelte/transition';
   import { D1 } from '$lib/motion';
-  import { isStreaming, modePreference, searchEnabled, type ModePreference } from '$lib/stores/chat';
+  import { isStreaming } from '$lib/stores/chat';
   import { stopGeneration } from '$lib/api/chats';
   import { uploadFiles, getFileUrl, deleteFile, type UploadedFile } from '$lib/api/files';
 
@@ -316,18 +316,7 @@
             accept="*/*"
           />
 
-          {#if $searchEnabled}
-            <div class="quip-seg ml-1">
-              {#each ['auto', 'search'] as const as m (m)}
-                <button
-                  type="button"
-                  class={$modePreference === m ? 'on' : ''}
-                  onclick={() => modePreference.set(m as ModePreference)}
-                  disabled={$isStreaming}
-                >{$t(`chat.mode_${m}`)}</button>
-              {/each}
-            </div>
-          {/if}
+
         </div>
 
         <!-- Send / Stop -->

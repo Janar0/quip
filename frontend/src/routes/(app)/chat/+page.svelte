@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import { getRandomBackronym, getBackronyms, getHeadlineName } from '$lib/quip/backronyms';
   import { D2, D3, easeOut } from '$lib/motion';
-  import { messages, modePreference } from '$lib/stores/chat';
+  import { messages } from '$lib/stores/chat';
   import { streamChat, regenerateMessage, editMessage } from '$lib/api/chats';
   import type { UploadedFile } from '$lib/api/files';
   import ModelSelector from '$lib/components/chat/ModelSelector.svelte';
@@ -106,8 +106,6 @@
         <div
           in:fly={{ y: 12, duration: D3, delay: 120, easing: easeOut }}
           class="relative z-30 mb-5"
-          style="visibility: {$modePreference === 'auto' ? 'visible' : 'hidden'}"
-          aria-hidden={$modePreference !== 'auto'}
         >
           <ModelSelector variant="picker" />
         </div>

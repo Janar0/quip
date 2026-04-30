@@ -393,7 +393,7 @@ async function processSSEStream(
       const targetId = messageId || 'streaming';
       messages.update((msgs) =>
         msgs.map((m) =>
-          m.id === targetId ? { ...m, content: fullContent, researchProposal: plan as unknown as Record<string, unknown> } : m,
+          m.id === targetId ? { ...m, content: fullContent, researchProposal: plan } : m,
         ),
       );
     }

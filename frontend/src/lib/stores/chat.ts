@@ -62,6 +62,7 @@ export interface MessageInfo {
   attachments?: AttachmentInfo[];
   researchStatus?: ResearchStatusInfo;
   researchHistory?: ResearchStatusInfo[];
+  researchProposal?: { title: string; questions: string[]; approach?: string };
   searchImages?: SearchImageInfo[];
   contentBlocks?: ContentBlock[];
   created_at: string;
