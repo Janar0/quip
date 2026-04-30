@@ -129,6 +129,20 @@ class PromptBuilder:
                 "Only present what the search actually returned."
             )
 
+        if search_enabled and get_bool_setting("research_enabled", True):
+            parts.append(
+                "RESEARCH PROPOSAL: When the user's question would benefit from in-depth "
+                "research (multiple web searches, cross-referencing sources, data analysis), "
+                "do NOT answer yet. Instead, output a research plan inside these markers:\n"
+                "[[research_plan]]\n"
+                '{"title": "Brief research topic", "questions": ["Sub-question 1", "Sub-question 2", ...], '
+                '"approach": "How you will conduct the research (optional)"}\n'
+                "[[/research_plan]]\n"
+                "After the marker, you may optionally add a brief note inviting the user to start "
+                "the research. Use the user's language. Only propose research when the query is "
+                "complex enough to warrant it — simple factual questions should be answered directly."
+            )
+
         admin = get_setting("system_prompt", "").strip()
         if admin:
             parts.append(admin)
