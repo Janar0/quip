@@ -86,6 +86,18 @@ export const searchEnabled = writable<boolean>(false);
 export type ModePreference = 'auto' | 'search' | 'research';
 export const modePreference = writable<ModePreference>('auto');
 
+export interface SubAgentHandle {
+  task_id: string;
+  type: 'search' | 'sandbox' | 'artifact';
+  status: 'running' | 'done' | 'error';
+  goal: string;
+  detail?: string;
+  result?: string;
+  error?: string;
+}
+
+export const subAgents = writable<Record<string, SubAgentHandle>>({});
+
 export function setDefaultModel(model: string): void {
   selectedModel.set(model);
   localStorage.setItem('default_model', model);
