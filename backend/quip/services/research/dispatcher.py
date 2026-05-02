@@ -42,6 +42,11 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         await session.emit(ResearchEvent("subagent_spawned", {
             "task_id": tid, "kind": "search", "agent_type": "search", "goal": goal,
         }))
+        await session.emit(ResearchEvent("status", {
+            "phase": "searching",
+            "detail": "Searching web sources...",
+            "sub_queries": [goal],
+        }))
         return json.dumps({"task_id": tid, "status": "running"})
 
     if name == "spawn_sandbox_agent":
@@ -52,7 +57,8 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         task = asyncio.create_task(_run_sandbox_sub_agent(session, tid, task_desc))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="sandbox", task=task)
         await session.emit(ResearchEvent("subagent_spawned", {
-            "task_id": tid, "kind": "sandbox", "agent_type": "sandbox", "task": task_desc,
+            "task_id": tid, "kind": "sandbox", "agent_type": "sandbox",
+            "goal": task_desc,
         }))
         return json.dumps({"task_id": tid, "status": "running"})
 
@@ -65,7 +71,9 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         task = asyncio.create_task(_run_artifact_sub_agent(session, tid, kind, spec))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="artifact", task=task)
         await session.emit(ResearchEvent("subagent_spawned", {
-            "task_id": tid, "kind": "artifact", "agent_type": "artifact", "artifact_kind": kind,
+            "task_id": tid, "kind": "artifact", "agent_type": "artifact",
+            "goal": f"{kind}: {spec[:80]}",
+            "artifact_kind": kind,
         }))
         return json.dumps({"task_id": tid, "status": "running"})
 

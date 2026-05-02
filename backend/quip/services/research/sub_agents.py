@@ -66,6 +66,18 @@ async def _run_search_sub_agent(
         session.handles[task_id].result = result
         session.handles[task_id].usage = usage
         session.add_usage(usage)
+        sources_found = 0
+        try:
+            parsed = json.loads(content) if content else {}
+            if isinstance(parsed, dict) and "sources" in parsed:
+                sources_found = len(parsed["sources"])
+        except Exception:
+            pass
+        await session.emit(ResearchEvent("status", {
+            "phase": "search_complete",
+            "detail": f"Found {sources_found} sources",
+            "sources_found": sources_found,
+        }))
         await session.result_queue.put((task_id, result))
         await session.emit(ResearchEvent("subagent_result", {
             "task_id": task_id, "kind": "search", "result": result,
@@ -155,7 +167,7 @@ async def _run_artifact_sub_agent(
             if chunk.content:
                 full_content += chunk.content
                 await session.emit(ResearchEvent("subagent_progress", {
-                    "task_id": task_id, "delta": chunk.content,
+                    "task_id": task_id, "detail": chunk.content,
                 }))
             if chunk.usage:
                 sub_usage.prompt_tokens += chunk.usage.prompt_tokens

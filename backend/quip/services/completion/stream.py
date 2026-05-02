@@ -285,6 +285,8 @@ class StreamOrchestrator:
                 "subagent_error",
             ):
                 return sse_event(t, event.data)
+            if t == "artifact":
+                return sse_event("artifact", event.data)
             return None
 
         try:

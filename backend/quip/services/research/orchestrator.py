@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Optional
 
 from quip.services.research._stream_loop import _build_runtime_header, _stream
@@ -14,6 +15,12 @@ from quip.services.tools import AccumulatedToolCall, accumulate_tool_calls
 from quip.services.skill_store import get_skill_def as get_skill
 
 logger = logging.getLogger(__name__)
+
+_ARTIFACT_RE = re.compile(r"<artifact[^>]*>[\s\S]*?</artifact>")
+
+def _extract_artifacts(content: str) -> list[str]:
+    """Return list of artifact tag blocks found in content."""
+    return _ARTIFACT_RE.findall(content)
 
 
 # --- Main orchestrator entry point ---
@@ -45,6 +52,10 @@ async def run_deep_research(
         locale=locale,
         location=location,
     )
+    await emit(ResearchEvent("status", {
+        "phase": "decomposing",
+        "detail": "Analyzing question for research plan..."
+    }))
 
     coordinator = get_skill("deep_research_coordinator")
     coordinator_body = coordinator.body if coordinator else (
@@ -85,6 +96,8 @@ async def run_deep_research(
                 if chunk.content:
                     round_content += chunk.content
                     await emit(ResearchEvent("content", {"text": chunk.content}))
+                    for art in _extract_artifacts(chunk.content):
+                        await emit(ResearchEvent("artifact", {"tag": art}))
                 if chunk.tool_calls:
                     accumulate_tool_calls(accumulated, chunk.tool_calls)
                 if chunk.usage:
@@ -131,10 +144,16 @@ async def run_deep_research(
                         "Do NOT call any tools. Write the final answer now using the results above."
                     ),
                 })
+                await emit(ResearchEvent("status", {
+                    "phase": "synthesizing",
+                    "detail": "Writing the final research report..."
+                }))
                 stream = await _stream(session, messages, ORCHESTRATOR_TOOLS)
                 async for chunk in stream:
                     if chunk.content:
                         await emit(ResearchEvent("content", {"text": chunk.content}))
+                        for art in _extract_artifacts(chunk.content):
+                            await emit(ResearchEvent("artifact", {"tag": art}))
                     if chunk.reasoning:
                         await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
                     if chunk.usage:
