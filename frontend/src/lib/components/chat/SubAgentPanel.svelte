@@ -1,6 +1,8 @@
 <script lang="ts">
   import { subAgents } from '$lib/stores/chat';
   import { t } from 'svelte-i18n';
+  import { fade } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import SubAgentCard from './SubAgentCard.svelte';
 
   let { onClose }: { onClose?: () => void } = $props();
@@ -10,17 +12,29 @@
   let runningCount = $derived(entries.filter((a) => a.status === 'running').length);
 </script>
 
-<div class="flex flex-col h-full">
+<div class="flex flex-col h-full" style="background: var(--quip-bg)">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: var(--quip-glass-border)">
-    <div class="flex items-center gap-2">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #a78bfa">
-        <circle cx="12" cy="12" r="10"/>
-        <path d="M12 6v6l4 2"/>
-      </svg>
-      <span class="text-sm font-semibold" style="color: var(--quip-text)">{$t('research.subAgents')}</span>
+  <div class="flex items-center justify-between px-4 py-3 border-b" style="background: var(--quip-glass-bg); border-color: var(--quip-glass-border)">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style="background: rgba(167,139,250,0.15)">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <span class="text-sm font-semibold" style="color: var(--quip-text)">{$t('research.subAgents')}</span>
+      </div>
       {#if runningCount > 0}
-        <span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background: #f59e0b15; color: #f59e0b">{$t('research.subAgentRunningCount', { values: { count: runningCount } })}</span>
+        <div class="flex items-center gap-1 mt-0.5">
+          <span class="spinner-ring inline-block" style="width: 10px; height: 10px; border-width: 1.5px"></span>
+          <span class="text-[10px]" style="color: #f59e0b">{$t('research.subAgentRunningCount', { values: { count: runningCount } })}</span>
+        </div>
+      {:else if hasAgents}
+        <div class="flex items-center gap-1 mt-0.5">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          <span class="text-[10px]" style="color: #34d399">{entries.length} {$t('research.subAgents')}</span>
+        </div>
       {/if}
     </div>
     {#if onClose}
@@ -41,7 +55,13 @@
         <SubAgentCard {agent} />
       {/each}
     {:else}
-      <p class="text-xs text-center py-8 opacity-30" style="color: var(--quip-text-muted)">{$t('research.subAgentsWaiting')}</p>
+      <div class="flex flex-col items-center gap-2 py-8" transition:fade={{ duration: D2 }}>
+        <svg class="w-5 h-5 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--quip-text-muted)">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <p class="text-xs opacity-30" style="color: var(--quip-text-muted)">{$t('research.subAgentsWaiting')}</p>
+      </div>
     {/if}
   </div>
 </div>

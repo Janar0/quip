@@ -23,7 +23,7 @@
   );
 </script>
 
-<div class="rounded-xl p-3 transition-colors" style="background: var(--quip-input-bg); border: 1px solid var(--quip-border)">
+<div class="rounded-xl p-3 transition-colors" style="background: var(--quip-glass-bg); border: 1px solid var(--quip-glass-border)">
   <div class="flex items-start gap-2.5">
     <!-- Type icon -->
     <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {statusColor}15">
@@ -47,14 +47,11 @@
       {/if}
 
       {#if agent.status === 'running' && agent.detail}
-        <p class="text-[11px] mt-0.5 truncate opacity-50" style="color: var(--quip-text-muted)">{agent.detail}</p>
+        <p class="text-[11px] mt-0.5 line-clamp-2" style="color: var(--quip-text-muted)">{agent.detail.slice(-120)}</p>
       {/if}
 
       {#if agent.status === 'done' && agent.result}
-        <details class="mt-1.5">
-          <summary class="text-[10px] cursor-pointer opacity-40 hover:opacity-70" style="color: var(--quip-text-muted)">{$t('research.subAgentShowResult')}</summary>
-          <pre class="mt-1 text-[11px] p-2 rounded-lg overflow-x-auto max-h-40" style="background: var(--quip-bg); color: var(--quip-text-dim); white-space: pre-wrap;">{agent.result}</pre>
-        </details>
+        <pre class="mt-1.5 text-[11px] p-2 rounded-lg overflow-x-auto max-h-40" style="background: var(--quip-bg); border: 1px solid var(--quip-border); color: var(--quip-text-dim); white-space: pre-wrap;">{agent.result}</pre>
       {/if}
 
       {#if agent.status === 'error' && agent.error}
@@ -63,11 +60,17 @@
     </div>
 
     {#if agent.status === 'running'}
-      <span class="spinner-ring flex-shrink-0" style="width: 14px; height: 14px; border-width: 1.5px"></span>
+      <div class="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {statusColor}15">
+        <span class="spinner-ring" style="width: 10px; height: 10px; border-width: 1.5px; border-color: {statusColor}; border-top-color: transparent"></span>
+      </div>
     {:else if agent.status === 'done'}
-      <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      <div class="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style="background: #34d39915">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      </div>
     {:else}
-      <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      <div class="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style="background: #ef444415">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      </div>
     {/if}
   </div>
 </div>
