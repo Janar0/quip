@@ -151,7 +151,7 @@ function parseResearchPlan(content: string): { title: string; questions: string[
 }
 
 /** Strip research_plan markers from content */
-function stripResearchPlan(content: string): string {
+export function stripResearchPlanContent(content: string): string {
   return content.replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim();
 }
 
@@ -332,7 +332,7 @@ async function processSSEStream(
                 if (!a) return agents;
                 return {
                   ...agents,
-                  [data.task_id]: { ...a, detail: data.detail ?? a.detail },
+                  [data.task_id]: { ...a, detail: (a.detail ?? '') + (data.detail ?? '') },
                 };
               });
             } else if (currentEvent === 'subagent_result') {
@@ -395,7 +395,7 @@ async function processSSEStream(
   if (fullContent) {
     const plan = parseResearchPlan(fullContent);
     if (plan) {
-      fullContent = stripResearchPlan(fullContent);
+      fullContent = stripResearchPlanContent(fullContent);
       const targetId = messageId || 'streaming';
       messages.update((msgs) =>
         msgs.map((m) =>
@@ -439,7 +439,7 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
   abortController.set(ctrl);
   isStreaming.set(true);
 
-  if (deepResearch) subAgents.set({});
+  subAgents.set({});
 
   // Build attachment info for the temp user message
   const attachments: AttachmentInfo[] | undefined = uploadedFiles?.length
