@@ -140,15 +140,19 @@ async def run_deep_research(
                 messages.append({
                     "role": "user",
                     "content": (
-                        "All sub-agents have returned their results. There are no more pending agents. "
-                        "Do NOT call any tools. Write the final answer now using the results above."
+                        "FINAL INSTRUCTION: All sub-agents have completed. You have all the results above. "
+                        "The user's original question was: " + query + "\n\n"
+                        "You MUST now write the final answer. Do NOT call any tools — "
+                        "tools are disabled for this round. Write a comprehensive answer "
+                        "based on the sub-agent results, with inline citations and a Sources section."
                     ),
                 })
                 await emit(ResearchEvent("status", {
                     "phase": "synthesizing",
                     "detail": "Writing the final research report..."
                 }))
-                stream = await _stream(session, messages, ORCHESTRATOR_TOOLS)
+                # Disable tools so the model CANNOT call wait_for_any_result again
+                stream = await _stream(session, messages, [])
                 async for chunk in stream:
                     if chunk.content:
                         await emit(ResearchEvent("content", {"text": chunk.content}))
