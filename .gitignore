@@ -37,8 +37,9 @@ backend/quip/data/*.mmdb
 .vscode/
 .idea/
 
-# Claude Code local config
+# Claude Code / OpenCode local config
 .claude/
+.opencode/
 docs/
 
 # OS
