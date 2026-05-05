@@ -26,7 +26,7 @@
   }
 </script>
 
-<div class="border-l-2 pl-3 mb-3 space-y-1" style="border-color: var(--quip-border-strong)">
+<div class="pl-3 mb-3 space-y-1" style="border-left: 2px solid var(--quip-glass-border-strong)">
   <button
     class="flex items-center gap-2 text-xs w-full text-left cursor-pointer"
     style="color: var(--quip-text-muted)"

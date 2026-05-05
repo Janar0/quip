@@ -162,6 +162,7 @@
   "research.subAgentShowResult": "Показать результат",
   "research.subAgentRunningCount": "{count} работает",
   "research.subAgentsWaiting": "Ожидание агентов...",
+  "research.proposalDecline": "Нет, просто ответь",
   "common.enabled": "Включено",
   "common.disabled": "Отключено",
   "common.yes": "Да",

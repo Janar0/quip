@@ -9,10 +9,12 @@
     onRegenerate,
     onEdit,
     onStartResearch,
+    onDeclineResearch,
   }: {
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
     onStartResearch?: (query: string) => void;
+    onDeclineResearch?: (messageId: string) => void;
   } = $props();
 
   let container: HTMLDivElement;
@@ -62,7 +64,7 @@
   <div class="max-w-4xl mx-auto w-full space-y-8">
     {#each thread as message (message.id)}
       <div>
-        <MessageBubble {message} {onRegenerate} {onEdit} {onStartResearch} />
+        <MessageBubble {message} {onRegenerate} {onEdit} {onStartResearch} {onDeclineResearch} />
         {#if message.siblingCount > 1}
           <div class="flex items-center justify-center gap-2 mt-1">
             <button

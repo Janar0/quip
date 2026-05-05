@@ -162,6 +162,7 @@
   "research.subAgentShowResult": "Show result",
   "research.subAgentRunningCount": "{count} running",
   "research.subAgentsWaiting": "Waiting for agents to start...",
+  "research.proposalDecline": "No, just answer",
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
   "common.yes": "Yes",

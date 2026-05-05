@@ -37,11 +37,13 @@
     onRegenerate,
     onEdit,
     onStartResearch,
+    onDeclineResearch,
   }: {
     message: MessageInfo;
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
     onStartResearch?: (query: string) => void;
+    onDeclineResearch?: (messageId: string) => void;
   } = $props();
 
   let isUser = $derived(message.role === 'user');
@@ -289,7 +291,11 @@
         <DeepResearchProgress history={message.researchHistory!} current={message.researchStatus!} />
       {/if}
       {#if hasResearchPlan && onStartResearch}
-        <ResearchProposal plan={researchPlan!} onStart={() => onStartResearch(researchPlan!.title)} />
+        <ResearchProposal
+          plan={researchPlan!}
+          onStart={() => onStartResearch(researchPlan!.title)}
+          onDecline={() => onDeclineResearch?.(message.id)}
+        />
       {/if}
       {#if hasSearchExecs}
         <SearchProgress executions={searchExecs} />

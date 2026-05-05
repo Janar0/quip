@@ -1,9 +1,9 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { artifactPanelOpen } from '$lib/stores/artifacts';
-  import { subAgents, isStreaming } from '$lib/stores/chat';
+  import { subAgents, isStreaming, messages } from '$lib/stores/chat';
   import type { UploadedFile } from '$lib/api/files';
-  import { startDeepResearch } from '$lib/api/chats';
+  import { startDeepResearch, stripResearchPlanContent } from '$lib/api/chats';
   import MessageList from './MessageList.svelte';
   import ChatInput from './ChatInput.svelte';
   import ArtifactPanel from '$lib/components/artifacts/ArtifactPanel.svelte';
@@ -19,6 +19,13 @@
   let { chatId, onSend, onRegenerate, onEdit, loading = false }: Props = $props();
 
   let researchPanelOpen = $state(false);
+  let lastUserQuery = $state('');
+
+  // Capture the last user message text for deep research
+  $effect(() => {
+    const temp = $messages.find((m) => m.id === 'temp-user');
+    if (temp) lastUserQuery = temp.content;
+  });
 
   // Auto-open panel when sub-agents appear, auto-close when done
   $effect(() => {
@@ -30,9 +37,19 @@
     }
   });
 
-  function startResearch(query: string) {
+  function declineResearch(messageId: string) {
+    messages.update((msgs) =>
+      msgs.map((m) =>
+        m.id === messageId
+          ? { ...m, content: stripResearchPlanContent(m.content), researchProposal: undefined }
+          : m,
+      ),
+    );
+  }
+
+  function startResearch(_planTitle: string) {
     researchPanelOpen = true;
-    startDeepResearch(chatId!, query);
+    startDeepResearch(chatId!, lastUserQuery);
   }
 </script>
 
@@ -43,7 +60,7 @@
         <div class="w-6 h-6 border-2 border-slate-800 border-t-slate-300 rounded-full animate-spin"></div>
       </div>
     {:else}
-      <MessageList {onRegenerate} {onEdit} onStartResearch={startResearch} />
+      <MessageList {onRegenerate} {onEdit} onStartResearch={startResearch} onDeclineResearch={declineResearch} />
     {/if}
     <div class="absolute left-0 right-0 bottom-0">
       <div class="quip-composer-scrim" aria-hidden="true"></div>
