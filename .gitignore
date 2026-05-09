@@ -41,6 +41,7 @@ backend/quip/data/*.mmdb
 # Claude Code / OpenCode local config
 .claude/
 .opencode/
+.sisyphus/
 docs/
 
 # OS
