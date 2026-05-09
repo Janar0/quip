@@ -1,6 +1,9 @@
 import { get } from 'svelte/store';
 import { authToken } from '$lib/stores/auth';
 
+// Prevent concurrent refresh attempts — all 401s share one in-flight refresh.
+let refreshPromise: Promise<boolean> | null = null;
+
 export async function api(path: string, options: RequestInit = {}): Promise<Response> {
   const token = get(authToken);
   const headers = new Headers(options.headers);
@@ -25,27 +28,48 @@ export async function api(path: string, options: RequestInit = {}): Promise<Resp
 }
 
 export async function tryRefresh(): Promise<boolean> {
-  const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('refresh_token') : null;
-  if (!refreshToken) return false;
+  // Deduplicate: if a refresh is already in flight, reuse it.
+  if (refreshPromise) return refreshPromise;
 
-  const res = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+  refreshPromise = (async () => {
+    const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('refresh_token') : null;
+    if (!refreshToken) return false;
 
-  if (res.ok) {
-    const data = await res.json();
-    authToken.set(data.access_token);
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    return true;
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        authToken.set(data.access_token);
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        return true;
+      }
+
+      // 401/403 from refresh endpoint = session truly dead (token revoked, user disabled, etc).
+      // Only in this case we clear tokens.
+      if (res.status === 401 || res.status === 403) {
+        authToken.set(null);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+      return false;
+    } catch {
+      // Network error — don't clear tokens, just report failure.
+      // The caller (api() or silent refresh) decides what to do with the 401.
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
-
-  authToken.set(null);
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-  return false;
 }
 
 export async function apiJson<T>(path: string, fallback: T, options: RequestInit = {}): Promise<T> {

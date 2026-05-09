@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, onNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { isAuthenticated, currentUser } from '$lib/stores/auth';
+  import { isAuthenticated, currentUser, authLoading } from '$lib/stores/auth';
   import { chatList } from '$lib/stores/chat';
   import { showSidebar, toggleSidebar } from '$lib/stores/ui';
   import { t } from 'svelte-i18n';
@@ -130,7 +130,8 @@
   }
 
   $effect(() => {
-    if (!$isAuthenticated) {
+    // Don't redirect while auth is still being resolved (e.g. refresh in flight).
+    if (!$authLoading && !$isAuthenticated) {
       goto('/auth/login');
     }
   });
@@ -154,6 +155,18 @@
     };
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
+  });
+
+  // Page transitions using View Transitions API when available
+  onNavigate((navigation) => {
+    if (document.startViewTransition) {
+      return new Promise((resolve) => {
+        document.startViewTransition(async () => {
+          resolve();
+          await navigation.complete;
+        });
+      });
+    }
   });
 
   function handleLogout() {
