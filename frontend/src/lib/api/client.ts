@@ -50,13 +50,10 @@ export async function tryRefresh(): Promise<boolean> {
         return true;
       }
 
-      // 401/403 from refresh endpoint = session truly dead (token revoked, user disabled, etc).
-      // Only in this case we clear tokens.
-      if (res.status === 401 || res.status === 403) {
-        authToken.set(null);
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-      }
+      // Refresh failed — clear tokens so the auth guard redirects to login.
+      authToken.set(null);
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       return false;
     } catch {
       // Network error — don't clear tokens, just report failure.
