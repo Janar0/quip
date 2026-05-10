@@ -48,7 +48,7 @@
 
 <svelte:window onkeydown={handleKey} />
 
-{#if visibleImages.length >= 2}
+{#if visibleImages.length >= 1}
   <div class="mb-3 flex gap-1.5 max-w-md">
     {#each thumbs as img, i (img.img_src)}
       <button

@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import type { ToolExecution } from '$lib/stores/sandbox';
 
 export interface ChatInfo {
@@ -102,4 +102,42 @@ export const subAgents = writable<Record<string, SubAgentHandle>>({});
 export function setDefaultModel(model: string): void {
   selectedModel.set(model);
   localStorage.setItem('default_model', model);
+}
+
+// ── Branch selection persistence ──
+// Saves branch navigator choices to localStorage so they survive page refreshes.
+// Key format: quip_branches_{chatId}
+
+const BRANCH_STORAGE_PREFIX = 'quip_branches_';
+
+export function persistBranchSelections(chatId: string): void {
+  if (typeof localStorage === 'undefined') return;
+  const selections = get(branchSelections);
+  if (Object.keys(selections).length === 0) {
+    localStorage.removeItem(`${BRANCH_STORAGE_PREFIX}${chatId}`);
+  } else {
+    localStorage.setItem(`${BRANCH_STORAGE_PREFIX}${chatId}`, JSON.stringify(selections));
+  }
+}
+
+export function restoreBranchSelections(chatId: string): void {
+  if (typeof localStorage === 'undefined') {
+    branchSelections.set({});
+    return;
+  }
+  const stored = localStorage.getItem(`${BRANCH_STORAGE_PREFIX}${chatId}`);
+  if (stored) {
+    try {
+      branchSelections.set(JSON.parse(stored));
+    } catch {
+      branchSelections.set({});
+    }
+  } else {
+    branchSelections.set({});
+  }
+}
+
+export function clearBranchSelections(chatId: string): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(`${BRANCH_STORAGE_PREFIX}${chatId}`);
 }

@@ -3,6 +3,8 @@
   import { artifactPanelOpen } from '$lib/stores/artifacts';
   import { subAgents, isStreaming, messages } from '$lib/stores/chat';
   import type { UploadedFile } from '$lib/api/files';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { startDeepResearch, stripResearchPlanContent } from '$lib/api/chats';
   import MessageList from './MessageList.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -60,7 +62,9 @@
         <div class="w-6 h-6 border-2 border-slate-800 border-t-slate-300 rounded-full animate-spin"></div>
       </div>
     {:else}
-      <MessageList {onRegenerate} {onEdit} onStartResearch={startResearch} onDeclineResearch={declineResearch} />
+      <div in:fly={{ y: 10, duration: D2 }} class="flex-1 flex flex-col min-h-0">
+        <MessageList {onRegenerate} {onEdit} onStartResearch={startResearch} onDeclineResearch={declineResearch} />
+      </div>
     {/if}
     <div class="absolute left-0 right-0 bottom-0">
       <div class="quip-composer-scrim" aria-hidden="true"></div>

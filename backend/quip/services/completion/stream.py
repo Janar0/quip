@@ -31,6 +31,8 @@ class StreamOrchestrator:
         search_mode: bool,
         sandbox_available: bool,
         loaded_skills: set[str],
+        supports_tools: bool = True,
+        context_length: int = 0,
     ):
         self.messages = messages
         self.model = model
@@ -42,8 +44,12 @@ class StreamOrchestrator:
         self.search_mode = search_mode
         self.sandbox_available = sandbox_available
         self.loaded_skills = loaded_skills
+        self.supports_tools = supports_tools
+        self.context_length = context_length
 
     def _build_tools(self) -> list[dict]:
+        if not self.supports_tools:
+            return []
         return PromptBuilder.build_tools(
             tool_gating_enabled=self.tool_gating_enabled,
             loaded_skills=self.loaded_skills,
@@ -60,12 +66,14 @@ class StreamOrchestrator:
                 model=ollama_model,
                 base_url=self.base_url,
                 tools=tools,
+                context_length=self.context_length,
             )
         return openrouter.stream_completion(
             messages=self.messages,
             model=self.model,
             api_key=self.api_key,
             tools=tools,
+            context_length=self.context_length,
         )
 
     async def _stream_chunks(self, tools: list[dict]) -> AsyncGenerator[str | tuple, None]:

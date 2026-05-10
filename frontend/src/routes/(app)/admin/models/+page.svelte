@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { getSettings, updateSettings, getAdminModels } from '$lib/api/admin';
 
   let whitelist = $state<string[]>([]);
@@ -78,7 +80,7 @@
   }
 </script>
 
-<div class="p-8 max-w-2xl space-y-5">
+<div class="p-8 max-w-2xl space-y-5" in:fly={{ y: 8, duration: D2 }}>
   <h1 class="text-2xl font-bold">{$t('admin.tabs.models')}</h1>
 
   {#if loading}

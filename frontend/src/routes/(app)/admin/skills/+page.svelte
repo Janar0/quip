@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import {
     getSkills,
     updateSkill,
@@ -95,7 +97,7 @@
   }
 </script>
 
-<div class="p-8 max-w-6xl mx-auto space-y-6">
+<div class="p-8 max-w-6xl mx-auto space-y-6" in:fly={{ y: 8, duration: D2 }}>
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">{$t('admin.skills.title')}</h1>
     <div class="flex gap-2">

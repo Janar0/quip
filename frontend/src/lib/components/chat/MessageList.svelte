@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { messages, isStreaming, branchSelections } from '$lib/stores/chat';
+  import { messages, isStreaming, branchSelections, activeChat, persistBranchSelections } from '$lib/stores/chat';
   import { t } from 'svelte-i18n';
   import { buildThread, type ThreadMessage } from '$lib/utils/thread';
   import MessageBubble from './MessageBubble.svelte';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { tick } from 'svelte';
 
   let {
@@ -27,6 +29,9 @@
   function selectSibling(parentId: string | null | undefined, siblingId: string) {
     const key = parentId ?? '__root__';
     branchSelections.update((s) => ({ ...s, [key]: siblingId }));
+    // Persist to localStorage so chosen branches survive page refresh
+    const cid = $activeChat?.id;
+    if (cid) persistBranchSelections(cid);
   }
 
   function checkScroll() {
@@ -62,27 +67,52 @@
 
 <div bind:this={container} class="flex-1 overflow-y-auto pt-20 pb-44 relative" onscroll={checkScroll}>
   <div class="max-w-4xl mx-auto w-full space-y-8">
-    {#each thread as message (message.id)}
-      <div>
-        <MessageBubble {message} {onRegenerate} {onEdit} {onStartResearch} {onDeclineResearch} />
+    {#each thread as message, i (message.id)}
+      <!--suppress svelte-garden/derived-var-used-in-key: branchDepth is stable per message id -->
+      {@const depthHue = message.branchDepth > 0 ? [30, 345, 260, 150][(message.branchDepth - 1) % 4] : 0}
+      <div in:fly={{ y: 10, duration: D2, delay: Math.min(i, 4) * 40 }}>
+        <div
+          class="{message.branchDepth > 0 ? 'border-l-2' : ''}"
+          style={message.branchDepth > 0
+            ? `border-left-color: hsl(${depthHue}, 40%, 35%); padding-left: ${Math.min(8 + message.branchDepth * 4, 24)}px`
+            : ''}
+        >
+          <MessageBubble {message} {onRegenerate} {onEdit} {onStartResearch} {onDeclineResearch} />
+        </div>
         {#if message.siblingCount > 1}
-          <div class="flex items-center justify-center gap-2 mt-1">
+          <div
+            class="flex items-center justify-center gap-3 mt-2 group select-none"
+            title={$t('chat.branchAlt', { values: { count: message.siblingCount } })}
+          >
+            <!-- Prev button -->
             <button
-              class="p-0.5 rounded hover:bg-slate-800 disabled:opacity-20 transition-colors"
+              class="p-1 rounded-lg hover:bg-slate-800 disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
               disabled={message.siblingIndex <= 1}
               onclick={() => selectSibling(message.parent_id, message.siblingIds[message.siblingIndex - 2])}
-              aria-label="Previous branch"
+              aria-label={$t('chat.prevBranch')}
             >
-              <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
-            <span class="text-xs text-slate-600 tabular-nums">{message.siblingIndex} / {message.siblingCount}</span>
+
+            <!-- Branch indicator -->
+            <div class="flex items-center gap-1.5 text-xs text-slate-500">
+              <svg class="w-3.5 h-3.5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="3" x2="6" y2="15"/>
+                <circle cx="6" cy="18" r="3"/>
+                <path d="M18 9a9 9 0 01-9 9"/>
+                <circle cx="18" cy="6" r="3"/>
+              </svg>
+              <span class="tabular-nums">{$t('chat.branchOf', { values: { current: message.siblingIndex, total: message.siblingCount } })}</span>
+            </div>
+
+            <!-- Next button -->
             <button
-              class="p-0.5 rounded hover:bg-slate-800 disabled:opacity-20 transition-colors"
+              class="p-1 rounded-lg hover:bg-slate-800 disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
               disabled={message.siblingIndex >= message.siblingCount}
               onclick={() => selectSibling(message.parent_id, message.siblingIds[message.siblingIndex])}
-              aria-label="Next branch"
+              aria-label={$t('chat.nextBranch')}
             >
-              <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
             </button>
           </div>
         {/if}

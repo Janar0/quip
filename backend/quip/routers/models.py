@@ -28,6 +28,23 @@ OPENROUTER_TTL = 300  # 5 minutes
 OLLAMA_TTL = 30       # 30 seconds
 
 
+def _model_supports_tools(model_raw: dict) -> bool:
+    """Derive tool/function-calling support from OpenRouter architecture field."""
+    arch = model_raw.get("architecture") or {}
+    if isinstance(arch, str):
+        arch_str = arch.lower()
+    elif isinstance(arch, dict):
+        arch_str = json.dumps(arch).lower()
+    else:
+        return True  # unknown → assume yes
+
+    # Completion-only / embedding / moderation models don't support function calling
+    if any(t in arch_str for t in ("completion", "embedding", "moderation", "language")):
+        if "chat" not in arch_str:
+            return False
+    return True
+
+
 def _get_cached(key: str, ttl: float) -> list | None:
     if key in _cache:
         ts, data = _cache[key]
@@ -38,6 +55,40 @@ def _get_cached(key: str, ttl: float) -> list | None:
 
 def _set_cached(key: str, data: list) -> None:
     _cache[key] = (time.time(), data)
+
+
+def get_cached_models() -> list[dict]:
+    """Return all currently cached models (from both OpenRouter and Ollama).
+
+    Used by the completion service to validate model IDs and check capabilities
+    before sending requests. Falls back to an empty list if nothing is cached.
+    """
+    models: list[dict] = []
+    or_models = _get_cached("openrouter", OPENROUTER_TTL)
+    if or_models:
+        models.extend(or_models)
+
+    from quip.core.config import get_setting as _gs
+    ollama_url = _gs("ollama_url", "http://localhost:11434")
+    ollama_models = _get_cached(f"ollama:{ollama_url}", OLLAMA_TTL)
+    if ollama_models:
+        models.extend(ollama_models)
+
+    return models
+
+
+def get_cached_model(model_id: str) -> dict | None:
+    """Look up a single model by ID from the cache."""
+    for m in get_cached_models():
+        if m.get("id") == model_id:
+            return m
+    return None
+
+
+def get_default_model() -> dict | None:
+    """Return the first available model as a fallback."""
+    models = get_cached_models()
+    return models[0] if models else None
 
 
 @router.get("")
@@ -67,6 +118,7 @@ async def get_available_models(
                         "completion": pricing.get("completion", "0"),
                     },
                     "provider": "openrouter",
+                    "supports_tools": _model_supports_tools(m),
                 })
             _set_cached("openrouter", or_models)
             models.extend(or_models)

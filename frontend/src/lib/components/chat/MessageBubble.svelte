@@ -234,7 +234,11 @@
             bind:value={editText}
             onkeydown={editKeydown}
           ></textarea>
-          <div class="flex gap-2 mt-2">
+          <p class="text-[11px] text-slate-600 mt-1.5 flex items-center gap-1">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            {$t('chat.editBranchHint')}
+          </p>
+          <div class="flex gap-2 mt-1.5">
             <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-950 hover:bg-white transition-colors" onclick={submitEdit}>{$t('common.save')}</button>
             <button class="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-colors" onclick={cancelEdit}>{$t('common.cancel')}</button>
           </div>
@@ -253,7 +257,7 @@
               <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             </button>
             {#if onEdit}
-              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={startEdit} title={$t('chat.edit')} aria-label={$t('chat.edit')}>
+              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={startEdit} title={$t('chat.editBranch')} aria-label={$t('chat.editBranch')}>
                 <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
             {/if}

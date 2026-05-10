@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import { login } from '$lib/api/auth';
+  import { fly } from 'svelte/transition';
+  import { D3, easeOut } from '$lib/motion';
 
   let email = $state('');
   let password = $state('');
@@ -24,7 +26,7 @@
 </script>
 
 <div class="flex items-center justify-center min-h-screen p-4">
-  <div class="card p-8 w-full max-w-md space-y-6">
+  <div class="card p-8 w-full max-w-md space-y-6" in:fly={{ y: 20, duration: D3, easing: easeOut }}>
     <h1 class="text-2xl font-bold text-center">{$t('auth.login')}</h1>
 
     {#if error}

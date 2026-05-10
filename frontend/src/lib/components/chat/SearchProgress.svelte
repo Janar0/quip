@@ -6,7 +6,7 @@
 
   let { executions }: { executions: ToolExecution[] } = $props();
 
-  let expanded = $state(false);
+  let expanded = $state(true);
   let allDone = $derived(executions.every((e) => e.status !== 'running'));
   let hasError = $derived(executions.some((e) => e.status === 'error'));
 
@@ -117,13 +117,24 @@
     <div class="space-y-2 pt-1" transition:fade={{ duration: D2 }}>
       {#each executions as exec (exec.id)}
         {#if getResults(exec).length > 0}
-          <div class="space-y-1">
+          <div class="space-y-1.5">
             {#each getResults(exec) as r}
-              <div class="text-[11px]">
-                <a href={r.url} target="_blank" rel="noopener" class="hover:underline font-medium" style="color: var(--quip-link)">{r.title}</a>
-                {#if r.snippet}
-                  <p class="opacity-40 mt-0.5 line-clamp-1">{r.snippet}</p>
+              <div class="text-[11px] flex items-start gap-1.5">
+                {#if r.url}
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${new URL(r.url).hostname}&sz=16`}
+                    alt=""
+                    class="w-3.5 h-3.5 mt-0.5 rounded-sm flex-shrink-0 opacity-60"
+                    loading="lazy"
+                    onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
                 {/if}
+                <div class="min-w-0 flex-1">
+                  <a href={r.url} target="_blank" rel="noopener" class="hover:underline font-medium block truncate" style="color: var(--quip-link)">{r.title}</a>
+                  {#if r.snippet}
+                    <p class="opacity-40 mt-0.5 line-clamp-2">{r.snippet}</p>
+                  {/if}
+                </div>
               </div>
             {/each}
           </div>

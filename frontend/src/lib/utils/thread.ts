@@ -14,6 +14,8 @@ export interface ThreadMessage extends MessageInfo {
   siblingCount: number;
   /** IDs of all siblings (including self) in creation order */
   siblingIds: string[];
+  /** how many ancestor branch points (>1 sibling) are above this message */
+  branchDepth: number;
 }
 
 /**
@@ -57,6 +59,7 @@ export function buildThread(
       siblingIndex: 1,
       siblingCount: 1,
       siblingIds: [m.id],
+      branchDepth: 0,
     }));
   }
 
@@ -70,19 +73,21 @@ export function buildThread(
       : roots[roots.length - 1];
     const root = selectedRoot ?? roots[roots.length - 1];
     const rootIds = roots.map((r) => r.id);
+    const rootBranchDepth = roots.length > 1 ? 1 : 0;
 
     thread.push({
       ...root,
       siblingIndex: rootIds.indexOf(root.id) + 1,
       siblingCount: roots.length,
       siblingIds: rootIds,
+      branchDepth: rootBranchDepth,
     });
 
     // Follow the chain from the selected root
-    walkChain(root.id);
+    walkChain(root.id, rootBranchDepth);
   }
 
-  function walkChain(parentId: string) {
+  function walkChain(parentId: string, depth: number) {
     const children = childrenOf.get(parentId);
     if (!children || children.length === 0) return;
 
@@ -93,16 +98,19 @@ export function buildThread(
       : children[children.length - 1];
 
     const siblingIds = children.map((c) => c.id);
+    // Increment depth only if this node itself is a branch point
+    const childDepth = children.length > 1 ? depth + 1 : depth;
 
     thread.push({
       ...selected,
       siblingIndex: siblingIds.indexOf(selected.id) + 1,
       siblingCount: children.length,
       siblingIds,
+      branchDepth: childDepth,
     });
 
     // Continue down the chain
-    walkChain(selected.id);
+    walkChain(selected.id, childDepth);
   }
 
   return thread;

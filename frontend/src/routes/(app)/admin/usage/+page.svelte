@@ -1,6 +1,8 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { getUsage, type UsageData } from '$lib/api/admin';
 
   let data = $state<UsageData | null>(null);
@@ -36,7 +38,7 @@
   }
 </script>
 
-<div class="p-8 max-w-4xl mx-auto space-y-6">
+<div class="p-8 max-w-4xl mx-auto space-y-6" in:fly={{ y: 8, duration: D2 }}>
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">{$t('admin.usage')}</h1>
     <div class="flex gap-2">

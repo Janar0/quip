@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { t, locale } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
+  import { fade } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { getUserSettings, updateUserSettings, fetchMe } from '$lib/api/auth';
   import { currentUser } from '$lib/stores/auth';
   import { selectedModel, setDefaultModel } from '$lib/stores/chat';
@@ -49,7 +51,7 @@
   }
 </script>
 
-<div class="p-8 max-w-lg mx-auto space-y-6">
+<div class="p-8 max-w-lg mx-auto space-y-6" in:fade={{ duration: D2 }}>
   <h1 class="text-2xl font-bold">{$t('settings.title')}</h1>
 
   {#if loading}

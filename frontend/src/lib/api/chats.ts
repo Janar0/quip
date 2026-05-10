@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, subAgents, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock, type SubAgentHandle } from '$lib/stores/chat';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, subAgents, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock, type SubAgentHandle, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
@@ -57,7 +57,7 @@ export async function loadChat(chatId: string): Promise<void> {
         return mapped;
       });
       messages.set(msgs);
-      branchSelections.set({});
+      restoreBranchSelections(chatId);
     }
   } finally {
     isLoading.set(false);
@@ -66,6 +66,7 @@ export async function loadChat(chatId: string): Promise<void> {
 
 export async function deleteChat(chatId: string): Promise<void> {
   await api(`/api/chats/${chatId}`, { method: 'DELETE' });
+  clearBranchSelections(chatId);
   await loadChats();
 }
 
@@ -481,7 +482,10 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
   ]);
 
   try {
-    const body: Record<string, unknown> = { chat_id: chatId || null, model, message: text };
+    const body: Record<string, unknown> = {
+      chat_id: chatId || null, model, message: text,
+      max_tokens: 4096,
+    };
     if (fileIds?.length) body.file_ids = fileIds;
     if (mode !== 'auto') body.mode_hint = mode;
     if (deepResearch) body.deep_research = true;
@@ -581,6 +585,8 @@ export async function editMessage(chatId: string, messageId: string, newContent:
   // its parent_id (which can be null for root messages) and uses that as the new
   // message's parent, making it a true sibling of the original.
   await streamChat(newContent, chatId, undefined, undefined, messageId);
+  // Persist branch selections so the user's chosen fork survives page refresh.
+  persistBranchSelections(chatId);
 }
 
 /**

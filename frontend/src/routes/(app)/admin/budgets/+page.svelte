@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { getBudgets, upsertBudget, deleteBudget, getUsers, type BudgetItem, type AdminUser } from '$lib/api/admin';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
@@ -60,7 +62,7 @@
   onCancel={() => (deletingId = null)}
 />
 
-<div class="p-8 max-w-3xl space-y-6">
+<div class="p-8 max-w-3xl space-y-6" in:fly={{ y: 8, duration: D2 }}>
   <h1 class="text-2xl font-bold">{$t('admin.budgets')}</h1>
   <p class="text-sm opacity-40">{$t('admin.budgetsDesc')}</p>
 

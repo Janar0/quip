@@ -8,23 +8,24 @@ from uuid import UUID
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from quip.database import async_session
-from quip.models.user import User
-from quip.models.chat import Chat, Message
-from quip.models.usage import UsageLog
-from quip.models.budget import Budget
-from quip.models.file import File, DocumentChunk
-from quip.schemas.chat import CompletionRequest, RegenerateRequest
 from quip.core.config import get_setting, get_bool_setting
-from quip.services.sandbox import sandbox_manager
-from quip.services.multimodal import build_multimodal_message
-from quip.services.streaming import is_ollama_model, sse_event
-from quip.services.messages_persist import save_assistant_message
-from quip.services.title import generate_title
+from quip.database import async_session
+from quip.models.budget import Budget
+from quip.models.chat import Chat, Message
+from quip.models.file import File, DocumentChunk
+from quip.models.usage import UsageLog
+from quip.models.user import User
+from quip.routers.models import get_cached_model, get_default_model
+from quip.schemas.chat import CompletionRequest, RegenerateRequest
 from quip.services.completion.history import HistoryService
 from quip.services.completion.prompt import PromptBuilder
 from quip.services.completion.stream import StreamOrchestrator, fetch_generation_cost
+from quip.services.messages_persist import save_assistant_message
+from quip.services.multimodal import build_multimodal_message
+from quip.services.sandbox import sandbox_manager
 from quip.services.skill_store import get_skill as get_skill_by_name
+from quip.services.streaming import is_ollama_model, sse_event
+from quip.services.title import generate_title
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +189,93 @@ def _parse_sse_frame(frame: str) -> tuple[str, dict]:
     return ev, data
 
 
+def _resolve_model(model: str, *, search_mode: bool = False, deep_research: bool = False) -> str:
+    """Resolve effective model — shared between chat_completion and regenerate.
+
+    Applies search_mode and deep_research overrides from config, then falls
+    back to the cached model list if nothing selected.
+    """
+    effective = PromptBuilder.resolve_model(
+        model, search_mode=search_mode, deep_research=deep_research
+    )
+    if not effective:
+        default = get_default_model()
+        if default:
+            return default["id"]
+        return model
+    return effective
+
+
+def _validate_model(model_id: str) -> dict:
+    """Validate model ID exists in cache and has valid context_length.
+
+    Returns model metadata dict. Never raises — always returns a usable dict.
+    """
+    cached = get_cached_model(model_id)
+    if not cached:
+        # Model not in cache — could be unsupported or cache not yet populated.
+        # Allow the request to proceed but log a warning.
+        logger.warning("Model %s not found in cache — allowing request to proceed", model_id)
+        return {"id": model_id, "context_length": 4096, "supports_tools": True}
+
+    if cached.get("context_length", 0) <= 0:
+        logger.warning(
+            "Model %s has context_length=%s — may not work correctly",
+            model_id, cached.get("context_length"),
+        )
+        # Don't block — just warn
+
+    return cached
+
+
+def _truncate_history(
+    history: list[dict],
+    model_info: dict,
+    *,
+    max_output_tokens: int = 4096,
+) -> list[dict]:
+    """Truncate oldest messages if estimated tokens exceed context_length.
+
+    Uses a rough heuristic: chars / 4 ≈ tokens. Preserves system prompt at
+    the front and truncates from the oldest non-system message.
+    """
+    context_length = model_info.get("context_length", 0)
+    if context_length <= 0:
+        return history  # unknown context — skip truncation
+
+    available = max(context_length - max_output_tokens, 1024)
+    if available <= 0:
+        return history
+
+    # Estimate total tokens
+    total_chars = sum(len(m.get("content", "") or "") for m in history)
+    estimated_tokens = total_chars // 4
+
+    if estimated_tokens <= available:
+        return history
+
+    # Truncate from the front, keeping system prompt at position 0
+    system_msgs = [m for m in history if m.get("role") == "system"]
+    non_system = [m for m in history if m.get("role") != "system"]
+
+    # Drop oldest messages until we're within budget
+    trimmed = list(non_system)
+    while trimmed:
+        current_chars = sum(len(m.get("content", "") or "") for m in system_msgs + trimmed)
+        if current_chars // 4 <= available:
+            break
+        trimmed.pop(0)  # remove oldest
+
+    result = system_msgs + trimmed
+    dropped = len(history) - len(result)
+    if dropped > 0:
+        logger.warning(
+            "Truncated %d messages from history (%d → %d) to fit context_length=%d",
+            dropped, len(history), len(result), context_length,
+        )
+    return result
+
+
 class CompletionService:
 
     @staticmethod
@@ -289,9 +377,12 @@ class CompletionService:
 
         search_enabled = get_bool_setting("search_enabled", False)
         search_mode = req.mode_hint == "search" and search_enabled
-        effective_model = PromptBuilder.resolve_model(
+        effective_model = _resolve_model(
             req.model, search_mode=search_mode, deep_research=req.deep_research
         )
+        # Validate effective model against cache
+        model_info = _validate_model(effective_model)
+
         tool_gating_enabled = get_bool_setting("tool_gating_enabled", True)
         locale, location = PromptBuilder.resolve_runtime_context(request, user)
         system_prompt = PromptBuilder.build(
@@ -306,9 +397,12 @@ class CompletionService:
         if system_prompt:
             history.insert(0, {"role": "system", "content": system_prompt})
 
+        # Truncate history to fit model context window
+        history = _truncate_history(history, model_info)
+
         assistant_msg = Message(
             chat_id=chat.id, role="assistant", content="",
-            model=req.model, parent_id=user_msg.id,
+            model=effective_model, parent_id=user_msg.id,
         )
         db.add(assistant_msg)
         await db.flush()
@@ -319,6 +413,7 @@ class CompletionService:
         assistant_msg_id = str(assistant_msg.id)
         user_id = user.id
         user_parent_id_str = str(user_msg.parent_id) if user_msg.parent_id else None
+        model_supports_tools = model_info.get("supports_tools", True)
 
         async def generate():
             full_content = ""
@@ -362,6 +457,8 @@ class CompletionService:
                     search_mode=search_mode,
                     sandbox_available=sandbox_manager.available,
                     loaded_skills=set(),
+                    supports_tools=model_supports_tools,
+                    context_length=model_info.get("context_length", 0),
                 )
                 max_rounds = 3 if search_mode else 12
                 async for sse_frame in orchestrator.run(
@@ -379,7 +476,7 @@ class CompletionService:
                         if full_content:
                             await save_assistant_message(
                                 assistant_msg_id, chat_id_str, user_id,
-                                full_content, req.model, last_usage,
+                                full_content, effective_model, last_usage,
                                 reasoning=full_reasoning,
                             )
                         return
@@ -397,7 +494,7 @@ class CompletionService:
             if full_content:
                 await save_assistant_message(
                     assistant_msg_id, chat_id_str, user_id,
-                    full_content, req.model, last_usage, reasoning=full_reasoning,
+                    full_content, effective_model, last_usage, reasoning=full_reasoning,
                 )
 
             if is_new_chat:
@@ -451,8 +548,21 @@ class CompletionService:
                 status_code=400, detail="Message not found or not an assistant message"
             )
 
-        model = req.model or orig_msg.model or chat.model or "anthropic/claude-sonnet-4"
-        is_ollama = is_ollama_model(model)
+        # Resolve model with fallback chain — no hardcoded fallback
+        raw_model = req.model or orig_msg.model or chat.model
+        if not raw_model:
+            default = get_default_model()
+            if default:
+                raw_model = default["id"]
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No model selected. Set a default model in Admin > Settings or select one from the model picker.",
+                )
+        effective_model = _resolve_model(raw_model, search_mode=False)
+        model_info = _validate_model(effective_model)
+
+        is_ollama = is_ollama_model(effective_model)
 
         if is_ollama:
             ollama_url = get_setting("ollama_url", "http://localhost:11434")
@@ -484,9 +594,14 @@ class CompletionService:
         if system_prompt:
             history.insert(0, {"role": "system", "content": system_prompt})
 
+        # Truncate history to fit model context window
+        history = _truncate_history(history, model_info)
+
+        model_supports_tools = model_info.get("supports_tools", True)
+
         new_msg = Message(
             chat_id=chat.id, role="assistant", content="",
-            model=model, parent_id=orig_msg.parent_id,
+            model=effective_model, parent_id=orig_msg.parent_id,
         )
         db.add(new_msg)
         await db.flush()
@@ -501,7 +616,7 @@ class CompletionService:
 
             orchestrator = StreamOrchestrator(
                 messages=list(history),
-                model=model,
+                model=effective_model,
                 base_url=ollama_url if is_ollama else "",
                 api_key=api_key if not is_ollama else "",
                 tool_gating_enabled=tool_gating_enabled,
@@ -509,6 +624,8 @@ class CompletionService:
                 search_mode=False,
                 sandbox_available=sandbox_manager.available,
                 loaded_skills=set(),
+                supports_tools=model_supports_tools,
+                context_length=model_info.get("context_length", 0),
             )
 
             full_content = ""
@@ -530,7 +647,7 @@ class CompletionService:
                     if full_content:
                         await save_assistant_message(
                             new_msg_id, chat_id_str, user_id,
-                            full_content, model, last_usage,
+                            full_content, effective_model, last_usage,
                             reasoning=full_reasoning,
                         )
                     return
@@ -547,7 +664,7 @@ class CompletionService:
             if full_content:
                 await save_assistant_message(
                     new_msg_id, chat_id_str, user_id,
-                    full_content, model, last_usage, reasoning=full_reasoning,
+                    full_content, effective_model, last_usage, reasoning=full_reasoning,
                 )
 
             yield sse_event("done", {})

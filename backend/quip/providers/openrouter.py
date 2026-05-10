@@ -63,7 +63,7 @@ def _build_headers(api_key: str) -> dict:
 
 def _should_add_cache_control(model: str) -> bool:
     """Anthropic models benefit from cache_control."""
-    return "anthropic/" in model or "claude" in model.lower()
+    return model.startswith("anthropic/")
 
 
 def _mark_last_text_part(parts: list[dict], cache_marker: dict) -> None:
@@ -112,6 +112,9 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
     return msgs
 
 
+DEFAULT_MAX_TOKENS = 4096
+
+
 def build_request_body(
     model: str,
     messages: list[dict],
@@ -129,9 +132,8 @@ def build_request_body(
         "messages": messages,
         "stream": stream,
         "temperature": temperature,
+        "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
     }
-    if max_tokens:
-        body["max_tokens"] = max_tokens
     if tools:
         body["tools"] = tools
 
@@ -145,6 +147,7 @@ async def stream_completion(
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
     tools: list[dict] | None = None,
+    context_length: int = 0,
 ) -> AsyncIterator[StreamChunk]:
     """Stream chat completion from OpenRouter. Yields StreamChunk objects."""
 
@@ -153,7 +156,8 @@ async def stream_completion(
         yield StreamChunk(error="No OpenRouter API key configured. Set it in Admin > Settings.")
         return
 
-    body = build_request_body(model, messages, temperature, max_tokens, stream=True, tools=tools)
+    resolved_max = max_tokens or DEFAULT_MAX_TOKENS
+    body = build_request_body(model, messages, temperature, resolved_max, stream=True, tools=tools)
     headers = _build_headers(key)
 
     generation_id = ""

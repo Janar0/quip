@@ -1,5 +1,7 @@
 <script lang="ts">
   import { getFileUrl } from '$lib/api/files';
+  import { scale } from 'svelte/transition';
+  import { D1 } from '$lib/motion';
 
   type Attachment = {
     file_id: string;
@@ -17,8 +19,8 @@
 
 {#if images.length}
   <div class="flex flex-wrap gap-2 {mb}">
-    {#each images as img (img.file_id)}
-      <div class="relative">
+    {#each images as img, i (img.file_id)}
+      <div class="relative" in:scale={{ start: 0.9, duration: D1, delay: Math.min(i * 30, 150) }}>
         <a href={img.url} target="_blank" rel="noopener" class="block">
           <img
             src={img.url}
@@ -46,8 +48,8 @@
 {/if}
 {#if docs.length}
   <div class="flex flex-wrap gap-2 {mb}">
-    {#each docs as att (att.file_id)}
-      <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
+    {#each docs as att, i (att.file_id)}
+      <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm" in:scale={{ start: 0.9, duration: D1, delay: Math.min(i, 4) * 30 }}>
         <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
           <polyline points="14 2 14 8 20 8" />

@@ -11,6 +11,8 @@
   import { t } from 'svelte-i18n';
   import ArtifactRenderer from './ArtifactRenderer.svelte';
   import type { Artifact } from '$lib/stores/chat';
+  import { fly } from 'svelte/transition';
+  import { D3, easeOut } from '$lib/motion';
 
   let artifact = $derived.by(() => {
     const all = $allArtifacts;
@@ -46,7 +48,7 @@
 </script>
 
 {#if artifact}
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col h-full" transition:fly={{ x: 480, duration: D3, easing: easeOut }}>
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
       <div class="flex items-center gap-2 min-w-0">

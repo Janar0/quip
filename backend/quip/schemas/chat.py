@@ -77,6 +77,7 @@ class CompletionRequest(BaseModel):
     deep_research: bool = False  # use deep research pipeline
     mode_hint: Optional[str] = None  # "auto" | "search" | "research" — fast search mode dispatch
     branch_from_message_id: Optional[UUID] = None  # branch edit: create sibling of this message
+    max_tokens: Optional[int] = None  # optional max tokens for response generation
 
 
 class RegenerateRequest(BaseModel):

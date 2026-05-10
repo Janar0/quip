@@ -3,6 +3,8 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { goto } from '$app/navigation';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { getSettings, updateSettings } from '$lib/api/admin';
 
   let apiKey = $state('');
@@ -157,7 +159,7 @@
   }
 </script>
 
-<div class="p-8 max-w-2xl space-y-5">
+<div class="p-8 max-w-2xl space-y-5" in:fly={{ y: 8, duration: D2 }}>
   <h1 class="text-2xl font-bold">{$t('admin.tabs.settings')}</h1>
 
   <!-- Tab bar -->

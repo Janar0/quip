@@ -197,6 +197,9 @@ class MessageEdit(BaseModel):
     content: str
 
 
+# TODO: This endpoint is currently unreachable from the frontend — the UI uses
+# branch-based editing (fork + sibling) instead of in-place mutation. Consider
+# either wiring it up as an alternative edit mode or removing it in a cleanup pass.
 @router.patch("/{chat_id}/messages/{message_id}")
 async def edit_message(
     chat_id: UUID,

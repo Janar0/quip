@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
   import { currentUser } from '$lib/stores/auth';
   import { getUsers, updateUserRole, updateUserStatus, deleteUser, changeUserPassword, type AdminUser } from '$lib/api/admin';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -149,7 +151,7 @@
   </div>
 {/if}
 
-<div class="p-8 max-w-4xl space-y-5">
+<div class="p-8 max-w-4xl space-y-5" in:fly={{ y: 8, duration: D2 }}>
   <!-- Header -->
   <div class="flex items-center justify-between gap-4">
     <h1 class="text-2xl font-bold">{$t('admin.tabs.users')}</h1>

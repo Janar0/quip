@@ -3,6 +3,8 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { selectedModel, setDefaultModel } from '$lib/stores/chat';
   import { modelList, modelsLoaded, adminDefaultModel, type ModelItem } from '$lib/stores/models';
+  import { fly, fade } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
 
   let { variant = 'pill' }: { variant?: 'pill' | 'picker' } = $props();
 
@@ -199,7 +201,7 @@
         </svg>
       </button>
       {#if open}
-        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal>
+        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal transition:fly={{ y: -10, duration: D2 }}>
           {#each grouped as [p, items]}
             <div class="group-lbl">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
             {#each items as m (m.id)}
@@ -245,7 +247,7 @@
         </svg>
       </button>
       {#if open}
-        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal>
+        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal transition:fly={{ y: -10, duration: D2 }}>
           {#each grouped as [p, items]}
             <div class="group-lbl">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
             {#each items as m (m.id)}

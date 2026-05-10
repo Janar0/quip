@@ -1,6 +1,8 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
+  import { fly } from 'svelte/transition';
+  import { D2 } from '$lib/motion';
 
   let file = $state<File | null>(null);
   let uploading = $state(false);
@@ -50,7 +52,7 @@
   }
 </script>
 
-<div class="p-8 max-w-2xl mx-auto space-y-8">
+<div class="p-8 max-w-2xl mx-auto space-y-8" in:fly={{ y: 8, duration: D2 }}>
   <h1 class="text-2xl font-bold">{$t('nav.admin')} — {$t('migrate.title')}</h1>
 
   <section class="card p-6 space-y-4">
