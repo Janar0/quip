@@ -1,5 +1,6 @@
 """Skill manifest — canonical types for the skill system."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -49,7 +50,7 @@ class SkillManifest:
     default_settings: dict | None = field(default=None, repr=False)
 
     # Runtime-only (stripped before seeding DB)
-    handler: callable | None = field(default=None, repr=False, compare=False)
+    handler: Callable | None = field(default=None, repr=False, compare=False)
     _handler_key: str | None = field(default=None, repr=False)
 
     @classmethod
