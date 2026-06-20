@@ -24,6 +24,7 @@ build/
 *.migrated
 
 # User data
+data/
 backend/data/
 uploads/
 backend/uploads/
@@ -39,6 +40,7 @@ backend/quip/data/*.mmdb
 .idea/
 
 # Claude Code / OpenCode local config
+.codex/
 .claude/
 .opencode/
 .sisyphus/

@@ -10,8 +10,8 @@ Handles all OpenRouter-specific quirks:
 """
 import json
 import os
-from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 import httpx
 
@@ -44,9 +44,9 @@ class StreamChunk:
     """A single chunk from the SSE stream."""
     content: str = ""
     reasoning: str = ""
-    finish_reason: Optional[str] = None
-    usage: Optional[UsageInfo] = None
-    error: Optional[str] = None
+    finish_reason: str | None = None
+    usage: UsageInfo | None = None
+    error: str | None = None
     model: str = ""
     provider: str = ""
     tool_calls: list[ToolCallDelta] | None = None
@@ -115,11 +115,20 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
 DEFAULT_MAX_TOKENS = 4096
 
 
+def _format_request_error(exc: httpx.RequestError) -> str:
+    detail = str(exc).strip()
+    if not detail and exc.__cause__:
+        detail = str(exc.__cause__).strip()
+    if not detail:
+        detail = exc.__class__.__name__
+    return detail[:500]
+
+
 def build_request_body(
     model: str,
     messages: list[dict],
     temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
     stream: bool = True,
     tools: list[dict] | None = None,
 ) -> dict:
@@ -145,7 +154,7 @@ async def stream_completion(
     model: str,
     api_key: str = "",
     temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
     tools: list[dict] | None = None,
     context_length: int = 0,
 ) -> AsyncIterator[StreamChunk]:
@@ -262,10 +271,12 @@ async def stream_completion(
                     if usage_chunk:
                         yield StreamChunk(usage=usage_chunk, model=model_name, provider=provider)
 
-        except httpx.ConnectError:
-            yield StreamChunk(error="Cannot connect to OpenRouter API. Check your network.")
-        except httpx.ReadTimeout:
+        except httpx.ConnectError as e:
+            yield StreamChunk(error=f"Cannot connect to OpenRouter API: {_format_request_error(e)}")
+        except httpx.TimeoutException:
             yield StreamChunk(error="OpenRouter request timed out.")
+        except httpx.RequestError as e:
+            yield StreamChunk(error=f"OpenRouter network error: {_format_request_error(e)}")
         except Exception as e:
             yield StreamChunk(error=f"Unexpected error: {str(e)}")
 
