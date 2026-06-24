@@ -158,6 +158,7 @@ class StreamOrchestrator:
                         "cached_tokens": data.cached_tokens,
                         "cost": data.cost,
                         "provider": data.provider,
+                        "generation_id": data.generation_id,
                     })
                     continue
 

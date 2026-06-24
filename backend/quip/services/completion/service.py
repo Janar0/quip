@@ -213,10 +213,13 @@ def _validate_model(model_id: str) -> dict:
     """
     cached = get_cached_model(model_id)
     if not cached:
-        # Model not in cache — could be unsupported or cache not yet populated.
-        # Allow the request to proceed but log a warning.
+        # Model not in cache — could be unsupported or (commonly) the model
+        # list cache has expired (OpenRouter TTL 5 min, Ollama 30 s). The
+        # context window is simply UNKNOWN here; context_length=0 signals
+        # _truncate_history to skip truncation rather than assume a tiny 4096
+        # window and shred the prompt (which drops the user's own message).
         logger.warning("Model %s not found in cache — allowing request to proceed", model_id)
-        return {"id": model_id, "context_length": 4096, "supports_tools": True}
+        return {"id": model_id, "context_length": 0, "supports_tools": True}
 
     if cached.get("context_length", 0) <= 0:
         logger.warning(
@@ -258,15 +261,20 @@ def _truncate_history(
     system_msgs = [m for m in history if m.get("role") == "system"]
     non_system = [m for m in history if m.get("role") != "system"]
 
-    # Drop oldest messages until we're within budget
-    trimmed = list(non_system)
+    # Never drop the most recent turn — that's the user's current question.
+    # Dropping it leaves the model with only the system prompt and produces
+    # nonsense / unrelated output. Trim only the older turns ahead of it.
+    pinned = non_system[-1:] if non_system else []
+    trimmed = non_system[:-1]
     while trimmed:
-        current_chars = sum(len(m.get("content", "") or "") for m in system_msgs + trimmed)
+        current_chars = sum(
+            len(m.get("content", "") or "") for m in system_msgs + trimmed + pinned
+        )
         if current_chars // 4 <= available:
             break
         trimmed.pop(0)  # remove oldest
 
-    result = system_msgs + trimmed
+    result = system_msgs + trimmed + pinned
     dropped = len(history) - len(result)
     if dropped > 0:
         logger.warning(
@@ -274,6 +282,29 @@ def _truncate_history(
             dropped, len(history), len(result), context_length,
         )
     return result
+
+
+def _accumulate_usage(acc: dict | None, new: dict | None) -> dict | None:
+    """Sum usage across streaming rounds.
+
+    The orchestrator emits one usage event per round (a tool/search turn runs
+    several rounds). Persisting only the last round under-counts tokens and
+    cost for every earlier round, so we accumulate instead of overwrite —
+    mirroring ResearchSession.add_usage for the deep-research path.
+    """
+    if not new:
+        return acc
+    if acc is None:
+        acc = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "cost": 0.0}
+    for k in ("prompt_tokens", "completion_tokens", "cached_tokens"):
+        acc[k] = (acc.get(k) or 0) + (new.get(k) or 0)
+    acc["cost"] = (acc.get("cost") or 0.0) + (new.get("cost") or 0.0)
+    if new.get("provider"):
+        acc["provider"] = new["provider"]
+    # Keep the most recent generation_id — used as the cost-fetch fallback.
+    if new.get("generation_id"):
+        acc["generation_id"] = new["generation_id"]
+    return acc
 
 
 class CompletionService:
@@ -443,7 +474,7 @@ class CompletionService:
                     elif ev_type == "reasoning":
                         full_reasoning += data.get("text", "")
                     elif ev_type == "usage":
-                        last_usage = data
+                        last_usage = _accumulate_usage(last_usage, data)
                     yield sse_frame
             else:
                 # Normal mode via StreamOrchestrator
@@ -470,7 +501,7 @@ class CompletionService:
                     elif ev_type == "reasoning":
                         full_reasoning += data.get("text", "")
                     elif ev_type == "usage":
-                        last_usage = data
+                        last_usage = _accumulate_usage(last_usage, data)
                     elif ev_type == "error":
                         yield sse_frame
                         if full_content:
@@ -641,7 +672,7 @@ class CompletionService:
                 elif ev_type == "reasoning":
                     full_reasoning += data.get("text", "")
                 elif ev_type == "usage":
-                    last_usage = data
+                    last_usage = _accumulate_usage(last_usage, data)
                 elif ev_type == "error":
                     yield sse_frame
                     if full_content:

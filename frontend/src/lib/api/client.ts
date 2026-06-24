@@ -50,10 +50,15 @@ export async function tryRefresh(): Promise<boolean> {
         return true;
       }
 
-      // Refresh failed — clear tokens so the auth guard redirects to login.
-      authToken.set(null);
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+      // Only clear tokens when the session is genuinely dead (401/403).
+      // Transient failures (500/502/503, 429, etc.) must NOT log the user
+      // out — a brief backend hiccup during refresh would otherwise kick
+      // every active user to the login screen.
+      if (res.status === 401 || res.status === 403) {
+        authToken.set(null);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
       return false;
     } catch {
       // Network error — don't clear tokens, just report failure.

@@ -29,19 +29,18 @@ OLLAMA_TTL = 30       # 30 seconds
 
 
 def _model_supports_tools(model_raw: dict) -> bool:
-    """Derive tool/function-calling support from OpenRouter architecture field."""
-    arch = model_raw.get("architecture") or {}
-    if isinstance(arch, str):
-        arch_str = arch.lower()
-    elif isinstance(arch, dict):
-        arch_str = json.dumps(arch).lower()
-    else:
-        return True  # unknown → assume yes
+    """Derive tool/function-calling support from OpenRouter metadata.
 
-    # Completion-only / embedding / moderation models don't support function calling
-    if any(t in arch_str for t in ("completion", "embedding", "moderation", "language")):
-        if "chat" not in arch_str:
-            return False
+    Prefer the authoritative ``supported_parameters`` list — OpenRouter
+    advertises ``"tools"`` there for models that support function calling.
+    When the field is absent we assume support: a false negative silently
+    strips ALL tools from the request (StreamOrchestrator._build_tools returns
+    [] when supports_tools is False), which is worse than occasionally sending
+    tools to a model that ignores them.
+    """
+    supported = model_raw.get("supported_parameters")
+    if isinstance(supported, list):
+        return "tools" in supported
     return True
 
 
