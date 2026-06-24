@@ -14,6 +14,7 @@
   import SkillCard from '$lib/components/admin/SkillCard.svelte';
   import SkillFormModal from '$lib/components/admin/SkillFormModal.svelte';
   import AiGeneratorModal from '$lib/components/admin/AiGeneratorModal.svelte';
+  import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let skills = $state<SkillInfo[]>([]);
   let loading = $state(true);
@@ -97,18 +98,18 @@
   }
 </script>
 
-<div class="p-8 max-w-6xl mx-auto space-y-6" in:fly={{ y: 8, duration: D2 }}>
-  <div class="flex items-center justify-between">
-    <h1 class="text-2xl font-bold">{$t('admin.skills.title')}</h1>
-    <div class="flex gap-2">
-      <button class="btn preset-outlined" onclick={() => { aiModalOpen = true; }}>
-        ✨ {$t('admin.skills.generateAi')}
+<div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
+ <div class="max-w-6xl mx-auto space-y-5">
+  <AdminPageHeader icon="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" title={$t('admin.skills.title')}>
+    {#snippet actions()}
+      <button class="btn btn-sm preset-outlined" onclick={() => { aiModalOpen = true; }}>
+        ✨ <span class="hidden sm:inline">{$t('admin.skills.generateAi')}</span>
       </button>
-      <button class="btn preset-filled-primary-500" onclick={openCreate}>
-        + {$t('admin.skills.add')}
+      <button class="btn btn-sm preset-filled-primary-500" onclick={openCreate}>
+        + <span class="hidden sm:inline">{$t('admin.skills.add')}</span>
       </button>
-    </div>
-  </div>
+    {/snippet}
+  </AdminPageHeader>
 
   {#if loading}
     <p class="opacity-50">{$t('common.loading')}</p>
@@ -121,6 +122,7 @@
       {/each}
     </div>
   {/if}
+ </div>
 </div>
 
 <SkillFormModal

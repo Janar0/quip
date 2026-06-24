@@ -6,6 +6,7 @@
   import { D2 } from '$lib/motion';
   import { getBudgets, upsertBudget, deleteBudget, getUsers, type BudgetItem, type AdminUser } from '$lib/api/admin';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+  import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let budgets = $state<BudgetItem[]>([]);
   let users = $state<AdminUser[]>([]);
@@ -62,14 +63,14 @@
   onCancel={() => (deletingId = null)}
 />
 
-<div class="p-8 max-w-3xl space-y-6" in:fly={{ y: 8, duration: D2 }}>
-  <h1 class="text-2xl font-bold">{$t('admin.budgets')}</h1>
-  <p class="text-sm opacity-40">{$t('admin.budgetsDesc')}</p>
+<div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
+ <div class="max-w-3xl mx-auto space-y-5">
+  <AdminPageHeader icon="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" title={$t('admin.budgets')} description={$t('admin.budgetsDesc')} />
 
   <!-- Add/Edit form -->
-  <section class="card p-6 space-y-4">
+  <section class="card p-4 sm:p-6 space-y-4">
     <h2 class="text-lg font-semibold">{$t('admin.addBudget')}</h2>
-    <div class="grid grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
         <label for="budget-user" class="text-xs opacity-50 mb-1 block">{$t('admin.budgetUser')}</label>
         <select id="budget-user" class="select text-sm w-full" bind:value={formUserId}>
@@ -127,4 +128,5 @@
       {/each}
     </div>
   {/if}
+ </div>
 </div>

@@ -5,6 +5,7 @@
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
   import { getSettings, updateSettings, getAdminModels } from '$lib/api/admin';
+  import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let whitelist = $state<string[]>([]);
   let modelAliases = $state<Record<string, string>>({});
@@ -80,13 +81,14 @@
   }
 </script>
 
-<div class="p-8 max-w-2xl space-y-5" in:fly={{ y: 8, duration: D2 }}>
-  <h1 class="text-2xl font-bold">{$t('admin.tabs.models')}</h1>
+<div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
+ <div class="max-w-2xl mx-auto space-y-5">
+  <AdminPageHeader icon="M4 6h16M4 10h16M4 14h16M4 18h16" title={$t('admin.tabs.models')} />
 
   {#if loading}
     <div class="space-y-4">
       {#each [1, 2, 3] as _}
-        <div class="card p-6 space-y-3 animate-pulse">
+        <div class="card p-4 sm:p-6 space-y-3 animate-pulse">
           <div class="h-5 w-40 bg-slate-800/50 rounded"></div>
           <div class="h-32 bg-slate-800/30 rounded"></div>
         </div>
@@ -98,7 +100,7 @@
     </div>
   {:else}
     <!-- Model Whitelist -->
-    <section class="card p-6 space-y-4">
+    <section class="card p-4 sm:p-6 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
@@ -141,7 +143,7 @@
     </section>
 
     <!-- Model Aliases -->
-    <section class="card p-6 space-y-4">
+    <section class="card p-4 sm:p-6 space-y-4">
       <div class="flex items-center gap-2">
         <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         <h2 class="text-lg font-semibold">{$t('admin.modelAliases')}</h2>
@@ -176,7 +178,7 @@
     </section>
 
     <!-- System Models -->
-    <section class="card p-6 space-y-4">
+    <section class="card p-4 sm:p-6 space-y-4">
       <div class="flex items-center gap-2">
         <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
         <h2 class="text-lg font-semibold">{$t('admin.systemModels')}</h2>
@@ -237,4 +239,5 @@
       </button>
     </section>
   {/if}
+ </div>
 </div>

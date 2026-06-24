@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { t } from 'svelte-i18n';
+  import { tick } from 'svelte';
 
   let { children } = $props();
 
@@ -15,11 +16,27 @@
   ];
 
   let isActive = $derived((href: string) => page.url.pathname.startsWith(href));
+
+  // Keep the active mobile tab scrolled into view.
+  let tabStrip = $state<HTMLElement | null>(null);
+  $effect(() => {
+    // re-run when the route changes
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    page.url.pathname;
+    if (!tabStrip) return;
+    tick().then(() => {
+      const el = tabStrip?.querySelector<HTMLElement>('[data-active="true"]');
+      el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    });
+  });
 </script>
 
-<div class="flex h-full">
-  <!-- Admin sidebar nav -->
-  <nav class="w-48 border-r border-slate-800/50 flex flex-col p-3 gap-1 shrink-0">
+<div class="flex h-full md:flex-row flex-col">
+  <!-- Desktop sidebar -->
+  <nav
+    class="hidden md:flex w-52 border-r flex-col p-3 gap-1 shrink-0 overflow-y-auto"
+    style="border-color: var(--quip-glass-border)"
+  >
     <h2 class="text-xs font-bold uppercase tracking-wider opacity-40 px-3 py-2">{$t('nav.admin')}</h2>
     {#each tabs as tab}
       <a
@@ -33,8 +50,35 @@
     {/each}
   </nav>
 
+  <!-- Mobile top bar + scrollable tab strip -->
+  <div
+    class="md:hidden sticky top-0 z-10 border-b shrink-0"
+    style="border-color: var(--quip-glass-border); background: var(--quip-sidebar-bg, var(--quip-bg)); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);"
+  >
+    <div class="h-12 flex items-center pl-14 pr-3">
+      <h2 class="text-sm font-bold tracking-tight" style="color: var(--quip-text)">{$t('nav.admin')}</h2>
+    </div>
+    <nav
+      bind:this={tabStrip}
+      class="flex gap-1.5 px-3 pb-2 overflow-x-auto admin-tabstrip"
+    >
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          data-active={isActive(tab.href)}
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors shrink-0
+            {isActive(tab.href) ? 'bg-slate-700/80 text-slate-100' : 'text-slate-400'}"
+          style={isActive(tab.href) ? '' : 'background: var(--quip-bg-raised)'}
+        >
+          <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={tab.icon}/></svg>
+          {$t(tab.key)}
+        </a>
+      {/each}
+    </nav>
+  </div>
+
   <!-- Content -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 overflow-y-auto min-w-0">
     {@render children()}
   </div>
 </div>

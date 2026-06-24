@@ -7,6 +7,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { getUsers, updateUserRole, updateUserStatus, deleteUser, changeUserPassword, type AdminUser } from '$lib/api/admin';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+  import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let users = $state<AdminUser[]>([]);
   let loading = $state(true);
@@ -151,15 +152,65 @@
   </div>
 {/if}
 
-<div class="p-8 max-w-4xl space-y-5" in:fly={{ y: 8, duration: D2 }}>
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4">
-    <h1 class="text-2xl font-bold">{$t('admin.tabs.users')}</h1>
-    <span class="text-sm opacity-40">{users.length} {$t('common.total')}</span>
-  </div>
+<!-- Shared status toggle (table + mobile cards) -->
+{#snippet statusBtn(user: AdminUser, isSelf: boolean)}
+  <button
+    class="inline-flex items-center gap-1.5 text-xs disabled:opacity-30"
+    onclick={() => toggleStatus(user)}
+    disabled={isSelf}
+    title={$t(user.is_active ? 'admin.disableUser' : 'admin.enableUser')}
+  >
+    {#if user.is_active}
+      <span class="relative flex size-1.5">
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span>
+        <span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span>
+      </span>
+      {$t('common.enabled')}
+    {:else}
+      <span class="size-1.5 rounded-full bg-slate-600"></span>
+      {$t('common.disabled')}
+    {/if}
+  </button>
+{/snippet}
+
+<!-- Shared action controls (table + mobile cards) -->
+{#snippet userActions(user: AdminUser, isSelf: boolean)}
+  <select
+    class="select text-xs w-24 py-1"
+    value={user.role}
+    onchange={(e) => changeRole(user, e.currentTarget.value)}
+  >
+    <option value="admin">{$t('admin.users.role.admin')}</option>
+    <option value="user">{$t('admin.users.role.user')}</option>
+    <option value="pending">{$t('admin.users.role.pending')}</option>
+  </select>
+  <button
+    class="p-1.5 rounded opacity-50 hover:opacity-100 hover:text-primary-400 transition-colors"
+    onclick={() => { passwordUser = user; newPassword = ''; }}
+    title={$t('admin.users.changePassword')}
+  >
+    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15L19 4M18 5l2 2M15 8l2 2"/></svg>
+  </button>
+  <button
+    class="p-1.5 rounded opacity-50 hover:opacity-100 hover:text-error-400 transition-colors disabled:opacity-10 disabled:hover:text-current"
+    onclick={() => (deletingUser = user)}
+    disabled={isSelf}
+    title={$t('admin.deleteUser')}
+  >
+    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+  </button>
+{/snippet}
+
+<div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
+ <div class="max-w-4xl mx-auto">
+  <AdminPageHeader icon="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2m22 4v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z" title={$t('admin.tabs.users')}>
+    {#snippet actions()}
+      <span class="text-sm opacity-40">{users.length} {$t('common.total')}</span>
+    {/snippet}
+  </AdminPageHeader>
 
   <!-- Search -->
-  <div class="relative">
+  <div class="relative mb-4">
     <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
     <input
       type="text"
@@ -178,7 +229,38 @@
   {:else if filtered.length === 0}
     <p class="text-center opacity-40 py-8">{$t('admin.noUsersFound')}</p>
   {:else}
-    <div class="table-container rounded-lg overflow-hidden">
+    <!-- Mobile: card stack -->
+    <div class="md:hidden space-y-2.5">
+      {#each filtered as user (user.id)}
+        {@const isSelf = user.id === $currentUser?.id}
+        <div class="admin-card !p-3.5">
+          <div class="flex items-start gap-3">
+            <div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-300 shrink-0">
+              {user.name.charAt(0).toUpperCase()}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium truncate">{user.name}</div>
+              <div class="text-xs opacity-40 truncate">@{user.username} · {user.email}</div>
+            </div>
+            <span class="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 {roleBadge[user.role] ?? 'bg-slate-800/40 text-slate-400'}">
+              {$t('admin.users.role.' + user.role) ?? user.role}
+            </span>
+          </div>
+          <div class="flex items-center justify-between mt-3 pt-3 border-t" style="border-color: var(--quip-glass-border)">
+            <div class="flex flex-col gap-1 text-xs opacity-60">
+              {@render statusBtn(user, isSelf)}
+              <span class="opacity-70">{formatLastActive(user.last_active_at)}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              {@render userActions(user, isSelf)}
+            </div>
+          </div>
+        </div>
+      {/each}
+    </div>
+
+    <!-- Desktop: table -->
+    <div class="admin-table-scroll hidden md:block">
       <table class="table text-sm">
         <thead>
           <tr class="border-b border-slate-800">
@@ -225,53 +307,14 @@
                 </span>
               </td>
               <td class="px-4 py-3">
-                <button
-                  class="inline-flex items-center gap-1.5 text-xs disabled:opacity-30"
-                  onclick={() => toggleStatus(user)}
-                  disabled={isSelf}
-                  title={$t(user.is_active ? 'admin.disableUser' : 'admin.enableUser')}
-                >
-                  {#if user.is_active}
-                    <span class="relative flex size-1.5">
-                      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span>
-                      <span class="relative inline-flex size-1.5 rounded-full bg-success-500"></span>
-                    </span>
-                    {$t('common.enabled')}
-                  {:else}
-                    <span class="size-1.5 rounded-full bg-slate-600"></span>
-                    {$t('common.disabled')}
-                  {/if}
-                </button>
+                {@render statusBtn(user, isSelf)}
               </td>
               <td class="px-4 py-3 text-xs opacity-50 whitespace-nowrap">
                 {formatLastActive(user.last_active_at)}
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-2">
-                  <select
-                    class="select text-xs w-24 py-1"
-                    value={user.role}
-                    onchange={(e) => changeRole(user, e.currentTarget.value)}
-                  >
-                    <option value="admin">{$t('admin.users.role.admin')}</option>
-                    <option value="user">{$t('admin.users.role.user')}</option>
-                    <option value="pending">{$t('admin.users.role.pending')}</option>
-                  </select>
-                  <button
-                    class="p-1 rounded opacity-40 hover:opacity-100 hover:text-primary-400 transition-colors"
-                    onclick={() => { passwordUser = user; newPassword = ''; }}
-                    title={$t('admin.users.changePassword')}
-                  >
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15L19 4M18 5l2 2M15 8l2 2"/></svg>
-                  </button>
-                  <button
-                    class="p-1 rounded opacity-40 hover:opacity-100 hover:text-error-400 transition-colors disabled:opacity-10 disabled:hover:text-current"
-                    onclick={() => (deletingUser = user)}
-                    disabled={isSelf}
-                    title={$t('admin.deleteUser')}
-                  >
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                  </button>
+                  {@render userActions(user, isSelf)}
                 </div>
               </td>
             </tr>
@@ -280,4 +323,5 @@
       </table>
     </div>
   {/if}
+ </div>
 </div>

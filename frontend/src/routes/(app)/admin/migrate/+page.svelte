@@ -3,6 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
+  import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let file = $state<File | null>(null);
   let uploading = $state(false);
@@ -52,16 +53,11 @@
   }
 </script>
 
-<div class="p-8 max-w-2xl mx-auto space-y-8" in:fly={{ y: 8, duration: D2 }}>
-  <h1 class="text-2xl font-bold">{$t('nav.admin')} — {$t('migrate.title')}</h1>
+<div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
+ <div class="max-w-2xl mx-auto space-y-5">
+  <AdminPageHeader icon="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" title={$t('migrate.title')} description={$t('migrate.description')} />
 
-  <section class="card p-6 space-y-4">
-    <div class="flex items-center gap-2">
-      <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-      <h2 class="text-lg font-semibold">{$t('migrate.title')}</h2>
-    </div>
-    <p class="text-sm opacity-50">{$t('migrate.description')}</p>
-
+  <section class="card p-4 sm:p-6 space-y-4">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="border-2 border-dashed rounded-xl p-8 text-center transition-colors
@@ -111,4 +107,5 @@
       </div>
     {/if}
   </section>
+ </div>
 </div>
