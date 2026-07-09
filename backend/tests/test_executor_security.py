@@ -43,6 +43,7 @@ def test_unlabelled_host_container_is_rejected(monkeypatch):
 
 def test_created_container_has_fixed_image_mount_and_isolation(monkeypatch, tmp_path):
     captured = {}
+    chown_calls = []
     fake_container = SimpleNamespace(id="sandbox-id", start=lambda: None)
     fake_client = SimpleNamespace(
         containers=SimpleNamespace(
@@ -52,9 +53,15 @@ def test_created_container_has_fixed_image_mount_and_isolation(monkeypatch, tmp_
     monkeypatch.setattr(executor_app, "client", fake_client)
     monkeypatch.setattr(executor_app, "MOUNTED_SANDBOX_DIR", tmp_path)
     monkeypatch.setattr(executor_app, "HOST_SANDBOX_DIR", "/srv/quip-sandbox")
+    monkeypatch.setattr(
+        executor_app.os,
+        "chown",
+        lambda path, uid, gid: chown_calls.append((path, uid, gid)),
+    )
 
     executor_app._create_container("quip-sandbox-deadbeef", "deadbeef")
 
+    assert chown_calls == [(tmp_path / "deadbeef", 1000, 1000)]
     assert captured["image"] == executor_app.SANDBOX_IMAGE
     assert captured["volumes"] == {
         "/srv/quip-sandbox/deadbeef": {"bind": "/workspace", "mode": "rw"}
