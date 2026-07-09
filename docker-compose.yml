@@ -1,22 +1,27 @@
 services:
   app:
-    image: ghcr.io/janar0/quip/app:latest
+    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
     ports:
       - "${PORT:-3000}:80"
     environment:
       DATABASE_URL: sqlite+aiosqlite:///data/quip.db
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # The entrypoint creates and persists a random secret when this is empty.
+      JWT_SECRET: ${JWT_SECRET:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
+      SANDBOX_EXECUTOR_URL: http://executor:8765
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - quip_data:/app/data
-      - ./data/sandbox:/app/data/sandbox
     restart: unless-stopped
     depends_on:
       sandbox_build:
         condition: service_completed_successfully
+      executor:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")'"]
       interval: 5s
@@ -24,11 +29,63 @@ services:
       retries: 10
       start_period: 10s
 
-  # Builds quip-sandbox:latest image, then exits.
-  # The backend (via docker.sock) uses this image to run code execution containers.
+  # The only long-running process allowed to access Docker. Its API constructs
+  # fixed, labelled QUIP sandboxes and never accepts arbitrary images/mounts.
+  executor:
+    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
+    command: ["uvicorn", "quip.executor_app:app", "--host", "0.0.0.0", "--port", "8765"]
+    environment:
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
+      QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
+      EXECUTOR_WORKSPACE_ROOT: /executor/workspaces
+      SANDBOX_IMAGE: quip-sandbox:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}:/executor/workspaces
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Required to create a per-user directory in an arbitrary host-owned bind
+    # root and hand it to the uid-1000 sandbox process. Without these two
+    # capabilities production uploads fail with PermissionError.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    restart: unless-stopped
+    depends_on:
+      sandbox_build:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8765/health\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Pulls the sandbox image for the exact app release, gives it a local alias,
+  # then exits. The executor uses this local alias for code containers.
   sandbox_build:
     image: docker:cli
-    entrypoint: ["sh", "-c", "docker pull ghcr.io/janar0/quip/sandbox:latest && docker tag ghcr.io/janar0/quip/sandbox:latest quip-sandbox:latest"]
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        case "$${QUIP_IMAGE_TAG}" in
+          ""|*[!0-9a-f]*) echo "QUIP_IMAGE_TAG must be the full 40-character lowercase git SHA" >&2; exit 64 ;;
+        esac
+        [ "$${#QUIP_IMAGE_TAG}" -eq 40 ] || {
+          echo "QUIP_IMAGE_TAG must be the full 40-character lowercase git SHA" >&2
+          exit 64
+        }
+        image="ghcr.io/janar0/quip/sandbox:$${QUIP_IMAGE_TAG}"
+        docker pull "$${image}"
+        docker tag "$${image}" quip-sandbox:latest
+    environment:
+      QUIP_IMAGE_TAG: ${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: "no"

@@ -1,15 +1,16 @@
 import os
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
-os.environ["JWT_SECRET"] = "test-secret-key"
+os.environ["JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
+os.environ["BOOTSTRAP_TOKEN"] = "test-bootstrap-token"
 
 import pytest
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import quip.models  # noqa: F401
 from quip.database import Base, get_db
 from quip.main import app
-import quip.models  # noqa: F401
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -52,6 +53,7 @@ async def auth_headers(client):
         "username": "testuser",
         "name": "Test User",
         "password": "password123",
+        "bootstrap_token": "test-bootstrap-token",
     })
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 

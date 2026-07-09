@@ -1,20 +1,22 @@
-from pydantic import BaseModel, ConfigDict, model_validator
-from uuid import UUID
 from datetime import datetime
-from typing import Optional
 from decimal import Decimal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ChatCreate(BaseModel):
-    title: Optional[str] = "New Chat"
-    model: Optional[str] = None
+    title: str | None = "New Chat"
+    model: str | None = None
+    workspace_id: UUID | None = None
 
 
 class ChatUpdate(BaseModel):
-    title: Optional[str] = None
-    model: Optional[str] = None
-    pinned: Optional[bool] = None
-    archived: Optional[bool] = None
+    title: str | None = None
+    model: str | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
+    workspace_id: UUID | None = None
 
 
 class ChatResponse(BaseModel):
@@ -22,8 +24,9 @@ class ChatResponse(BaseModel):
 
     id: UUID
     user_id: UUID
+    workspace_id: UUID | None = None
     title: str
-    model: Optional[str] = None
+    model: str | None = None
     pinned: bool
     archived: bool
     created_at: datetime
@@ -35,21 +38,21 @@ class MessageResponse(BaseModel):
 
     id: UUID
     chat_id: UUID
-    parent_id: Optional[UUID] = None
+    parent_id: UUID | None = None
     role: str
-    content: Optional[str] = None
-    reasoning: Optional[str] = None
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    token_count: Optional[int] = None
-    cost: Optional[Decimal] = None
-    artifacts: Optional[list[dict]] = None
-    tool_calls: Optional[list[dict]] = None
-    meta: Optional[dict] = None
+    content: str | None = None
+    reasoning: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    token_count: int | None = None
+    cost: Decimal | None = None
+    artifacts: list[dict] | None = None
+    tool_calls: list[dict] | None = None
+    meta: dict | None = None
     created_at: datetime
 
-    attachments: Optional[list[dict]] = None
-    search_images: Optional[list[dict]] = None
+    attachments: list[dict] | None = None
+    search_images: list[dict] | None = None
 
     @model_validator(mode="after")
     def extract_meta_fields(self):
@@ -64,24 +67,40 @@ class MessageResponse(BaseModel):
         return self
 
 
+class ChatRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    chat_id: UUID
+    assistant_message_id: UUID | None = None
+    status: str
+    model: str | None = None
+    error: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime
+
+
 class ChatWithMessages(ChatResponse):
-    messages: list[MessageResponse] = []
+    messages: list[MessageResponse] = Field(default_factory=list)
+    runs: list[ChatRunResponse] = Field(default_factory=list)
 
 
 class CompletionRequest(BaseModel):
     """Request for chat completion — sent from frontend."""
-    chat_id: Optional[UUID] = None  # None = create new chat
+    chat_id: UUID | None = None  # None = create new chat
+    workspace_id: UUID | None = None
     model: str
     message: str  # user's message text
-    file_ids: list[UUID] = []  # attached file IDs
+    file_ids: list[UUID] = Field(default_factory=list)  # attached file IDs
     deep_research: bool = False  # use deep research pipeline
-    mode_hint: Optional[str] = None  # "auto" | "search" | "research" — fast search mode dispatch
-    branch_from_message_id: Optional[UUID] = None  # branch edit: create sibling of this message
-    max_tokens: Optional[int] = None  # optional max tokens for response generation
+    mode_hint: str | None = None  # "auto" | "search" | "research" — fast search mode dispatch
+    branch_from_message_id: UUID | None = None  # branch edit: create sibling of this message
+    max_tokens: int | None = None  # optional max tokens for response generation
 
 
 class RegenerateRequest(BaseModel):
     """Regenerate an assistant response — creates a sibling branch."""
     chat_id: UUID
     message_id: UUID  # the assistant message to regenerate
-    model: Optional[str] = None  # optional: use different model
+    model: str | None = None  # optional: use different model

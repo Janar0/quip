@@ -4,13 +4,12 @@ import json
 import logging
 
 from quip.database import async_session
-from quip.services.tools import (
-    AccumulatedToolCall,
-    accumulate_tool_calls,
-    run_tool_call,
-    SANDBOX_TOOL_NAMES,
-)
 from quip.services.sandbox import sandbox_manager
+from quip.services.tools import (
+    SANDBOX_TOOL_NAMES,
+    AccumulatedToolCall,
+    run_tool_call,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +57,7 @@ class ToolExecutor:
                     sandbox=sandbox,
                     chat_id=chat_id,
                     loaded_skills=loaded_skills,
+                    user_id=user_id,
                 )
                 for tc in accumulated_tool_calls
             )

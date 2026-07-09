@@ -5,12 +5,10 @@ the skill registry (services/skill_store.py) and are fetched on demand via the
 `load_skill` tool. This keeps the default tool payload small.
 """
 import json
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from quip.providers.openrouter import ToolCallDelta
-from quip.services.sandbox import SandboxManager, ExecutionResult
-
+from quip.services.sandbox import SandboxManager
 
 SANDBOX_TOOL_NAMES = {
     "sandbox_execute",
@@ -371,7 +369,8 @@ async def execute_tool_call(
     tool_name: str,
     arguments_json: str,
     db=None,
-    loaded_skills: Optional[set[str]] = None,
+    loaded_skills: set[str] | None = None,
+    user_id=None,
 ) -> str:
     """Dispatch a tool call to the sandbox manager. Returns JSON result string."""
     try:
@@ -404,11 +403,13 @@ async def execute_tool_call(
             return json.dumps(result)
 
         if tool_name == "get_document_image":
-            from quip.models.file import DocumentImage
-            from quip.routers.files import UPLOAD_DIR
-            from sqlalchemy import select as _select
             import base64 as _b64
             from uuid import UUID as _UUID
+
+            from sqlalchemy import select as _select
+
+            from quip.models.file import DocumentImage, File
+            from quip.routers.files import UPLOAD_DIR
 
             ref = (args.get("ref") or "").strip()
             file_id_raw = (args.get("file_id") or "").strip()
@@ -421,8 +422,16 @@ async def execute_tool_call(
 
             if db is None:
                 return json.dumps({"error": "no db session"})
+            if user_id is None:
+                return json.dumps({"error": "user context required"})
             res = await db.execute(
-                _select(DocumentImage).where(DocumentImage.file_id == fid, DocumentImage.ref == ref)
+                _select(DocumentImage)
+                .join(File, DocumentImage.file_id == File.id)
+                .where(
+                    DocumentImage.file_id == fid,
+                    DocumentImage.ref == ref,
+                    File.user_id == user_id,
+                )
             )
             img = res.scalar_one_or_none()
             if not img:
@@ -514,8 +523,8 @@ async def execute_tool_call(
             })
 
         elif tool_name == "generate_image":
-            from quip.services.image_gen import generate_image
             from quip.core.config import get_setting
+            from quip.services.image_gen import generate_image
             from quip.services.skill_store import get_skill_setting
             model = get_skill_setting("image_generation", "model", "") or "google/gemini-2.0-flash-exp:free"
             api_key = get_setting("openrouter_api_key", "")
@@ -527,14 +536,15 @@ async def execute_tool_call(
                 model=model,
                 api_key=api_key,
                 db=db,
+                user_id=user_id,
             )
             if args.get("hidden"):
                 result["hidden"] = True
             return json.dumps(result)
 
         elif tool_name == "generate_music":
-            from quip.services.music_gen import generate_music
             from quip.core.config import get_setting
+            from quip.services.music_gen import generate_music
             api_key = get_setting("openrouter_api_key", "")
             result = await generate_music(
                 prompt=args.get("prompt", ""),
@@ -585,6 +595,7 @@ async def run_tool_call(
     sandbox,
     chat_id: str,
     loaded_skills: set[str],
+    user_id,
 ) -> str:
     """Execute one accumulated tool call inside its own DB session.
 
@@ -600,6 +611,7 @@ async def run_tool_call(
                 tc.function_name, tc.function_arguments,
                 db=tool_db,
                 loaded_skills=loaded_skills,
+                user_id=user_id,
             )
         except Exception as e:
             return json.dumps({"error": f"{type(e).__name__}: {e}"})

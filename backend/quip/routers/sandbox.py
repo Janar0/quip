@@ -1,40 +1,32 @@
 """Sandbox file management endpoints — upload, download, list files."""
+
 import mimetypes
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.database import get_db
-from quip.models.user import User
 from quip.models.chat import Chat
 from quip.models.sandbox import Sandbox
+from quip.models.user import User
 from quip.services.permissions import get_current_user
-from quip.services.auth import decode_token
 from quip.services.sandbox import sandbox_manager
 
 router = APIRouter(prefix="/api/sandbox", tags=["sandbox"])
 
 
-async def _get_user_sandbox(
-    user: User, db: AsyncSession
-) -> Sandbox | None:
+async def _get_user_sandbox(user: User, db: AsyncSession) -> Sandbox | None:
     """Get the user's sandbox if it exists."""
-    result = await db.execute(
-        select(Sandbox).where(Sandbox.user_id == user.id)
-    )
+    result = await db.execute(select(Sandbox).where(Sandbox.user_id == user.id))
     return result.scalar_one_or_none()
 
 
-async def _verify_chat_ownership(
-    chat_id: UUID, user: User, db: AsyncSession
-) -> None:
+async def _verify_chat_ownership(chat_id: UUID, user: User, db: AsyncSession) -> None:
     """Verify the user owns this chat."""
-    result = await db.execute(
-        select(Chat).where(Chat.id == chat_id, Chat.user_id == user.id)
-    )
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.user_id == user.id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -54,48 +46,19 @@ async def list_files(
 
     try:
         files = await sandbox_manager.list_files(sandbox, str(chat_id), path)
-        return {
-            "files": [
-                {"name": f.name, "path": f.path, "size": f.size, "is_dir": f.is_dir}
-                for f in files
-            ]
-        }
+        return {"files": [{"name": f.name, "path": f.path, "size": f.size, "is_dir": f.is_dir} for f in files]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def _get_user_from_token_param(
-    token: str, db: AsyncSession
-) -> User:
-    """Authenticate user from query param token (for direct download links)."""
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == UUID(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
 
 
 @router.get("/{chat_id}/file/{path:path}")
 async def download_file(
     chat_id: UUID,
     path: str,
-    request: Request,
-    token: str | None = Query(default=None),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download a file. Accepts ?token= query param or Authorization header."""
-    if token:
-        user = await _get_user_from_token_param(token, db)
-    else:
-        # Try Authorization header
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            user = await _get_user_from_token_param(auth_header[7:], db)
-        else:
-            raise HTTPException(status_code=401, detail="Not authenticated")
+    """Download a file owned by the current session's user."""
     await _verify_chat_ownership(chat_id, user, db)
     sandbox = await _get_user_sandbox(user, db)
     if not sandbox:

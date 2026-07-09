@@ -1,6 +1,12 @@
 # Python
 __pycache__/
 .ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 *.py[cod]
 *.egg-info/
 dist/
@@ -11,6 +17,9 @@ venv/
 node_modules/
 .svelte-kit/
 build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
 
 # Environment
 .env
@@ -19,9 +28,13 @@ build/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 *.sqlite
 *.sqlite3
 *.migrated
+
+# Runtime logs
+*.log
 
 # User data
 data/

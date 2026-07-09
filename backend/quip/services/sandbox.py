@@ -1,21 +1,24 @@
 """Sandbox manager — per-user Docker container lifecycle and execution."""
+
 import asyncio
 import io
-import json
 import logging
 import os
 import posixpath
+import shlex
 import shutil
 import tarfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
+
+import httpx
 
 try:
     import docker
-    from docker.errors import NotFound, APIError
+    from docker.errors import APIError, NotFound
+
     _DOCKER_AVAILABLE = True
 except ImportError:
     docker = None  # type: ignore
@@ -25,8 +28,8 @@ except ImportError:
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from quip.models.sandbox import Sandbox
 from quip.core.config import get_setting
+from quip.models.sandbox import Sandbox
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,17 @@ class SandboxManager:
         # Cache of (container_id, chat_id) tuples for which mkdir already ran
         # this process. Eliminates a Docker exec on every chat turn.
         self._chat_dirs_ready: set[tuple[str, str]] = set()
+        # Network-enabled installs and code execution must never overlap.
+        self._execution_locks: dict[str, asyncio.Lock] = {}
+        self._network_enabled_containers: set[str] = set()
+        self.executor_url = os.getenv("SANDBOX_EXECUTOR_URL", "").rstrip("/")
+        self.executor_token = os.getenv("EXECUTOR_TOKEN", "")
+        if self.executor_url:
+            self.client = None
+            self._available = len(self.executor_token) >= 16
+            if not self._available:
+                logger.error("SANDBOX_EXECUTOR_URL is set but EXECUTOR_TOKEN is missing or too short")
+            return
         if not _DOCKER_AVAILABLE:
             logger.warning("Docker SDK not installed (pip install docker)")
             self.client = None
@@ -91,11 +105,22 @@ class SandboxManager:
     def available(self) -> bool:
         return self._available
 
+    async def healthcheck(self) -> bool:
+        """Verify the configured execution backend, not just its configuration."""
+        if not self._available:
+            return False
+        try:
+            if self.executor_url:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    response = await client.get(f"{self.executor_url}/health")
+                return response.status_code == 200
+            return bool(await asyncio.to_thread(self.client.ping))
+        except Exception:
+            return False
+
     async def get_or_create(self, user_id: UUID, db: AsyncSession) -> Sandbox:
         """Get existing sandbox or create a new one for the user."""
-        result = await db.execute(
-            select(Sandbox).where(Sandbox.user_id == user_id)
-        )
+        result = await db.execute(select(Sandbox).where(Sandbox.user_id == user_id))
         sandbox = result.scalar_one_or_none()
 
         if sandbox:
@@ -103,18 +128,21 @@ class SandboxManager:
             return sandbox
 
         # Create new sandbox
-        uid_short = str(user_id)[:8]
-        container_name = f"quip-sandbox-{uid_short}"
+        # Full UUID hex avoids the birthday-collision ceiling of the legacy
+        # eight-character names. The executor still accepts old names so
+        # existing installations continue to work.
+        user_key = user_id.hex
+        container_name = f"quip-sandbox-{user_key}"
 
         if QUIP_HOST_SANDBOX_DIR:
-            workspace_host_dir = f"{QUIP_HOST_SANDBOX_DIR}/{uid_short}"
+            workspace_host_dir = f"{QUIP_HOST_SANDBOX_DIR}/{user_key}"
         else:
             # Fallback: use Docker named volume when host dir is not configured
-            workspace_host_dir = f"quip-sandbox-vol-{uid_short}"
+            workspace_host_dir = f"quip-sandbox-vol-{user_key}"
 
         # Ensure workspace directory exists (via container bind mount path when using host dir)
-        if QUIP_HOST_SANDBOX_DIR:
-            os.makedirs(f"{CONTAINER_SANDBOX_DIR}/{uid_short}", exist_ok=True)
+        if QUIP_HOST_SANDBOX_DIR and not self.executor_url:
+            os.makedirs(f"{CONTAINER_SANDBOX_DIR}/{user_key}", exist_ok=True)
 
         sandbox = Sandbox(
             user_id=user_id,
@@ -126,21 +154,28 @@ class SandboxManager:
         await db.flush()
 
         # Create in background thread (Docker SDK is sync)
-        container_id = await asyncio.to_thread(
-            self._create_container, container_name, workspace_host_dir, None
-        )
+        container_id = await asyncio.to_thread(self._create_container, container_name, workspace_host_dir, None)
         sandbox.container_id = container_id
         sandbox.status = "running"
-        sandbox.last_active_at = datetime.now(timezone.utc)
+        sandbox.last_active_at = datetime.now(UTC)
         await db.commit()
         return sandbox
 
-    def _create_container(
-        self, name: str, host_workspace_dir: str, image_tag: Optional[str]
-    ) -> str:
+    def _create_container(self, name: str, host_workspace_dir: str, image_tag: str | None) -> str:
         """Create and start a Docker container with a bind-mounted workspace (sync, run in thread)."""
+        if self.executor_url:
+            user_key = name.removeprefix("quip-sandbox-")
+            response = self._remote_request(
+                "POST",
+                "/v1/container/ensure",
+                json={"name": name, "user_key": user_key},
+                timeout=30,
+            )
+            return response.json()["container_id"]
+
         image = image_tag or SANDBOX_IMAGE
         from quip.services.skill_store import get_skill_setting
+
         mem_limit = get_skill_setting("sandbox", "memory_limit", None) or get_setting("sandbox_memory_limit", "512m")
         cpu_limit = float(get_skill_setting("sandbox", "cpu_limit", None) or get_setting("sandbox_cpu_limit", "1.0"))
 
@@ -163,6 +198,7 @@ class SandboxManager:
             tmpfs={"/tmp": "size=100m"},
             security_opt=["no-new-privileges"],
             cap_drop=["ALL"],
+            network_mode="none",
             user="sandbox",
             working_dir="/workspace",
             environment={
@@ -178,11 +214,28 @@ class SandboxManager:
 
     def _get_container(self, sandbox: Sandbox):
         """Return running container, recreating it if stopped and auto-removed."""
+        if self.executor_url:
+            raise RuntimeError("Direct Docker access is disabled when using the executor service")
         try:
             container = self.client.containers.get(sandbox.container_id)
+            container.reload()
+            network_mode = container.attrs.get("HostConfig", {}).get("NetworkMode")
+            if network_mode != "none":
+                logger.warning("Recreating legacy sandbox %s with networking disabled", sandbox.container_name)
+                container.remove(force=True)
+                sandbox.container_id = self._create_container(
+                    sandbox.container_name, sandbox.volume_name, sandbox.image_tag
+                )
+                return self.client.containers.get(sandbox.container_id)
+            networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+            if INSTALL_NETWORK in networks and container.id not in self._network_enabled_containers:
+                logger.warning("Disconnecting stale install network from %s", sandbox.container_name)
+                self._restore_local_offline_network(container.id)
+                container.reload()
             if container.status != "running":
                 container.start()
                 import time
+
                 time.sleep(0.8)
                 container.reload()
             return container
@@ -194,14 +247,24 @@ class SandboxManager:
 
     async def _ensure_running(self, sandbox: Sandbox, db: AsyncSession) -> None:
         """Ensure the sandbox container is running."""
-        sandbox.last_active_at = datetime.now(timezone.utc)
+        sandbox.last_active_at = datetime.now(UTC)
 
         try:
-            container = await asyncio.to_thread(self._get_container, sandbox)
-            if container.status == "running":
+            if self.executor_url:
+                container_id = await asyncio.to_thread(
+                    self._create_container,
+                    sandbox.container_name,
+                    sandbox.volume_name,
+                    sandbox.image_tag,
+                )
+                sandbox.container_id = container_id
                 sandbox.status = "running"
             else:
-                sandbox.status = "error"
+                container = await asyncio.to_thread(self._get_container, sandbox)
+                if container.status == "running":
+                    sandbox.status = "running"
+                else:
+                    sandbox.status = "error"
         except Exception as e:
             sandbox.status = "error"
             logger.error(f"Failed to ensure sandbox container: {e}")
@@ -215,7 +278,9 @@ class SandboxManager:
         cache_key = (str(sandbox.container_id or ""), safe_id)
         if cache_key in self._chat_dirs_ready:
             return
-        await self._exec(sandbox, f"mkdir -p /workspace/{safe_id}")
+        result = await self._exec(sandbox, f"mkdir -p {shlex.quote(f'/workspace/{safe_id}')}")
+        if result["exit_code"] != 0:
+            raise RuntimeError(result["stderr"] or "Unable to create chat workspace")
         self._chat_dirs_ready.add(cache_key)
 
     async def execute(
@@ -228,36 +293,33 @@ class SandboxManager:
     ) -> ExecutionResult:
         """Execute code in the sandbox, within the chat's directory."""
         from quip.services.skill_store import get_skill_setting
-        max_timeout = int(get_skill_setting("sandbox", "exec_timeout", None) or get_setting("sandbox_exec_timeout", "30"))
-        timeout = min(timeout, max_timeout)
+
+        max_timeout = int(
+            get_skill_setting("sandbox", "exec_timeout", None) or get_setting("sandbox_exec_timeout", "30")
+        )
+        timeout = max(1, min(timeout, max_timeout))
         workdir = f"/workspace/{chat_id}"
 
         ext = {"python": "py", "javascript": "js", "bash": "sh"}.get(language, "py")
-        script_path = f"{workdir}/_run.{ext}"
+        script_name = f"_run-{uuid4().hex}.{ext}"
+        script_path = f"{workdir}/{script_name}"
 
-        # Write code to file
-        await self._write_file_raw(sandbox, script_path, code.encode())
+        async with self._execution_lock(sandbox):
+            await self._write_file_raw(sandbox, script_path, code.encode())
+            try:
+                before = await self._list_raw(sandbox, workdir)
+                cmd_map = {
+                    "python": f"python {shlex.quote(script_path)}",
+                    "javascript": f"node {shlex.quote(script_path)}",
+                    "bash": f"bash {shlex.quote(script_path)}",
+                }
+                cmd = cmd_map.get(language, f"python {shlex.quote(script_path)}")
+                result = await self._exec(sandbox, cmd, workdir=workdir, timeout=timeout)
+                after = await self._list_raw(sandbox, workdir)
+            finally:
+                await self._exec(sandbox, f"rm -f {shlex.quote(script_path)}")
 
-        # Get file list before execution
-        before = await self._list_raw(sandbox, workdir)
-
-        # Execute
-        cmd_map = {
-            "python": f"python {script_path}",
-            "javascript": f"node {script_path}",
-            "bash": f"bash {script_path}",
-        }
-        cmd = cmd_map.get(language, f"python {script_path}")
-        result = await self._exec(sandbox, cmd, workdir=workdir, timeout=timeout)
-
-        # Get file list after execution
-        after = await self._list_raw(sandbox, workdir)
-
-        # Detect new files
-        new_files = [f for f in after if f not in before and not f.startswith("_run.")]
-
-        # Clean up script
-        await self._exec(sandbox, f"rm -f {script_path}")
+        new_files = [f for f in after if f not in before and f != script_name]
 
         return ExecutionResult(
             stdout=result["stdout"],
@@ -271,28 +333,54 @@ class SandboxManager:
         sandbox: Sandbox,
         packages: list[str],
         manager: str = "pip",
-        db: Optional[AsyncSession] = None,
+        db: AsyncSession | None = None,
     ) -> ExecutionResult:
-        """Install packages with temporary network access, then commit."""
-        # Sanitize package names
-        safe_packages = [p.replace(";", "").replace("&", "").replace("|", "") for p in packages]
-        pkg_str = " ".join(safe_packages)
+        """Install dependencies into the persistent workspace with temporary network access."""
+        del db  # Kept in the public signature for compatibility with existing callers.
+        safe_packages = self._validated_packages(packages)
+        if not safe_packages:
+            return ExecutionResult(stderr="No valid packages provided.", exit_code=1)
+        pkg_str = shlex.join(safe_packages)
+
+        if self.executor_url:
+            async with self._execution_lock(sandbox):
+                response = await asyncio.to_thread(
+                    self._remote_request,
+                    "POST",
+                    "/v1/install",
+                    json={
+                        "container_id": sandbox.container_id,
+                        "manager": manager,
+                        "packages": safe_packages,
+                    },
+                    timeout=140,
+                )
+            payload = response.json()
+            return ExecutionResult(
+                stdout=payload["stdout"],
+                stderr=payload["stderr"],
+                exit_code=payload["exit_code"],
+            )
 
         if manager == "pip":
-            cmd = f"pip install --user {pkg_str}"
+            deps_dir = "/workspace/.quip/deps/python"
+            cmd = f"pip install --disable-pip-version-check --upgrade --target {deps_dir} {pkg_str}"
         elif manager == "npm":
-            cmd = f"npm install -g {pkg_str}"
+            deps_dir = "/workspace/.quip/deps/node"
+            cmd = f"npm install --no-audit --no-fund --prefix {deps_dir} {pkg_str}"
         else:
             # apt not supported in read-only root — skip
             return ExecutionResult(
                 stderr="apt install not supported in read-only sandbox. Use pip or npm.",
                 exit_code=1,
             )
-        result = await self._exec(sandbox, cmd, timeout=120)
-
-        # Commit container to preserve installed packages
-        if result["exit_code"] == 0:
-            await self._commit(sandbox, db)
+        async with self._execution_lock(sandbox):
+            await self._exec(sandbox, f"mkdir -p {deps_dir}")
+            try:
+                await self._connect_install_network(sandbox)
+                result = await self._exec(sandbox, cmd, timeout=120)
+            finally:
+                await self._disconnect_install_network(sandbox)
 
         return ExecutionResult(
             stdout=result["stdout"],
@@ -306,6 +394,15 @@ class SandboxManager:
         return await asyncio.to_thread(self._read_file_sync, sandbox, full_path)
 
     def _read_file_sync(self, sandbox: Sandbox, full_path: str) -> bytes:
+        if self.executor_url:
+            response = self._remote_request(
+                "POST",
+                "/v1/file/read",
+                params={"container_id": sandbox.container_id, "path": full_path},
+                timeout=60,
+            )
+            return response.content
+
         container = self._get_container(sandbox)
         bits, _ = container.get_archive(full_path)
         # get_archive returns a tar stream
@@ -318,9 +415,7 @@ class SandboxManager:
             f = tar.extractfile(member)
             return f.read() if f else b""
 
-    async def write_file(
-        self, sandbox: Sandbox, chat_id: str, path: str, content: bytes
-    ) -> None:
+    async def write_file(self, sandbox: Sandbox, chat_id: str, path: str, content: bytes) -> None:
         """Write a file to the sandbox."""
         full_path = _validate_path(chat_id, path)
         await self._write_file_raw(sandbox, full_path, content)
@@ -348,7 +443,8 @@ class SandboxManager:
         if size > MAX_COPY_BYTES:
             logger.warning(
                 "copy_host_file: %s too large (%d bytes), skipping sandbox copy",
-                host_path.name, size,
+                host_path.name,
+                size,
             )
             return False
 
@@ -364,9 +460,7 @@ class SandboxManager:
         await self.write_file(sandbox, chat_id, dest_name, content)
         return True
 
-    async def list_files(
-        self, sandbox: Sandbox, chat_id: str, path: str = "."
-    ) -> list[FileInfo]:
+    async def list_files(self, sandbox: Sandbox, chat_id: str, path: str = ".") -> list[FileInfo]:
         """List files in a chat's workspace directory."""
         base = f"/workspace/{chat_id}"
         if path and path != ".":
@@ -375,12 +469,16 @@ class SandboxManager:
             target = base
 
         # POSIX-compatible listing: works on both GNU and BusyBox find
+        quoted_target = shlex.quote(target)
         result = await self._exec(
             sandbox,
-            f"cd {target} 2>/dev/null; for f in *; do [ -e \"$f\" ] || continue; "
-            f"case \"$f\" in _run.*) continue;; esac; "
-            f"if [ -d \"$f\" ]; then echo \"0 d $f\"; else wc -c < \"$f\" | tr -d ' '; echo \" f $f\"; fi; done",
+            f'cd {quoted_target} 2>/dev/null || exit 1; for f in *; do [ -e "$f" ] || continue; '
+            f'case "$f" in _run-*) continue;; esac; '
+            f'if [ -d "$f" ]; then echo "0 d $f"; '
+            f'else size=$(wc -c < "$f" | tr -d "[:space:]"); echo "$size f $f"; fi; done',
         )
+        if result["exit_code"] != 0:
+            raise FileNotFoundError(f"Sandbox path not found: {path}")
         files = []
         for line in result["stdout"].strip().split("\n"):
             if not line:
@@ -391,12 +489,14 @@ class SandboxManager:
             size, ftype, name = parts
             if name == "." or name == posixpath.basename(target):
                 continue
-            files.append(FileInfo(
-                name=name,
-                path=posixpath.join(path if path != "." else "", name),
-                size=int(size) if size.isdigit() else 0,
-                is_dir=ftype == "d",
-            ))
+            files.append(
+                FileInfo(
+                    name=name,
+                    path=posixpath.join(path if path != "." else "", name),
+                    size=int(size) if size.isdigit() else 0,
+                    is_dir=ftype == "d",
+                )
+            )
         return files
 
     async def stop(self, sandbox: Sandbox, db: AsyncSession) -> None:
@@ -409,6 +509,18 @@ class SandboxManager:
         await db.commit()
 
     def _stop_sync(self, container_id: str) -> None:
+        if self.executor_url:
+            try:
+                self._remote_request(
+                    "POST",
+                    "/v1/container/stop",
+                    json={"container_id": container_id},
+                    timeout=20,
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 404:
+                    raise
+            return
         try:
             container = self.client.containers.get(container_id)
             container.stop(timeout=10)
@@ -417,9 +529,7 @@ class SandboxManager:
 
     async def destroy(self, user_id: UUID, db: AsyncSession) -> None:
         """Destroy sandbox completely — container, volume, committed image, DB record."""
-        result = await db.execute(
-            select(Sandbox).where(Sandbox.user_id == user_id)
-        )
+        result = await db.execute(select(Sandbox).where(Sandbox.user_id == user_id))
         sandbox = result.scalar_one_or_none()
         if not sandbox:
             return
@@ -429,6 +539,16 @@ class SandboxManager:
         await db.commit()
 
     def _destroy_sync(self, sandbox: Sandbox) -> None:
+        if self.executor_url:
+            user_key = sandbox.container_name.removeprefix("quip-sandbox-")
+            self._remote_request(
+                "POST",
+                "/v1/container/destroy",
+                json={"container_id": sandbox.container_id, "user_key": user_key},
+                timeout=30,
+            )
+            return
+
         # Remove container
         try:
             container = self.client.containers.get(sandbox.container_id)
@@ -440,7 +560,11 @@ class SandboxManager:
         if sandbox.volume_name:
             if QUIP_HOST_SANDBOX_DIR:
                 # Host bind mount — delete directory on host via container path
-                uid_short = sandbox.volume_name.rstrip("/").split("/")[-1] if "/" in sandbox.volume_name else sandbox.volume_name
+                uid_short = (
+                    sandbox.volume_name.rstrip("/").split("/")[-1]
+                    if "/" in sandbox.volume_name
+                    else sandbox.volume_name
+                )
                 if uid_short:
                     shutil.rmtree(f"{CONTAINER_SANDBOX_DIR}/{uid_short}", ignore_errors=True)
             else:
@@ -465,32 +589,96 @@ class SandboxManager:
 
     # --- Internal helpers ---
 
+    def _remote_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float = 60,
+        **kwargs,
+    ) -> httpx.Response:
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers["Authorization"] = f"Bearer {self.executor_token}"
+        with httpx.Client(timeout=timeout) as client:
+            response = client.request(
+                method,
+                f"{self.executor_url}{path}",
+                headers=headers,
+                **kwargs,
+            )
+        response.raise_for_status()
+        return response
+
+    def _execution_lock(self, sandbox: Sandbox) -> asyncio.Lock:
+        key = str(sandbox.id or sandbox.user_id or sandbox.container_name)
+        return self._execution_locks.setdefault(key, asyncio.Lock())
+
+    @staticmethod
+    def _validated_packages(packages: list[str]) -> list[str]:
+        if len(packages) > 50:
+            raise ValueError("Too many packages requested")
+        result = []
+        for package in packages:
+            value = package.strip()
+            if not value or len(value) > 200 or value.startswith("-"):
+                raise ValueError(f"Invalid package specifier: {package!r}")
+            if any(ord(char) < 32 or ord(char) == 127 for char in value):
+                raise ValueError(f"Invalid package specifier: {package!r}")
+            result.append(value)
+        return result
+
     async def _exec(
         self,
         sandbox: Sandbox,
         cmd: str,
-        workdir: Optional[str] = None,
+        workdir: str | None = None,
         timeout: int = 30,
     ) -> dict:
         """Execute a command inside the container."""
-        return await asyncio.to_thread(
-            self._exec_sync, sandbox, cmd, workdir, timeout
-        )
+        return await asyncio.to_thread(self._exec_sync, sandbox, cmd, workdir, timeout)
 
     def _exec_sync(
         self,
         sandbox: Sandbox,
         cmd: str,
-        workdir: Optional[str] = None,
+        workdir: str | None = None,
         timeout: int = 30,
     ) -> dict:
         try:
+            if self.executor_url:
+                response = self._remote_request(
+                    "POST",
+                    "/v1/exec",
+                    json={
+                        "container_id": sandbox.container_id,
+                        "command": cmd,
+                        "workdir": workdir,
+                        "timeout": max(1, int(timeout)),
+                    },
+                    timeout=max(15, int(timeout) + 10),
+                )
+                return response.json()
+
             container = self._get_container(sandbox)
+            timeout_seconds = max(1, int(timeout))
             exit_code, output = container.exec_run(
-                ["bash", "-c", cmd],
+                [
+                    "timeout",
+                    "--signal=TERM",
+                    "--kill-after=2s",
+                    f"{timeout_seconds}s",
+                    "bash",
+                    "-lc",
+                    cmd,
+                ],
                 workdir=workdir,
                 demux=True,
-                environment={"PYTHONDONTWRITEBYTECODE": "1"},
+                environment={
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": "/workspace/.quip/deps/python",
+                    "NODE_PATH": "/workspace/.quip/deps/node/node_modules",
+                    "PATH": "/workspace/.quip/deps/node/node_modules/.bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+                },
             )
             stdout = (output[0] or b"").decode("utf-8", errors="replace")
             stderr = (output[1] or b"").decode("utf-8", errors="replace")
@@ -504,14 +692,21 @@ class SandboxManager:
         except Exception as e:
             return {"stdout": "", "stderr": str(e), "exit_code": 1}
 
-    async def _write_file_raw(
-        self, sandbox: Sandbox, full_path: str, content: bytes
-    ) -> None:
+    async def _write_file_raw(self, sandbox: Sandbox, full_path: str, content: bytes) -> None:
         await asyncio.to_thread(self._write_file_sync, sandbox, full_path, content)
 
-    def _write_file_sync(
-        self, sandbox: Sandbox, full_path: str, content: bytes
-    ) -> None:
+    def _write_file_sync(self, sandbox: Sandbox, full_path: str, content: bytes) -> None:
+        if self.executor_url:
+            self._remote_request(
+                "POST",
+                "/v1/file/write",
+                params={"container_id": sandbox.container_id, "path": full_path},
+                content=content,
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=120,
+            )
+            return
+
         container = self._get_container(sandbox)
         dirname = posixpath.dirname(full_path)
         filename = posixpath.basename(full_path)
@@ -533,41 +728,47 @@ class SandboxManager:
         await asyncio.to_thread(self._connect_network_sync, sandbox)
 
     def _connect_network_sync(self, sandbox: Sandbox) -> None:
+        if self.executor_url:
+            raise RuntimeError("Remote installs must use the executor's atomic install endpoint")
+
         # Ensure install network exists
         try:
             network = self.client.networks.get(INSTALL_NETWORK)
         except NotFound:
             network = self.client.networks.create(INSTALL_NETWORK, driver="bridge")
-        self._get_container(sandbox)
-        network.connect(sandbox.container_id)
+        container = self._get_container(sandbox)
+        sandbox.container_id = container.id
+        self._network_enabled_containers.add(container.id)
+        try:
+            try:
+                self.client.networks.get("none").disconnect(container.id, force=True)
+            except (NotFound, APIError):
+                pass
+            network.connect(container.id)
+        except Exception:
+            self._restore_local_offline_network(container.id)
+            raise
 
     async def _disconnect_install_network(self, sandbox: Sandbox) -> None:
         await asyncio.to_thread(self._disconnect_network_sync, sandbox)
 
     def _disconnect_network_sync(self, sandbox: Sandbox) -> None:
+        if self.executor_url:
+            raise RuntimeError("Remote installs must use the executor's atomic install endpoint")
+
+        self._restore_local_offline_network(sandbox.container_id)
+
+    def _restore_local_offline_network(self, container_id: str) -> None:
         try:
-            network = self.client.networks.get(INSTALL_NETWORK)
-            network.disconnect(sandbox.container_id, force=True)
+            self.client.networks.get(INSTALL_NETWORK).disconnect(container_id, force=True)
         except (NotFound, APIError):
             pass
-
-    async def _commit(
-        self, sandbox: Sandbox, db: Optional[AsyncSession] = None
-    ) -> None:
-        """Commit container state to a per-user image tag."""
-        tag = f"quip-sandbox-{sandbox.container_name}:latest"
-        await asyncio.to_thread(self._commit_sync, sandbox.container_id, tag)
-        sandbox.image_tag = tag
-        if db:
-            await db.commit()
-
-    def _commit_sync(self, container_id: str, tag: str) -> None:
         try:
-            container = self.client.containers.get(container_id)
-            repo, tag_name = tag.rsplit(":", 1)
-            container.commit(repository=repo, tag=tag_name)
-        except NotFound:
-            logger.warning(f"Cannot commit: container {container_id[:12]} not found")
+            self.client.networks.get("none").connect(container_id)
+        except (NotFound, APIError):
+            pass
+        finally:
+            self._network_enabled_containers.discard(container_id)
 
 
 # Singleton
@@ -587,26 +788,29 @@ async def sandbox_cleanup_loop() -> None:
             from quip.services.skill_store import get_skill_setting
 
             # Phase 1: stop running containers idle longer than idle_timeout
-            idle_timeout = int(get_skill_setting("sandbox", "idle_timeout", None) or get_setting("sandbox_idle_timeout", "600"))
-            stop_cutoff = datetime.now(timezone.utc).timestamp() - idle_timeout
+            idle_timeout = int(
+                get_skill_setting("sandbox", "idle_timeout", None) or get_setting("sandbox_idle_timeout", "600")
+            )
+            stop_cutoff = datetime.now(UTC).timestamp() - idle_timeout
 
             async with async_session() as db:
-                result = await db.execute(
-                    select(Sandbox).where(Sandbox.status == "running")
-                )
+                result = await db.execute(select(Sandbox).where(Sandbox.status == "running"))
                 for sb in result.scalars().all():
                     if sb.last_active_at and sb.last_active_at.timestamp() < stop_cutoff:
                         logger.info(f"Stopping idle sandbox: {sb.container_name}")
                         await sandbox_manager.stop(sb, db)
 
-            # Phase 2: destroy stopped containers after a longer grace period
-            destroy_timeout = int(get_skill_setting("sandbox", "destroy_timeout", None) or get_setting("sandbox_destroy_timeout", "604800"))
-            destroy_cutoff = datetime.now(timezone.utc).timestamp() - destroy_timeout
+            # Stopping a runtime is safe; deleting workspace files referenced by old
+            # chats is not. Destructive cleanup is opt-in only.
+            destroy_timeout = int(
+                get_skill_setting("sandbox", "destroy_timeout", None) or get_setting("sandbox_destroy_timeout", "0")
+            )
+            if destroy_timeout <= 0:
+                continue
+            destroy_cutoff = datetime.now(UTC).timestamp() - destroy_timeout
 
             async with async_session() as db:
-                result = await db.execute(
-                    select(Sandbox).where(Sandbox.status == "stopped")
-                )
+                result = await db.execute(select(Sandbox).where(Sandbox.status == "stopped"))
                 for sb in result.scalars().all():
                     if sb.last_active_at and sb.last_active_at.timestamp() < destroy_cutoff:
                         logger.info(f"Destroying stale stopped sandbox: {sb.container_name}")

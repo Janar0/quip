@@ -30,22 +30,52 @@ if (typeof window !== 'undefined') {
 
 export function getHljs() { return _hljs; }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeUrl(value: string, allowMailto = true): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  try {
+    const url = new URL(trimmed, 'https://quip.invalid');
+    if (url.protocol === 'http:' || url.protocol === 'https:' || (allowMailto && url.protocol === 'mailto:')) {
+      return trimmed;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // Escape raw HTML tokens — prevents <style>/<script> injection from model output
 // (html:false is broken in marked v17, so we override the renderer directly)
 renderer.html = function ({ text }: { text: string }) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escapeHtml(text);
 };
 
 // Intercept sandbox:/ links and turn them into real API download URLs
 renderer.link = function ({ href, text }: { href: string; title?: string | null; text: string }) {
   if (href?.startsWith('sandbox:/')) {
     const filename = href.slice('sandbox:/'.length).replace(/^\/+/, '');
-    const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('access_token') ?? '') : '';
-    const url = `/api/sandbox/${_chatId}/file/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+    const url = `/api/sandbox/${encodeURIComponent(_chatId)}/file/${encodeURIComponent(filename)}`;
     return `<a href="${url}" target="_blank" rel="noopener" class="prose-link">${text}</a>`;
   }
-  const safe = href ? href.replace(/"/g, '&quot;') : '';
-  return `<a href="${safe}" target="_blank" rel="noopener">${text}</a>`;
+  const safe = href ? safeUrl(href) : null;
+  if (!safe) return text;
+  return `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+};
+
+renderer.image = function ({ href, title, text }: { href: string; title?: string | null; text: string }) {
+  const safe = safeUrl(href, false);
+  if (!safe) return escapeHtml(text);
+  const safeTitle = title ? ` title="${escapeHtml(title)}"` : '';
+  return `<img src="${escapeHtml(safe)}" alt="${escapeHtml(text)}"${safeTitle} loading="lazy" />`;
 };
 
 // Code blocks with syntax highlighting + copy button
@@ -76,7 +106,7 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
 
 // Inline code
 renderer.codespan = function ({ text }: { text: string }) {
-  return `<code class="inline-code">${text}</code>`;
+  return `<code class="inline-code">${escapeHtml(text)}</code>`;
 };
 
 marked.setOptions({ renderer });
@@ -189,14 +219,6 @@ function isSafeUrl(url: string): boolean {
   } catch {
     return false;
   }
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 /** Primary source info — one authoritative link pinned at the top of a search answer. */
@@ -430,8 +452,11 @@ function renderCitations(html: string, sources: SourceInfo[]): string {
   const renderOne = (n: number): string => {
     const src = sourceMap.get(n);
     if (!src) return `<sup class="citation">[${n}]</sup>`;
-    const escaped = src.title.replace(/"/g, '&quot;');
-    return `<a href="${src.url}" target="_blank" rel="noopener" class="source-badge" title="${escaped}"><img src="https://www.google.com/s2/favicons?domain=${src.domain}&amp;sz=32" alt="" /></a>`;
+    const url = safeUrl(src.url);
+    if (!url) return `<sup class="citation">[${n}]</sup>`;
+    const escaped = escapeHtml(src.title);
+    const domain = encodeURIComponent(src.domain);
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="source-badge" title="${escaped}"><img src="https://www.google.com/s2/favicons?domain=${domain}&amp;sz=32" alt="" /></a>`;
   };
 
   return html.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g, (_full, numsStr: string) => {
@@ -441,22 +466,6 @@ function renderCitations(html: string, sources: SourceInfo[]): string {
       .filter((n) => !Number.isNaN(n));
     return nums.map(renderOne).join('');
   });
-}
-
-function appendAuthTokenToMediaUrls(html: string): string {
-  // Find /api/images/... and /api/audio/... URLs in href/src and append token if missing.
-  if (typeof localStorage === 'undefined') return html;
-  const token = localStorage.getItem('access_token') || '';
-  if (!token) return html;
-  const enc = encodeURIComponent(token);
-  return html.replace(
-    /(src|href)=(["'])((?:https?:\/\/[^"'\s]+)?\/api\/(?:images|audio|files)\/[^"'\s]+?)\2/gi,
-    (_m, attr, q, url) => {
-      if (/[?&]token=/.test(url)) return `${attr}=${q}${url}${q}`;
-      const sep = url.includes('?') ? '&' : '?';
-      return `${attr}=${q}${url}${sep}token=${enc}${q}`;
-    },
-  );
 }
 
 export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: string): string {
@@ -475,7 +484,5 @@ export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: st
   html = renderBareLaTeX(html);
   // Style citation markers (with source badges if available)
   html = renderCitations(html, sources ?? []);
-  // Auth-protect media URLs emitted by the model in-line
-  html = appendAuthTokenToMediaUrls(html);
   return html;
 }

@@ -1,20 +1,19 @@
 """Tests for RAG — cosine similarity, MMR, dedup, retrieval, and context formatting."""
-import pytest
-from uuid import UUID
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from quip.core.config import set_setting
 from quip.core.vector_utils import cosine_similarity
+from quip.models.chat import Chat
+from quip.models.file import DocumentChunk, File
+from quip.models.user import User
 from quip.services.rag import (
+    _mmr_rerank,
+    _score_rows,
     format_rag_context,
     retrieve_context,
-    _score_rows,
-    _mmr_rerank,
 )
-from quip.core.config import set_setting
-from quip.models.file import File, DocumentChunk
-from quip.models.user import User
-from quip.models.chat import Chat
-
 
 # ── Unit tests: cosine ──────────────────────────────────────────────────────
 
@@ -195,7 +194,9 @@ async def test_retrieve_context_ranks_by_similarity(db_session):
 
     with patch("quip.services.rag.get_embeddings", new_callable=AsyncMock,
                return_value=[[0.9, 0.1, 0.0]]):
-        results = await retrieve_context("What is Python?", chat.id, db_session, top_k=2)
+        results = await retrieve_context(
+            "What is Python?", chat.id, user.id, db_session, top_k=2
+        )
 
     assert len(results) == 2
     assert "Python" in results[0]["content"]
@@ -213,7 +214,7 @@ async def test_retrieve_context_no_documents(db_session):
     db_session.add(chat)
     await db_session.commit()
 
-    results = await retrieve_context("anything", chat.id, db_session)
+    results = await retrieve_context("anything", chat.id, user.id, db_session)
     assert results == []
 
 
@@ -261,11 +262,96 @@ async def test_retrieve_context_hash_dedup(db_session):
 
     with patch("quip.services.rag.get_embeddings", new_callable=AsyncMock,
                return_value=[[1.0, 0.0]]):
-        results = await retrieve_context("test", chat.id, db_session, top_k=5)
+        results = await retrieve_context(
+            "test", chat.id, user.id, db_session, top_k=5
+        )
 
     # Should have 2 results: duplicate (best score only) + unique
     contents = [r["content"] for r in results]
     assert contents.count("Duplicate content here") == 1
+
+
+@pytest.mark.asyncio
+async def test_cross_chat_rag_never_reads_another_users_chunks(db_session):
+    """Cross-chat retrieval remains restricted to the requesting tenant."""
+    set_setting("rag_cross_chat", "true")
+    owner = User(
+        email="rag-owner@test.dev",
+        username="rag-owner",
+        name="RAG Owner",
+        role="user",
+    )
+    other = User(
+        email="rag-other@test.dev",
+        username="rag-other",
+        name="RAG Other",
+        role="user",
+    )
+    db_session.add_all([owner, other])
+    await db_session.flush()
+
+    current_chat = Chat(user_id=owner.id, title="Current")
+    owner_other_chat = Chat(user_id=owner.id, title="Owner other chat")
+    foreign_chat = Chat(user_id=other.id, title="Foreign chat")
+    db_session.add_all([current_chat, owner_other_chat, foreign_chat])
+    await db_session.flush()
+
+    owner_file = File(
+        user_id=owner.id,
+        chat_id=owner_other_chat.id,
+        filename="owner.txt",
+        content_type="text/plain",
+        size=20,
+        file_type="document",
+        storage_path="owner/owner.txt",
+        embedding_status="completed",
+    )
+    foreign_file = File(
+        user_id=other.id,
+        chat_id=foreign_chat.id,
+        filename="foreign.txt",
+        content_type="text/plain",
+        size=20,
+        file_type="document",
+        storage_path="other/foreign.txt",
+        embedding_status="completed",
+    )
+    db_session.add_all([owner_file, foreign_file])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            DocumentChunk(
+                file_id=owner_file.id,
+                chat_id=owner_other_chat.id,
+                chunk_index=0,
+                content="Owner cross-chat context",
+                embedding=[0.0, 1.0],
+                token_count=4,
+            ),
+            DocumentChunk(
+                file_id=foreign_file.id,
+                chat_id=foreign_chat.id,
+                chunk_index=0,
+                content="Foreign tenant secret",
+                embedding=[1.0, 0.0],
+                token_count=4,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    with patch(
+        "quip.services.rag.get_embeddings",
+        new_callable=AsyncMock,
+        return_value=[[1.0, 0.0]],
+    ):
+        results = await retrieve_context(
+            "find context", current_chat.id, owner.id, db_session, top_k=5
+        )
+
+    assert [result["content"] for result in results] == [
+        "Owner cross-chat context"
+    ]
 
 
 # ── Helper ──────────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { messages } from './chat';
 import type { Artifact } from './chat';
+import { activeDrawer, closeDrawer, openDrawer } from './drawer';
 
 export const selectedArtifactId = writable<string | null>(null);
-export const artifactPanelOpen = writable<boolean>(false);
+export const artifactPanelOpen = derived(activeDrawer, ($drawer) => $drawer === 'artifacts');
 
 export const allArtifacts = derived(messages, ($msgs) => {
   const all: Artifact[] = [];
@@ -28,9 +29,9 @@ export const artifactVersions = derived(allArtifacts, ($all) => {
 
 export function selectArtifact(id: string) {
   selectedArtifactId.set(id);
-  artifactPanelOpen.set(true);
+  openDrawer('artifacts');
 }
 
 export function closeArtifactPanel() {
-  artifactPanelOpen.set(false);
+  if (get(activeDrawer) === 'artifacts') closeDrawer();
 }

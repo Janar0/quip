@@ -14,14 +14,47 @@ services:
     environment:
       DATABASE_URL: sqlite+aiosqlite:///quip.db
       CORS_ORIGINS: http://localhost:5173
-      QUIP_HOST_SANDBOX_DIR: ${PWD}/data/sandbox
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
+      SANDBOX_EXECUTOR_URL: http://executor:8765
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-dev-executor-change-in-production}
     ports:
       - "8000:8000"
-    depends_on: {}
+    depends_on:
+      executor:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  executor:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: uvicorn quip.executor_app:app --host 0.0.0.0 --port 8765 --reload
+    environment:
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-dev-executor-change-in-production}
+      QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
+      EXECUTOR_WORKSPACE_ROOT: /executor/workspaces
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}/data/sandbox:/app/data/sandbox
+      - ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}:/executor/workspaces
+    depends_on:
+      sandbox_build:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8765/health\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  sandbox_build:
+    image: quip-sandbox:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    command: ["true"]
 
   postgres:
     profiles: ["production"]

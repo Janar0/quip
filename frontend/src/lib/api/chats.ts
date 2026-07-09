@@ -5,6 +5,7 @@ import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { UploadedFile } from '$lib/api/files';
+import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
 
 const CHAT_PAGE_SIZE = 50;
 let chatOffset = 0;
@@ -13,7 +14,9 @@ let hasMoreChats = true;
 export async function loadChats(): Promise<void> {
   chatOffset = 0;
   hasMoreChats = true;
-  const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=0`);
+  const workspaceId = get(selectedWorkspaceId);
+  const scope = workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : '';
+  const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=0${scope}`);
   if (res.ok) {
     const data: unknown[] = await res.json();
     chatList.set(data as import('$lib/stores/chat').ChatInfo[]);
@@ -28,7 +31,9 @@ export function canLoadMoreChats(): boolean {
 export async function loadMoreChats(): Promise<void> {
   if (!hasMoreChats) return;
   chatOffset += CHAT_PAGE_SIZE;
-  const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=${chatOffset}`);
+  const workspaceId = get(selectedWorkspaceId);
+  const scope = workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : '';
+  const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=${chatOffset}${scope}`);
   if (res.ok) {
     const data: unknown[] = await res.json();
     chatList.update((existing) => [...existing, ...(data as import('$lib/stores/chat').ChatInfo[])]);
@@ -43,6 +48,10 @@ export async function loadChat(chatId: string): Promise<void> {
     if (res.ok) {
       const data = await res.json();
       activeChat.set(data);
+      if (data.workspace_id && data.workspace_id !== get(selectedWorkspaceId)) {
+        selectWorkspace(data.workspace_id);
+        await loadChats();
+      }
       // Map tool_calls from DB to toolExecutions for UI, and search_images to searchImages
       const msgs = (data.messages ?? []).map((m: Record<string, unknown>) => {
         const mapped: Record<string, unknown> = { ...m };
@@ -88,7 +97,9 @@ export interface SearchResult {
 }
 
 export async function searchChats(query: string): Promise<SearchResult[]> {
-  const res = await api(`/api/chats/search/messages?q=${encodeURIComponent(query)}`);
+  const workspaceId = get(selectedWorkspaceId);
+  const scope = workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : '';
+  const res = await api(`/api/chats/search/messages?q=${encodeURIComponent(query)}${scope}`);
   if (res.ok) {
     const data = await res.json();
     return data.results ?? [];
@@ -433,7 +444,7 @@ function updateStreamingContent(
   );
 }
 
-export async function streamChat(text: string, chatId?: string, fileIds?: string[], uploadedFiles?: UploadedFile[], branchFromMessageId?: string, deepResearch = false): Promise<string | undefined> {
+export async function streamChat(text: string, chatId?: string, fileIds?: string[], uploadedFiles?: UploadedFile[], branchFromMessageId?: string, deepResearch = false, workspaceId?: string): Promise<string | undefined> {
   const model = get(selectedModel);
   const mode = get(modePreference);
   const ctrl = new AbortController();
@@ -487,15 +498,15 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
       max_tokens: 4096,
     };
     if (fileIds?.length) body.file_ids = fileIds;
+    if (workspaceId) body.workspace_id = workspaceId;
     if (mode !== 'auto') body.mode_hint = mode;
     if (deepResearch) body.deep_research = true;
     if (branchFromMessageId) body.branch_from_message_id = branchFromMessageId;
 
-    const res = await fetch('/api/chat/completions', {
+    const res = await api('/api/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('access_token')}`,
       },
       body: JSON.stringify(body),
       signal: ctrl.signal,
@@ -548,11 +559,10 @@ export async function regenerateMessage(chatId: string, messageId: string, model
   ]);
 
   try {
-    const res = await fetch('/api/chat/regenerate', {
+    const res = await api('/api/chat/regenerate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('access_token')}`,
       },
       body: JSON.stringify({ chat_id: chatId, message_id: messageId, model: selectedMdl }),
       signal: ctrl.signal,
@@ -621,11 +631,10 @@ export async function startDeepResearch(chatId: string, query: string): Promise<
   ]);
 
   try {
-    const res = await fetch('/api/chat/completions', {
+    const res = await api('/api/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('access_token')}`,
       },
       body: JSON.stringify({
         chat_id: chatId || null,

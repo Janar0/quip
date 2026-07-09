@@ -5,7 +5,8 @@ from pathlib import Path
 
 import httpx
 
-from quip.providers.openrouter import OPENROUTER_BASE, OPENROUTER_API_KEY
+from quip.providers.openrouter import OPENROUTER_API_KEY, OPENROUTER_BASE
+from quip.services.url_security import safe_get
 
 GENERATED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "generated"
 
@@ -18,6 +19,7 @@ async def generate_image(
     model: str = "",
     api_key: str = "",
     db=None,
+    user_id=None,
 ) -> dict:
     """Call OpenRouter image generation and save the result to disk.
 
@@ -42,7 +44,7 @@ async def generate_image(
 
     if image_urls:
         for url in image_urls:
-            img_data = await _read_image_to_base64(url, db)
+            img_data = await _read_image_to_base64(url, db, user_id=user_id)
             if img_data:
                 mime, b64data = img_data
                 content.append({
@@ -140,7 +142,7 @@ async def generate_image(
             # Shouldn't happen but handle gracefully
             try:
                 async with httpx.AsyncClient(timeout=30.0) as dl:
-                    r = await dl.get(img_url)
+                    r = await safe_get(dl, img_url)
                     r.raise_for_status()
                     img_bytes = r.content
                     ext = "png"
@@ -167,7 +169,11 @@ async def generate_image(
     }
 
 
-async def _read_image_to_base64(url: str, db=None) -> tuple[str, str] | None:
+async def _read_image_to_base64(
+    url: str,
+    db=None,
+    user_id=None,
+) -> tuple[str, str] | None:
     """Read an image from a local path or external URL. Returns (mime_type, base64_data)."""
     if url.startswith("/api/images/"):
         filename = url.removeprefix("/api/images/").split("?")[0]
@@ -184,14 +190,18 @@ async def _read_image_to_base64(url: str, db=None) -> tuple[str, str] | None:
 
     if url.startswith("/api/files/"):
         file_id_str = url.split("/api/files/")[1].split("?")[0]
-        if db:
+        if db and user_id is not None:
             try:
                 from uuid import UUID
+
                 from sqlalchemy import select
+
                 from quip.models.file import File
                 from quip.routers.files import UPLOAD_DIR
                 file_uuid = UUID(file_id_str)
-                result = await db.execute(select(File).where(File.id == file_uuid))
+                result = await db.execute(
+                    select(File).where(File.id == file_uuid, File.user_id == user_id)
+                )
                 file_record = result.scalar_one_or_none()
                 if file_record:
                     file_path = UPLOAD_DIR / file_record.storage_path
@@ -206,7 +216,7 @@ async def _read_image_to_base64(url: str, db=None) -> tuple[str, str] | None:
     if url.startswith(("http://", "https://")):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(url)
+                resp = await safe_get(client, url)
                 if resp.status_code == 200:
                     content_type = resp.headers.get("content-type", "image/png").split(";")[0].strip()
                     return content_type, base64.b64encode(resp.content).decode()

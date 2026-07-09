@@ -3,11 +3,23 @@ import type { ToolExecution } from '$lib/stores/sandbox';
 
 export interface ChatInfo {
   id: string;
+  workspace_id: string | null;
   title: string;
   model: string | null;
   pinned: boolean;
   created_at: string;
   updated_at: string;
+  runs?: ChatRunInfo[];
+}
+
+export interface ChatRunInfo {
+  id: string;
+  assistant_message_id: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  model: string | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 export interface Artifact {

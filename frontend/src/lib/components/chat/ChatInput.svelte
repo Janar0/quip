@@ -10,10 +10,12 @@
   let {
     onSend,
     chatId,
+    workspaceId,
     variant = 'chat',
   }: {
     onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[]) => void;
     chatId?: string;
+    workspaceId?: string;
     variant?: 'chat' | 'start';
   } = $props();
 
@@ -75,7 +77,7 @@
     attachedFiles = [...attachedFiles, ...newAttachments];
 
     try {
-      const uploaded = await uploadFiles(fileArray, chatId);
+      const uploaded = await uploadFiles(fileArray, chatId, workspaceId);
       attachedFiles = attachedFiles.map((att) => {
         const batchIdx = batchIds.indexOf(att._id);
         if (batchIdx < 0) return att;

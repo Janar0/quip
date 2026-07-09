@@ -27,6 +27,5 @@ export async function uploadFile(chatId: string, file: File): Promise<boolean> {
 }
 
 export function getFileUrl(chatId: string, path: string): string {
-  const token = localStorage.getItem('access_token');
-  return `/api/sandbox/${chatId}/file/${encodeURIComponent(path)}?token=${token}`;
+  return `/api/sandbox/${chatId}/file/${encodeURIComponent(path)}`;
 }

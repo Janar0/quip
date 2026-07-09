@@ -3,7 +3,7 @@
   import '$lib/i18n';
   import { isLoading } from 'svelte-i18n';
   import { onMount } from 'svelte';
-  import { authToken, authLoading } from '$lib/stores/auth';
+  import { authLoading } from '$lib/stores/auth';
   import { fetchMe } from '$lib/api/auth';
   import { tryRefresh } from '$lib/api/client';
   import { Toaster } from 'svelte-sonner';
@@ -17,28 +17,23 @@
   const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min — before 60 min access token expires
 
   async function silentRefresh() {
-    const hasRefreshToken = typeof localStorage !== 'undefined' && !!localStorage.getItem('refresh_token');
-    if (hasRefreshToken) await tryRefresh();
+    await tryRefresh();
   }
 
   onMount(() => {
     document.getElementById('splash')?.remove();
     setTheme($theme);
-    if ($authToken) {
-      // Fire-and-forget — auth bootstrap shouldn't block cleanup registration
-      (async () => {
-        try {
-          await fetchMe();
-          await loadWidgetTemplates();
-        } catch (e) {
-          console.error('Bootstrap failed', e);
-        } finally {
-          authLoading.set(false);
-        }
-      })();
-    } else {
-      authLoading.set(false);
-    }
+    // Fire-and-forget — auth bootstrap shouldn't block cleanup registration.
+    (async () => {
+      try {
+        await fetchMe();
+        await loadWidgetTemplates();
+      } catch (e) {
+        console.error('Bootstrap failed', e);
+      } finally {
+        authLoading.set(false);
+      }
+    })();
 
     // Refresh token on tab focus (user returns to tab after being away)
     const onVisibility = () => {

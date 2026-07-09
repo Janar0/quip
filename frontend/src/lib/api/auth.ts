@@ -1,4 +1,4 @@
-import { authToken, currentUser } from '$lib/stores/auth';
+import { currentUser } from '$lib/stores/auth';
 import { api } from '$lib/api/client';
 
 export interface LoginData {
@@ -11,12 +11,25 @@ export interface RegisterData {
   username: string;
   name: string;
   password: string;
+  bootstrap_token?: string;
+}
+
+export interface SetupStatus {
+  required: boolean;
+  admin_email_configured: boolean;
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const response = await fetch('/api/auth/setup', { credentials: 'include' });
+  if (!response.ok) return { required: false, admin_email_configured: false };
+  return response.json();
 }
 
 export async function login(data: LoginData): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(data),
   });
 
@@ -25,12 +38,7 @@ export async function login(data: LoginData): Promise<{ ok: boolean; error?: str
     return { ok: false, error: err.detail };
   }
 
-  const tokens = await res.json();
-  authToken.set(tokens.access_token);
-  localStorage.setItem('access_token', tokens.access_token);
-  localStorage.setItem('refresh_token', tokens.refresh_token);
-
-  await fetchMe();
+  if (!(await fetchMe())) return { ok: false, error: 'Account pending approval' };
   return { ok: true };
 }
 
@@ -38,6 +46,7 @@ export async function register(data: RegisterData): Promise<{ ok: boolean; error
   const res = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(data),
   });
 
@@ -46,27 +55,27 @@ export async function register(data: RegisterData): Promise<{ ok: boolean; error
     return { ok: false, error: err.detail };
   }
 
-  const tokens = await res.json();
-  authToken.set(tokens.access_token);
-  localStorage.setItem('access_token', tokens.access_token);
-  localStorage.setItem('refresh_token', tokens.refresh_token);
-
-  await fetchMe();
+  if (!(await fetchMe())) return { ok: false, error: 'Account created and pending approval' };
   return { ok: true };
 }
 
-export async function fetchMe(): Promise<void> {
+export async function fetchMe(): Promise<boolean> {
   const res = await api('/api/auth/me');
   if (res.ok) {
     currentUser.set(await res.json());
+    return true;
+  } else if (res.status === 401 || res.status === 403) {
+    currentUser.set(null);
   }
+  return false;
 }
 
-export function logout(): void {
-  authToken.set(null);
-  currentUser.set(null);
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } finally {
+    currentUser.set(null);
+  }
 }
 
 export async function getUserSettings(): Promise<Record<string, string>> {

@@ -2,21 +2,22 @@
 import asyncio
 import hashlib
 import mimetypes
-import os
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import File as FastAPIFile
 from fastapi.responses import Response
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from quip.core.config import get_bool_setting, get_setting
 from quip.database import get_db
+from quip.models.chat import Chat
+from quip.models.file import DocumentChunk, File
 from quip.models.user import User
-from quip.models.file import File, DocumentChunk
 from quip.services.permissions import get_current_user
-from quip.services.auth import decode_token
-from quip.core.config import get_setting, get_bool_setting
+from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "uploads"
 
@@ -69,8 +70,9 @@ def _normalize_image(data: bytes, content_type: str, max_size: int = 2 * 1024 * 
         return data
     is_jpeg = content_type in ("image/jpeg", "image/jpg")
     try:
-        from PIL import Image, ImageOps
         import io
+
+        from PIL import Image, ImageOps
         img = Image.open(io.BytesIO(data))
 
         # Apply EXIF orientation — physically rotates pixels, strips orientation tag
@@ -102,11 +104,31 @@ def _normalize_image(data: bytes, content_type: str, max_size: int = 2 * 1024 * 
 @router.post("/upload")
 async def upload_files(
     files: list[UploadFile] = FastAPIFile(...),
-    chat_id: str | None = Form(default=None),
+    chat_id: UUID | None = Form(default=None),
+    workspace_id: UUID | None = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload one or more files. Returns file metadata."""
+    chat_uuid = chat_id
+    workspace = None
+    if chat_uuid is not None:
+        chat_result = await db.execute(
+            select(Chat).where(Chat.id == chat_uuid, Chat.user_id == user.id)
+        )
+        chat = chat_result.scalar_one_or_none()
+        if chat is None:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        if chat.workspace_id is None:
+            chat.workspace_id = (await ensure_personal_workspace(user, db)).id
+        if workspace_id is not None and workspace_id != chat.workspace_id:
+            raise HTTPException(status_code=404, detail="Chat not found in workspace")
+        workspace = await get_workspace_for_user(chat.workspace_id, user.id, db)
+    elif workspace_id is not None:
+        workspace = await get_workspace_for_user(workspace_id, user.id, db)
+    else:
+        workspace = await ensure_personal_workspace(user, db)
+
     results = []
     user_dir = UPLOAD_DIR / str(user.id)
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +144,7 @@ async def upload_files(
         if file_type == "image":
             data = _normalize_image(data, content_type)
         elif file_type == "video" and len(data) > VIDEO_MAX_BYTES:
-            raise HTTPException(status_code=413, detail=f"Video file too large (max 100 MB)")
+            raise HTTPException(status_code=413, detail="Video file too large (max 100 MB)")
         elif file_type == "archive":
             archive_max = int(get_setting("archive_max_mb", "150")) * 1024 * 1024
             if len(data) > archive_max:
@@ -156,11 +178,10 @@ async def upload_files(
         else:
             embedding_status = "skipped"
 
-        chat_uuid = UUID(chat_id) if chat_id else None
-
         file_record = File(
             id=file_id,
             user_id=user.id,
+            workspace_id=workspace.id,
             chat_id=chat_uuid,
             filename=upload.filename or "file",
             content_type=content_type,
@@ -209,6 +230,7 @@ async def upload_files(
             "file_type": file_type,
             "content_type": content_type,
             "size": len(data),
+            "workspace_id": str(workspace.id),
         })
 
     await db.commit()
@@ -235,22 +257,10 @@ async def _process_file_background(file_id: UUID):
 @router.get("/{file_id}")
 async def get_file(
     file_id: UUID,
-    request: Request,
-    token: str | None = Query(default=None),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Serve a file. Accepts ?token= query param or Authorization header."""
-    # Auth
-    if token:
-        user = await _auth_from_token(token, db)
-    else:
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            user = await _auth_from_token(auth_header[7:], db)
-        else:
-            raise HTTPException(status_code=401, detail="Not authenticated")
-
-    # Lookup file
+    """Serve a file owned by the authenticated user."""
     result = await db.execute(select(File).where(File.id == file_id, File.user_id == user.id))
     file_record = result.scalar_one_or_none()
     if not file_record:
@@ -292,15 +302,3 @@ async def delete_file(
 
     await db.delete(file_record)
     await db.commit()
-
-
-async def _auth_from_token(token: str, db: AsyncSession) -> User:
-    """Authenticate user from a JWT token string."""
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == UUID(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user

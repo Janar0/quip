@@ -1,6 +1,5 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { artifactPanelOpen } from '$lib/stores/artifacts';
   import { subAgents, isStreaming, messages } from '$lib/stores/chat';
   import type { UploadedFile } from '$lib/api/files';
   import { fly } from 'svelte/transition';
@@ -10,18 +9,21 @@
   import ChatInput from './ChatInput.svelte';
   import ArtifactPanel from '$lib/components/artifacts/ArtifactPanel.svelte';
   import SubAgentPanel from '$lib/components/chat/SubAgentPanel.svelte';
+  import WorkspaceFilesPanel from '$lib/components/workspaces/WorkspaceFilesPanel.svelte';
+  import { activeDrawer, closeDrawer, openDrawer } from '$lib/stores/drawer';
 
   interface Props {
     chatId: string | undefined;
+    workspaceId?: string;
     onSend: (text: string, fileIds?: string[], uploadedFiles?: UploadedFile[]) => void | Promise<void>;
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
     loading?: boolean;
   }
-  let { chatId, onSend, onRegenerate, onEdit, loading = false }: Props = $props();
+  let { chatId, workspaceId, onSend, onRegenerate, onEdit, loading = false }: Props = $props();
 
-  let researchPanelOpen = $state(false);
   let lastUserQuery = $state('');
+  let previousSubAgentCount = 0;
 
   // Capture the last user message text for deep research
   $effect(() => {
@@ -32,11 +34,12 @@
   // Auto-open panel when sub-agents appear, auto-close when done
   $effect(() => {
     const entries = Object.values($subAgents);
-    if (entries.length > 0) {
-      researchPanelOpen = true;
-    } else if (!$isStreaming) {
-      researchPanelOpen = false;
+    if (entries.length > 0 && previousSubAgentCount === 0) {
+      openDrawer('research');
+    } else if (entries.length === 0 && previousSubAgentCount > 0 && !$isStreaming && $activeDrawer === 'research') {
+      closeDrawer();
     }
+    previousSubAgentCount = entries.length;
   });
 
   function declineResearch(messageId: string) {
@@ -50,7 +53,7 @@
   }
 
   function startResearch(_planTitle: string) {
-    researchPanelOpen = true;
+    openDrawer('research');
     startDeepResearch(chatId!, lastUserQuery);
   }
 </script>
@@ -68,37 +71,43 @@
     {/if}
     <div class="absolute left-0 right-0 bottom-0">
       <div class="quip-composer-scrim" aria-hidden="true"></div>
-      <ChatInput {onSend} {chatId} />
+      <ChatInput {onSend} {chatId} {workspaceId} />
     </div>
   </div>
-  {#if $artifactPanelOpen}
+  {#if $activeDrawer === 'artifacts'}
     <div class="border-l border-slate-800/50 w-[480px] min-w-[320px] max-w-[60vw] flex-col hidden md:flex">
       <ArtifactPanel />
     </div>
     <div class="fixed inset-0 z-50 bg-slate-950 flex flex-col md:hidden">
       <button
         class="absolute top-3 right-3 z-10 p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800"
-        onclick={() => artifactPanelOpen.set(false)}
+        onclick={closeDrawer}
         aria-label={$t('artifacts.close')}
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
       <ArtifactPanel />
     </div>
-  {/if}
-  {#if researchPanelOpen}
+  {:else if $activeDrawer === 'research'}
     <div class="border-l border-slate-800/50 w-[420px] min-w-[320px] max-w-[50vw] flex-col hidden md:flex">
-      <SubAgentPanel onClose={() => (researchPanelOpen = false)} />
+      <SubAgentPanel onClose={closeDrawer} />
     </div>
     <div class="fixed inset-0 z-50 bg-slate-950 flex flex-col md:hidden">
       <button
         class="absolute top-3 right-3 z-10 p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800"
-        onclick={() => (researchPanelOpen = false)}
+        onclick={closeDrawer}
         aria-label={$t('common.close')}
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
-      <SubAgentPanel onClose={() => (researchPanelOpen = false)} />
+      <SubAgentPanel onClose={closeDrawer} />
+    </div>
+  {:else if $activeDrawer === 'files' && workspaceId}
+    <div class="border-l w-[380px] min-w-[300px] max-w-[50vw] flex-col hidden md:flex" style="border-color: var(--quip-border)">
+      <WorkspaceFilesPanel {workspaceId} />
+    </div>
+    <div class="fixed inset-0 z-50 flex flex-col md:hidden" style="background: var(--quip-bg)">
+      <WorkspaceFilesPanel {workspaceId} />
     </div>
   {/if}
 </div>

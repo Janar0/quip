@@ -18,6 +18,8 @@
   import { fade, fly } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import { D1, D2, D3, easeOut } from '$lib/motion';
+  import WorkspaceSwitcher from '$lib/components/workspaces/WorkspaceSwitcher.svelte';
+  import { loadWorkspaces, selectedWorkspaceId } from '$lib/stores/workspaces';
 
   let { children } = $props();
   let isAdmin = $derived($currentUser?.role === 'admin');
@@ -144,9 +146,10 @@
   });
 
   onMount(() => {
-    Promise.all([loadChats(), fetchModels(), fetchFeatures()]).catch((e) => {
-      console.error('Initial app load failed', e);
-    });
+    (async () => {
+      await loadWorkspaces();
+      await Promise.all([loadChats(), fetchModels(), fetchFeatures()]);
+    })().catch((e) => console.error('Initial app load failed', e));
 
     const mql = window.matchMedia('(min-width: 768px)');
     const handler = (e: MediaQueryListEvent) => {
@@ -169,8 +172,8 @@
     }
   });
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     goto('/auth/login');
   }
 
@@ -243,10 +246,12 @@
           </button>
         </div>
 
+        <WorkspaceSwitcher onchange={() => { clearSearch(); return loadChats(); }} />
+
         <!-- New Chat Button -->
         <div class="px-3 pt-2 pb-2 shrink-0">
           <a
-            href="/chat"
+            href={$selectedWorkspaceId ? `/chat?workspace=${$selectedWorkspaceId}` : '/chat'}
             class="flex items-center justify-between w-full px-3 py-2.5 rounded-[11px] transition-all active:scale-[0.98] group text-[13.5px] font-medium hover:bg-white/[.06]"
             style="background: rgba(255,255,255,.03); border: 1px solid var(--quip-border-strong); color: var(--quip-text); backdrop-filter: blur(6px);"
             onclick={clearSearch}

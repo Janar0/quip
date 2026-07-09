@@ -10,16 +10,27 @@
   import { exportAsMarkdown } from '$lib/utils/export';
   import ModelSelector from '$lib/components/chat/ModelSelector.svelte';
   import ChatPane from '$lib/components/chat/ChatPane.svelte';
+  import { selectedWorkspaceId } from '$lib/stores/workspaces';
+  import { activeDrawer, closeDrawer, openDrawer } from '$lib/stores/drawer';
 
   let chatId = $derived(page.params.id ?? '');
   let showExportMenu = $state(false);
+  let workspaceId = $derived($activeChat?.workspace_id ?? $selectedWorkspaceId ?? undefined);
 
   $effect(() => {
     if (chatId) loadChat(chatId);
   });
 
   async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = []) {
-    await streamChat(text, chatId, fileIds.length ? fileIds : undefined, uploadedFiles.length ? uploadedFiles : undefined);
+    await streamChat(
+      text,
+      chatId,
+      fileIds.length ? fileIds : undefined,
+      uploadedFiles.length ? uploadedFiles : undefined,
+      undefined,
+      false,
+      workspaceId,
+    );
   }
 
   function handleRegenerate(messageId: string) {
@@ -48,6 +59,7 @@
     onRegenerate={handleRegenerate}
     onEdit={handleEdit}
     loading={$isLoading && !$messages.length}
+    {workspaceId}
   />
   <div class="absolute left-0 right-0 top-0 z-10">
     <div class="quip-header-scrim" aria-hidden="true"></div>
@@ -58,6 +70,16 @@
           <span class="hidden sm:block text-sm text-slate-500 truncate max-w-[200px]">{$activeChat.title}</span>
         {/if}
       </div>
+      {#if workspaceId}
+        <button
+          class="p-2 mr-2 rounded-lg transition-colors backdrop-blur-sm active:scale-[0.95]"
+          style="background: var(--quip-input-bg); border: 1px solid var(--quip-border); color: var(--quip-text-dim)"
+          onclick={(event) => { event.stopPropagation(); $activeDrawer === 'files' ? closeDrawer() : openDrawer('files'); }}
+          title={$t('workspace.files')}
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7.5h7l2 2h9v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z"/><path d="M3 7.5v-2A2.5 2.5 0 0 1 5.5 3H9l2 2h7.5A2.5 2.5 0 0 1 21 7.5v2"/></svg>
+        </button>
+      {/if}
       <!-- Export -->
       <div class="relative">
         <button

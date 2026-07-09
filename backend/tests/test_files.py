@@ -1,10 +1,13 @@
 """Tests for file upload, download, and delete endpoints."""
 import io
-import pytest
 from io import BytesIO
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from quip.core.config import set_setting
+from quip.models.user import User
+from quip.services.auth import create_access_token
 
 
 def _png_bytes():
@@ -77,7 +80,7 @@ async def test_upload_multiple_files(client, auth_headers, tmp_upload_dir):
 
 @pytest.mark.asyncio
 async def test_download_file(client, auth_headers, tmp_upload_dir):
-    """Upload then download via token query param."""
+    """Upload then download with authenticated headers."""
     set_setting("rag_enabled", "false")
     png = _png_bytes()
 
@@ -87,9 +90,8 @@ async def test_download_file(client, auth_headers, tmp_upload_dir):
         files=[("files", ("photo.png", png, "image/png"))],
     )
     file_id = res.json()["files"][0]["id"]
-    token = auth_headers["Authorization"].removeprefix("Bearer ")
 
-    res = await client.get(f"/api/files/{file_id}?token={token}")
+    res = await client.get(f"/api/files/{file_id}", headers=auth_headers)
     assert res.status_code == 200
     assert res.headers["content-type"] == "image/png"
     assert len(res.content) == len(png)
@@ -111,19 +113,56 @@ async def test_delete_file(client, auth_headers, tmp_upload_dir):
     assert res.status_code == 204
 
     # Can't download anymore
-    token = auth_headers["Authorization"].removeprefix("Bearer ")
-    res = await client.get(f"/api/files/{file_id}?token={token}")
+    res = await client.get(f"/api/files/{file_id}", headers=auth_headers)
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_upload_requires_auth(client, tmp_upload_dir):
-    """Upload without auth → 403."""
+    """Upload without auth → 401."""
     res = await client.post(
         "/api/files/upload",
         files=[("files", ("x.png", b"fake", "image/png"))],
     )
-    assert res.status_code == 403
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_another_users_chat(
+    client,
+    auth_headers,
+    db_session,
+    tmp_upload_dir,
+):
+    """A file cannot be attached to a chat owned by another user."""
+    chat_res = await client.post(
+        "/api/chats",
+        headers=auth_headers,
+        json={"title": "Owner chat"},
+    )
+    assert chat_res.status_code == 201
+
+    attacker = User(
+        email="attacker-files@test.dev",
+        username="attacker-files",
+        name="Attacker",
+        role="user",
+    )
+    db_session.add(attacker)
+    await db_session.commit()
+    attacker_headers = {
+        "Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"
+    }
+
+    res = await client.post(
+        "/api/files/upload",
+        headers=attacker_headers,
+        data={"chat_id": chat_res.json()["id"]},
+        files=[("files", ("stolen.txt", b"not allowed", "text/plain"))],
+    )
+
+    assert res.status_code == 404
+    assert not tmp_upload_dir.exists() or not any(tmp_upload_dir.iterdir())
 
 
 @pytest.mark.asyncio
@@ -158,9 +197,10 @@ async def test_image_upload_triggers_ocr_when_rag_enabled(client, auth_headers, 
 
 def _jpeg_with_exif_orientation(width=2, height=1, orientation=6):
     """Create a JPEG with EXIF orientation tag (6 = 90° CW → stored WxH displays as HxW)."""
-    from PIL import Image
     import io
     import struct
+
+    from PIL import Image
 
     img = Image.new("RGB", (width, height), "blue")
     buf = io.BytesIO()
@@ -196,8 +236,7 @@ async def test_upload_applies_exif_orientation(client, auth_headers, tmp_upload_
     file_id = res.json()["files"][0]["id"]
 
     # Download and check dimensions
-    token = auth_headers["Authorization"].removeprefix("Bearer ")
-    res = await client.get(f"/api/files/{file_id}?token={token}")
+    res = await client.get(f"/api/files/{file_id}", headers=auth_headers)
     assert res.status_code == 200
 
     from PIL import Image

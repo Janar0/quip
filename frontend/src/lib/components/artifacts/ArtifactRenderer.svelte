@@ -30,9 +30,7 @@
 {:else if artifact.type === 'mermaid'}
   <MermaidRenderer content={artifact.content} />
 {:else if artifact.type === 'svg'}
-  <div class="p-3 flex justify-center [&_svg]:max-w-full">
-    {@html artifact.content}
-  </div>
+  <HtmlRenderer content={artifact.content} title={artifact.title} allowScripts={false} />
 {:else if artifact.type === 'html'}
   <HtmlRenderer content={artifact.content} title={artifact.title} />
 {:else}

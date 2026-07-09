@@ -11,38 +11,6 @@
   const unsub2 = widgetTemplatesLoaded.subscribe(v => { loaded = v; });
   onDestroy(() => { unsub1(); unsub2(); });
 
-  let rootEl: HTMLDivElement | undefined = $state();
-
-  function appendAuthTokenToMedia(html: string): string {
-    if (typeof localStorage === 'undefined') return html;
-    const token = localStorage.getItem('access_token') || '';
-    if (!token) return html;
-    const enc = encodeURIComponent(token);
-    return html.replace(
-      /((?:https?:\/\/[^\s"'()]+)?\/api\/(?:images|audio|files)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)/g,
-      (url) => {
-        if (/[?&]token=/.test(url)) return url;
-        const sep = url.includes('?') ? '&' : '?';
-        return `${url}${sep}token=${enc}`;
-      },
-    );
-  }
-
-  function extractAndRunScripts(element: HTMLElement) {
-    const scripts = element.querySelectorAll('script');
-    scripts.forEach(s => {
-      const code = s.textContent || '';
-      s.remove();
-      if (!code.trim()) return;
-      try {
-        const fn = new Function('root', code);
-        fn(element);
-      } catch (e) {
-        console.warn('Widget script error:', e);
-      }
-    });
-  }
-
   let renderedHtml = $derived.by(() => {
     const tpl = templates[templateName];
     if (!tpl) {
@@ -52,20 +20,17 @@
     try {
       const body = Mustache.render(tpl.template_html, data);
       const css = tpl.template_css ?? '';
-      const merged = css ? `<style>${css}</style>${body}` : body;
-      return appendAuthTokenToMedia(merged);
+      return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src * data: blob:; media-src * data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;background:transparent;color:#e5e7eb}.widget-card{overflow:hidden}${css}</style></head><body><div class="widget-card"><script>const root=document.querySelector('.widget-card');<\/script>${body}</div></body></html>`;
     } catch {
       return '<div style="padding:0.75rem;color:#f87171;font-size:0.8rem">Template render error</div>';
     }
   });
 
-  $effect(() => {
-    renderedHtml;
-    if (!rootEl) return;
-    extractAndRunScripts(rootEl);
-  });
 </script>
 
-<div bind:this={rootEl} class="widget-card overflow-hidden my-1">
-  {@html renderedHtml}
-</div>
+<iframe
+  srcdoc={renderedHtml}
+  sandbox="allow-scripts allow-downloads"
+  title={templateName}
+  class="widget-card block w-full min-h-72 overflow-hidden border-0 my-1"
+></iframe>

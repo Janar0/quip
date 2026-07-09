@@ -1,7 +1,7 @@
 """Build message history for chat completions."""
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.models.chat import Chat, Message
@@ -15,9 +15,9 @@ class HistoryService:
 
     @staticmethod
     async def build_file_path_map(
-        messages: list[Message], db: AsyncSession
+        messages: list[Message], chat: Chat, db: AsyncSession
     ) -> dict[str, str]:
-        """Single batched query: resolve file storage_paths across all messages."""
+        """Resolve storage paths without crossing the chat's tenant boundary."""
         all_file_ids: set[UUID] = set()
         for m in messages:
             for a in (m.meta or {}).get("attachments", []):
@@ -30,7 +30,11 @@ class HistoryService:
         if not all_file_ids:
             return {}
         result = await db.execute(
-            select(File.id, File.storage_path).where(File.id.in_(all_file_ids))
+            select(File.id, File.storage_path).where(
+                File.id.in_(all_file_ids),
+                File.user_id == chat.user_id,
+                or_(File.chat_id == chat.id, File.chat_id.is_(None)),
+            )
         )
         return {str(fid): sp for fid, sp in result.all()}
 
@@ -73,7 +77,7 @@ class HistoryService:
             )
             messages = list(reversed(msg_result.scalars().all()))
 
-        file_path_map = await HistoryService.build_file_path_map(messages, db)
+        file_path_map = await HistoryService.build_file_path_map(messages, chat, db)
         return messages, file_path_map
 
     @staticmethod
@@ -97,5 +101,5 @@ class HistoryService:
             curr = id_to_msg.get(curr.parent_id) if curr.parent_id else None
         chain.reverse()
 
-        file_path_map = await HistoryService.build_file_path_map(chain, db)
+        file_path_map = await HistoryService.build_file_path_map(chain, chat, db)
         return chain, file_path_map

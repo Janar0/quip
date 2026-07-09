@@ -1,17 +1,27 @@
+from datetime import UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, update, delete, or_
+from pydantic import BaseModel
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.database import get_db
-from quip.models.user import User
-from quip.models.chat import Chat, Message
+from quip.models.chat import Chat, ChatRun, Message
+from quip.models.file import File
 from quip.models.sandbox import Sandbox
-from quip.services.sandbox import sandbox_manager
-from pydantic import BaseModel
-from quip.schemas.chat import ChatCreate, ChatUpdate, ChatResponse, ChatWithMessages, MessageResponse
+from quip.models.user import User
+from quip.schemas.chat import (
+    ChatCreate,
+    ChatResponse,
+    ChatRunResponse,
+    ChatUpdate,
+    ChatWithMessages,
+    MessageResponse,
+)
 from quip.services.permissions import get_current_user
+from quip.services.sandbox import sandbox_manager
+from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -22,10 +32,14 @@ async def list_chats(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    workspace_id: UUID | None = Query(default=None),
 ):
+    query = select(Chat).where(Chat.user_id == user.id, Chat.archived.is_(False))
+    if workspace_id is not None:
+        await get_workspace_for_user(workspace_id, user.id, db)
+        query = query.where(Chat.workspace_id == workspace_id)
     result = await db.execute(
-        select(Chat)
-        .where(Chat.user_id == user.id, Chat.archived == False)
+        query
         .order_by(Chat.updated_at.desc())
         .limit(limit)
         .offset(offset)
@@ -39,7 +53,17 @@ async def create_chat(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    chat = Chat(user_id=user.id, title=data.title, model=data.model)
+    workspace = (
+        await get_workspace_for_user(data.workspace_id, user.id, db)
+        if data.workspace_id
+        else await ensure_personal_workspace(user, db)
+    )
+    chat = Chat(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        title=data.title,
+        model=data.model or workspace.default_model,
+    )
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
@@ -64,18 +88,25 @@ async def get_chat(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    from datetime import datetime, timezone
+    from datetime import datetime
     q = select(Message).where(Message.chat_id == chat_id)
     if before is not None:
-        q = q.where(Message.created_at < datetime.fromtimestamp(before / 1000, tz=timezone.utc))
+        q = q.where(Message.created_at < datetime.fromtimestamp(before / 1000, tz=UTC))
     q = q.order_by(Message.created_at.desc()).limit(limit)
     msgs = await db.execute(q)
     messages = list(msgs.scalars().all())
     messages.reverse()  # caller expects ascending order
+    run_result = await db.execute(
+        select(ChatRun)
+        .where(ChatRun.chat_id == chat_id, ChatRun.user_id == user.id)
+        .order_by(ChatRun.created_at.desc())
+        .limit(50)
+    )
 
     return ChatWithMessages(
         id=chat.id,
         user_id=chat.user_id,
+        workspace_id=chat.workspace_id,
         title=chat.title,
         model=chat.model,
         pinned=chat.pinned,
@@ -83,6 +114,7 @@ async def get_chat(
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         messages=[MessageResponse.model_validate(m) for m in messages],
+        runs=[ChatRunResponse.model_validate(run) for run in run_result.scalars().all()],
     )
 
 
@@ -99,6 +131,18 @@ async def update_chat(
         raise HTTPException(status_code=404, detail="Chat not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if "workspace_id" in update_data:
+        workspace_id = update_data["workspace_id"]
+        if workspace_id is None:
+            workspace_id = (await ensure_personal_workspace(user, db)).id
+            update_data["workspace_id"] = workspace_id
+        else:
+            await get_workspace_for_user(workspace_id, user.id, db)
+        await db.execute(
+            update(File)
+            .where(File.chat_id == chat.id, File.user_id == user.id)
+            .values(workspace_id=workspace_id)
+        )
     for key, value in update_data.items():
         setattr(chat, key, value)
     await db.commit()
@@ -134,21 +178,32 @@ async def delete_chat(
 @router.get("/search/messages")
 async def search_chats(
     q: str = Query(..., min_length=1),
+    workspace_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Search across chat titles and message content."""
+    if workspace_id is not None:
+        await get_workspace_for_user(workspace_id, user.id, db)
     pattern = f"%{q}%"
     # Find chats where title or any message content matches
     msg_chat_ids = (
         select(Message.chat_id)
         .join(Chat, Message.chat_id == Chat.id)
-        .where(Chat.user_id == user.id, Message.content.ilike(pattern))
+        .where(
+            Chat.user_id == user.id,
+            Message.content.ilike(pattern),
+            *([Chat.workspace_id == workspace_id] if workspace_id else []),
+        )
         .distinct()
     )
     title_chat_ids = (
         select(Chat.id)
-        .where(Chat.user_id == user.id, Chat.title.ilike(pattern))
+        .where(
+            Chat.user_id == user.id,
+            Chat.title.ilike(pattern),
+            *([Chat.workspace_id == workspace_id] if workspace_id else []),
+        )
     )
 
     result = await db.execute(

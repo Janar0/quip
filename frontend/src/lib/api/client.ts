@@ -1,26 +1,22 @@
-import { get } from 'svelte/store';
-import { authToken } from '$lib/stores/auth';
+import { currentUser } from '$lib/stores/auth';
 
 // Prevent concurrent refresh attempts — all 401s share one in-flight refresh.
 let refreshPromise: Promise<boolean> | null = null;
 
 export async function api(path: string, options: RequestInit = {}): Promise<Response> {
-  const token = get(authToken);
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
 
-  const res = await fetch(path, { ...options, headers });
+  const request = { ...options, headers, credentials: 'include' as const };
+  const res = await fetch(path, request);
 
-  if (res.status === 401 && token) {
+  const canRefresh = !['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/auth/logout'].includes(path);
+  if (res.status === 401 && canRefresh) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      headers.set('Authorization', `Bearer ${get(authToken)}`);
-      return fetch(path, { ...options, headers });
+      return fetch(path, request);
     }
   }
 
@@ -32,21 +28,15 @@ export async function tryRefresh(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('refresh_token') : null;
-    if (!refreshToken) return false;
-
     try {
       const res = await fetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        credentials: 'include',
+        body: '{}',
       });
 
       if (res.ok) {
-        const data = await res.json();
-        authToken.set(data.access_token);
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
         return true;
       }
 
@@ -55,9 +45,7 @@ export async function tryRefresh(): Promise<boolean> {
       // out — a brief backend hiccup during refresh would otherwise kick
       // every active user to the login screen.
       if (res.status === 401 || res.status === 403) {
-        authToken.set(null);
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        currentUser.set(null);
       }
       return false;
     } catch {

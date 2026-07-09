@@ -60,8 +60,7 @@
   );
 
   function getFileUrl(path: string): string {
-    const token = localStorage.getItem('access_token');
-    return `/api/sandbox/${chatId}/file/${encodeURIComponent(path)}?token=${encodeURIComponent(token ?? '')}`;
+    return `/api/sandbox/${chatId}/file/${encodeURIComponent(path)}`;
   }
 </script>
 

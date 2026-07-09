@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import Mustache from 'mustache';
+  import HtmlRenderer from '$lib/components/artifacts/HtmlRenderer.svelte';
   import {
     createSkill,
     updateSkill,
@@ -319,13 +320,11 @@
           {/if}
 
         {:else if activeTab === 'preview'}
-          {#if form.template_css}
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html `<style>${form.template_css}</style>`}
-          {/if}
-          <div class="widget-card p-0 rounded-lg border border-surface-500/30 bg-surface-900/40 overflow-hidden">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html previewHtml}
+          <div class="rounded-lg border border-surface-500/30 overflow-hidden">
+            <HtmlRenderer
+              title="Widget preview"
+              content={`<style>.widget-card{overflow:hidden}${form.template_css ?? ''}</style><div class="widget-card"><script>const root=document.querySelector('.widget-card');<\/script>${previewHtml}</div>`}
+            />
           </div>
           <p class="text-xs opacity-60">
             {$t('admin.skills.previewHint')}

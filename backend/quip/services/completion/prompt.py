@@ -1,32 +1,31 @@
 """System prompt assembly: skills index, RAG context, locale, geo."""
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from quip.core.config import get_bool_setting, get_setting
 from quip.models.user import User
-from quip.core.config import get_setting, get_bool_setting
+from quip.services.geo import client_ip, format_location, resolve
+from quip.services.rag import format_rag_context, retrieve_context
 from quip.services.skill_store import (
-    list_skill_index,
-    get_skill,
     build_enabled_skills,
-    build_tools_for_api,
     build_gated_tools_for_api,
+    build_tools_for_api,
+    get_skill,
+    list_skill_index,
 )
 from quip.services.tools import (
-    LOAD_SKILL_TOOL,
-    WIDGET_TOOL,
-    READ_URL_TOOL,
-    GET_DOCUMENT_IMAGE_TOOL,
+    GATED_TOOL_MAP,
     GENERATE_IMAGE_TOOL,
     GENERATE_MUSIC_TOOL,
+    GET_DOCUMENT_IMAGE_TOOL,
+    LOAD_SKILL_TOOL,
+    READ_URL_TOOL,
     SANDBOX_TOOLS,
     SEARCH_TOOLS,
-    GATED_TOOL_MAP,
+    WIDGET_TOOL,
 )
-from quip.services.geo import client_ip, resolve, format_location
-from quip.services.rag import retrieve_context, format_rag_context
-from quip.services.sandbox import sandbox_manager
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ class PromptBuilder:
 
         parts: list[str] = [role]
 
-        rt_lines = [f"Current date: {datetime.now(timezone.utc).date().isoformat()}."]
+        rt_lines = [f"Current date: {datetime.now(UTC).date().isoformat()}."]
         if locale:
             rt_lines.append(
                 f"User interface language: {locale}. Answer in this language unless the user writes in another."
@@ -154,14 +153,22 @@ class PromptBuilder:
         system_prompt: str,
         user_message: str,
         chat_id,
+        user_id,
         inlined_doc_file_ids: set[str],
         db: AsyncSession,
+        workspace_id=None,
     ) -> str:
         """Append RAG context to system prompt if enabled and chunks available."""
         if not get_bool_setting("rag_enabled", True):
             return system_prompt
         try:
-            rag_chunks = await retrieve_context(user_message, chat_id, db)
+            rag_chunks = await retrieve_context(
+                user_message,
+                chat_id,
+                user_id,
+                db,
+                workspace_id=workspace_id,
+            )
             if inlined_doc_file_ids:
                 rag_chunks = [
                     c

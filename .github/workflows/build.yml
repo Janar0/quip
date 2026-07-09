@@ -1,14 +1,96 @@
-name: Build & Push
+name: Quality, Build & Push
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
+  UV_VERSION: 0.11.15
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Verify backend lockfile
+        working-directory: backend
+        run: uv lock --check
+
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+
+      - name: Lint backend for correctness errors
+        working-directory: backend
+        run: .venv/bin/ruff check --select E9,F63,F7,F82 quip tests
+
+      - name: Audit backend runtime dependencies
+        working-directory: backend
+        run: uvx pip-audit --path .venv/lib/python3.12/site-packages
+
+      - name: Test backend
+        working-directory: backend
+        run: .venv/bin/python -m pytest -q
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Check frontend
+        working-directory: frontend
+        run: npm run check
+
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test
+
+      - name: Audit frontend runtime dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Validate production Compose
+        env:
+          EXECUTOR_TOKEN: "0000000000000000000000000000000000000000000000000000000000000000"
+          QUIP_IMAGE_TAG: "0000000000000000000000000000000000000000"
+        run: docker compose config --quiet
+
   build:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,27 +100,35 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set image prefix
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        id: image
+        run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push app
+      - name: Build and push immutable app image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.app
           push: true
-          tags: ${{ env.IMAGE }}/app:latest
+          tags: ${{ steps.image.outputs.prefix }}/app:${{ github.sha }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
 
-      - name: Build & push sandbox
+      - name: Build and push immutable sandbox image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.sandbox
           push: true
-          tags: ${{ env.IMAGE }}/sandbox:latest
+          tags: ${{ steps.image.outputs.prefix }}/sandbox:${{ github.sha }}
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox

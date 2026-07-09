@@ -36,8 +36,7 @@
   });
 
   function getDownloadUrl(): string {
-    const token = localStorage.getItem('access_token');
-    return `/api/sandbox/${chatId}/file/${encodeURIComponent(filename)}?token=${encodeURIComponent(token ?? '')}`;
+    return `/api/sandbox/${chatId}/file/${encodeURIComponent(filename)}`;
   }
 </script>
 

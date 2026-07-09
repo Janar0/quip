@@ -16,4 +16,6 @@ if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" = "$DEFAULT" ]; then
   export JWT_SECRET
 fi
 
+python -m quip.migrations.runner || exit 1
+
 exec supervisord -n

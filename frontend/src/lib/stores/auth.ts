@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 
 export interface UserInfo {
   id: string;
@@ -9,17 +9,8 @@ export interface UserInfo {
   profile_image_url: string | null;
 }
 
-const storedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
-
-export const authToken = writable<string | null>(storedToken);
 export const currentUser = writable<UserInfo | null>(null);
-export const isAuthenticated = writable<boolean>(!!storedToken);
+export const isAuthenticated = derived(currentUser, (user) => user !== null);
 
-// True while we're verifying an existing token on app start.
-// Prevents the route guard from redirecting before the initial auth check completes.
-// Starts true only if there's a stored token to verify; false otherwise.
-export const authLoading = writable<boolean>(!!storedToken);
-
-authToken.subscribe((token) => {
-  isAuthenticated.set(!!token);
-});
+// The browser session is an HttpOnly cookie, so it must always be resolved via /me.
+export const authLoading = writable<boolean>(true);

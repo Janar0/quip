@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import { register } from '$lib/api/auth';
+  import { getSetupStatus } from '$lib/api/auth';
+  import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
   import { D3, easeOut } from '$lib/motion';
 
@@ -11,12 +13,28 @@
   let password = $state('');
   let error = $state('');
   let loading = $state(false);
+  let setupRequired = $state(false);
+  let adminEmailConfigured = $state(false);
+  let bootstrapToken = $state('');
+
+  onMount(() => {
+    getSetupStatus().then((setup) => {
+      setupRequired = setup.required;
+      adminEmailConfigured = setup.admin_email_configured;
+    });
+  });
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
     error = '';
     loading = true;
-    const result = await register({ email, username, name, password });
+    const result = await register({
+      email,
+      username,
+      name,
+      password,
+      ...(setupRequired && bootstrapToken ? { bootstrap_token: bootstrapToken } : {}),
+    });
     loading = false;
 
     if (result.ok) {
@@ -42,6 +60,20 @@
         <span>{$t('auth.name')}</span>
         <input type="text" class="input" bind:value={name} required />
       </label>
+
+      {#if setupRequired}
+        <label class="label">
+          <span>{$t('auth.bootstrapToken')}</span>
+          <input
+            type="password"
+            class="input font-mono"
+            bind:value={bootstrapToken}
+            required={!adminEmailConfigured}
+            autocomplete="one-time-code"
+          />
+          <span class="text-xs opacity-50">{adminEmailConfigured ? $t('auth.bootstrapTokenOptional') : $t('auth.bootstrapTokenHint')}</span>
+        </label>
+      {/if}
 
       <label class="label">
         <span>{$t('auth.username')}</span>

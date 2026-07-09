@@ -1,0 +1,74 @@
+# Version-control and editor metadata
+.git
+.github
+.gitignore
+.vscode
+.idea
+.codex
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+secrets
+**/secrets
+*.pem
+**/*.pem
+*.key
+**/*.key
+*.p12
+**/*.p12
+*.pfx
+**/*.pfx
+id_rsa*
+**/id_rsa*
+
+# Runtime state and user data
+data
+**/data
+*.db
+**/*.db
+*.db-*
+**/*.db-*
+*.sqlite
+**/*.sqlite
+*.sqlite3
+**/*.sqlite3
+*.log
+**/*.log
+server_out.txt
+server_err.txt
+
+# Python environments and caches
+.venv
+**/.venv
+venv
+**/venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.ruff_cache
+**/.ruff_cache
+.mypy_cache
+**/.mypy_cache
+.coverage
+htmlcov
+
+# Node dependencies and generated frontend output
+node_modules
+**/node_modules
+frontend/build
+frontend/.svelte-kit
+frontend/coverage
+**/dist
+
+# Generic build/cache artifacts
+.cache
+**/.cache
+tmp
+**/tmp

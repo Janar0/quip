@@ -1,6 +1,4 @@
 import { api } from '$lib/api/client';
-import { get } from 'svelte/store';
-import { authToken } from '$lib/stores/auth';
 
 export interface UploadedFile {
   id: string;
@@ -10,13 +8,16 @@ export interface UploadedFile {
   size: number;
 }
 
-export async function uploadFiles(files: File[], chatId?: string): Promise<UploadedFile[]> {
+export async function uploadFiles(files: File[], chatId?: string, workspaceId?: string): Promise<UploadedFile[]> {
   const formData = new FormData();
   for (const file of files) {
     formData.append('files', file);
   }
   if (chatId) {
     formData.append('chat_id', chatId);
+  }
+  if (workspaceId) {
+    formData.append('workspace_id', workspaceId);
   }
   const res = await api('/api/files/upload', {
     method: 'POST',
@@ -30,20 +31,15 @@ export async function uploadFiles(files: File[], chatId?: string): Promise<Uploa
 }
 
 export function getFileUrl(fileId: string): string {
-  const token = localStorage.getItem('access_token') || get(authToken) || '';
-  return `/api/files/${fileId}?token=${encodeURIComponent(token)}`;
+  return `/api/files/${fileId}`;
 }
 
 export function getGeneratedImageUrl(path: string): string {
-  const token = localStorage.getItem('access_token') || get(authToken) || '';
-  // path is like "/api/images/uuid.png" — append token
-  return `${path}?token=${encodeURIComponent(token)}`;
+  return path;
 }
 
 export function getGeneratedAudioUrl(path: string): string {
-  const token = localStorage.getItem('access_token') || get(authToken) || '';
-  // path is like "/api/audio/uuid.wav" — append token
-  return `${path}?token=${encodeURIComponent(token)}`;
+  return path;
 }
 
 export async function deleteFile(fileId: string): Promise<boolean> {

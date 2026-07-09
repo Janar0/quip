@@ -4,6 +4,7 @@
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
   import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
+  import { api } from '$lib/api/client';
 
   let file = $state<File | null>(null);
   let uploading = $state(false);
@@ -30,11 +31,8 @@
     formData.append('file', file);
 
     try {
-      const res = await fetch('/api/migrate/openwebui', {
+      const res = await api('/api/migrate/openwebui', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
         body: formData,
       });
 

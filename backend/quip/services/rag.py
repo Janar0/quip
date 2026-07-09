@@ -12,11 +12,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from quip.core.config import get_setting
+from quip.core.vector_store import get_vector_store
 from quip.core.vector_utils import cosine_similarity
 from quip.models.file import DocumentChunk, File
-from quip.core.config import get_setting
 from quip.services.embeddings import get_embeddings
-from quip.core.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -107,13 +107,15 @@ def _mmr_rerank(scored: list[dict], top_k: int, lambda_param: float) -> list[dic
 async def retrieve_context(
     query: str,
     chat_id: UUID,
+    user_id: UUID,
     db: AsyncSession,
     top_k: int | None = None,
+    workspace_id: UUID | None = None,
 ) -> list[dict]:
     """Retrieve top-K relevant document chunks for a query.
 
-    When `rag_cross_chat` is enabled, searches ALL embedded chunks regardless
-    of chat_id. Otherwise scoped to the current chat.
+    When `rag_cross_chat` is enabled, searches all embedded chunks owned by the
+    current user. Otherwise retrieval is additionally scoped to the chat.
     """
     t0 = time.monotonic()
     if top_k is None:
@@ -125,9 +127,12 @@ async def retrieve_context(
     # Check for any embeddable docs
     doc_types = ("document", "image", "archive")
     exists_q = select(File.id).where(
+        File.user_id == user_id,
         File.file_type.in_(doc_types),
         File.embedding_status == "completed",
     )
+    if workspace_id is not None:
+        exists_q = exists_q.where(File.workspace_id == workspace_id)
     if not cross_chat:
         exists_q = exists_q.where(File.chat_id == chat_id)
     has_docs = await db.execute(exists_q.limit(1))
@@ -149,11 +154,17 @@ async def retrieve_context(
         .join(File, DocumentChunk.file_id == File.id)
         .where(
             DocumentChunk.embedding.isnot(None),
+            File.user_id == user_id,
             File.embedding_status == "completed",
         )
     )
+    if workspace_id is not None:
+        chunk_q = chunk_q.where(File.workspace_id == workspace_id)
     if not cross_chat:
-        chunk_q = chunk_q.where(DocumentChunk.chat_id == chat_id)
+        chunk_q = chunk_q.where(
+            File.chat_id == chat_id,
+            DocumentChunk.chat_id == chat_id,
+        )
     chunk_q = chunk_q.limit(MAX_CHUNKS_SCANNED)
 
     result = await db.execute(chunk_q)
@@ -199,11 +210,17 @@ async def retrieve_context(
         .join(File, DocumentChunk.file_id == File.id)
         .where(
             DocumentChunk.embedding.is_(None),
+            File.user_id == user_id,
             File.file_type == "archive",
         )
     )
+    if workspace_id is not None:
+        arch_q = arch_q.where(File.workspace_id == workspace_id)
     if not cross_chat:
-        arch_q = arch_q.where(DocumentChunk.chat_id == chat_id)
+        arch_q = arch_q.where(
+            File.chat_id == chat_id,
+            DocumentChunk.chat_id == chat_id,
+        )
     arch_result = await db.execute(arch_q)
     for chunk, filename, chash in arch_result.all():
         top.append({

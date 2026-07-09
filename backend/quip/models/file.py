@@ -1,7 +1,7 @@
 """File and DocumentChunk models for uploads, images, and RAG."""
 import uuid
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Uuid, JSON, func
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 
 from quip.database import Base
 
@@ -11,6 +11,12 @@ class File(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id = Column(
+        Uuid,
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     chat_id = Column(Uuid, ForeignKey("chats.id", ondelete="CASCADE"), nullable=True, index=True)
     filename = Column(String(500), nullable=False)
     content_type = Column(String(200))

@@ -1,18 +1,19 @@
 """Top-level completion service — orchestrates chat & regenerate flows."""
+import asyncio
 import json
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, func, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from quip.core.config import get_setting, get_bool_setting
+from quip.core.config import get_bool_setting, get_setting
 from quip.database import async_session
 from quip.models.budget import Budget
-from quip.models.chat import Chat, Message
-from quip.models.file import File, DocumentChunk
+from quip.models.chat import Chat, ChatRun, Message
+from quip.models.file import DocumentChunk, File
 from quip.models.usage import UsageLog
 from quip.models.user import User
 from quip.routers.models import get_cached_model, get_default_model
@@ -26,10 +27,38 @@ from quip.services.sandbox import sandbox_manager
 from quip.services.skill_store import get_skill as get_skill_by_name
 from quip.services.streaming import is_ollama_model, sse_event
 from quip.services.title import generate_title
+from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = None
+
+
+async def _set_run_status(
+    run_id: UUID,
+    status: str,
+    error: str | None = None,
+    db: AsyncSession | None = None,
+) -> None:
+    """Best-effort durable status update, independent of the request session."""
+    try:
+        async def persist(run_db: AsyncSession) -> None:
+            run = await run_db.get(ChatRun, run_id)
+            if run is None:
+                return
+            run.status = status
+            run.error = error[:4000] if error else None
+            if status in {"completed", "failed", "cancelled"}:
+                run.finished_at = datetime.now(UTC)
+            await run_db.commit()
+
+        if db is not None:
+            await persist(db)
+        else:
+            async with async_session() as run_db:
+                await persist(run_db)
+    except Exception:
+        logger.exception("Failed to persist chat run status for %s", run_id)
 
 
 def _get_upload_dir():
@@ -55,7 +84,7 @@ async def _check_budget(user: User, db: AsyncSession) -> None:
             budgets = result.scalars().all()
             if not budgets:
                 continue
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             for budget in budgets:
                 if not budget or budget.limit_usd <= 0:
                     continue
@@ -82,11 +111,33 @@ async def _check_budget(user: User, db: AsyncSession) -> None:
                     )
 
 
-async def _load_attachments(file_ids: list[UUID], db: AsyncSession) -> list[dict]:
+async def _load_attachments(
+    file_ids: list[UUID],
+    user_id: UUID,
+    chat_id: UUID,
+    workspace_id: UUID | None,
+    db: AsyncSession,
+) -> list[dict]:
     if not file_ids:
         return []
-    result = await db.execute(select(File).where(File.id.in_(file_ids)))
-    files = result.scalars().all()
+
+    unique_ids = list(dict.fromkeys(file_ids))
+    result = await db.execute(
+        select(File).where(
+            File.id.in_(unique_ids),
+            File.user_id == user_id,
+            or_(File.chat_id == chat_id, File.chat_id.is_(None)),
+            or_(File.workspace_id == workspace_id, File.workspace_id.is_(None)),
+        )
+    )
+    files_by_id = {file.id: file for file in result.scalars().all()}
+    if len(files_by_id) != len(unique_ids):
+        from fastapi import HTTPException
+
+        # Do not disclose whether a rejected ID exists for another tenant or chat.
+        raise HTTPException(status_code=404, detail="One or more files not found")
+
+    files = [files_by_id[file_id] for file_id in unique_ids]
     return [
         {
             "file_id": str(f.id),
@@ -360,10 +411,25 @@ class CompletionService:
             chat = result.scalar_one_or_none()
             if not chat:
                 raise HTTPException(status_code=404, detail="Chat not found")
+            if chat.workspace_id is None:
+                chat.workspace_id = (await ensure_personal_workspace(user, db)).id
+            if req.workspace_id and req.workspace_id != chat.workspace_id:
+                raise HTTPException(status_code=404, detail="Chat not found in workspace")
+            workspace = await get_workspace_for_user(chat.workspace_id, user.id, db)
         else:
             is_new_chat = True
+            workspace = (
+                await get_workspace_for_user(req.workspace_id, user.id, db)
+                if req.workspace_id
+                else await ensure_personal_workspace(user, db)
+            )
             title = req.message[:50] + ("..." if len(req.message) > 50 else "")
-            chat = Chat(user_id=user.id, title=title, model=req.model)
+            chat = Chat(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                title=title,
+                model=req.model or workspace.default_model,
+            )
             db.add(chat)
             await db.flush()
 
@@ -371,21 +437,36 @@ class CompletionService:
             db, chat, req.branch_from_message_id
         )
 
-        attachments = await _load_attachments(req.file_ids, db) if req.file_ids else []
-        await _copy_attachments_to_sandbox(user, chat, attachments, db)
+        attachments = (
+            await _load_attachments(req.file_ids, user.id, chat.id, chat.workspace_id, db)
+            if req.file_ids
+            else []
+        )
 
         if attachments and chat:
             file_ids_to_link = [UUID(att["file_id"]) for att in attachments]
             await db.execute(
                 update(File)
-                .where(File.id.in_(file_ids_to_link), File.chat_id.is_(None))
-                .values(chat_id=chat.id)
+                .where(
+                    File.id.in_(file_ids_to_link),
+                    File.user_id == user.id,
+                    File.chat_id.is_(None),
+                    or_(File.workspace_id == chat.workspace_id, File.workspace_id.is_(None)),
+                )
+                .values(chat_id=chat.id, workspace_id=chat.workspace_id)
+            )
+            # Re-check after the atomic claim. If another completion linked an
+            # unattached file to a different chat first, do not use its data.
+            attachments = await _load_attachments(
+                file_ids_to_link, user.id, chat.id, chat.workspace_id, db
             )
             await db.execute(
                 update(DocumentChunk)
                 .where(DocumentChunk.file_id.in_(file_ids_to_link), DocumentChunk.chat_id.is_(None))
                 .values(chat_id=chat.id)
             )
+
+        await _copy_attachments_to_sandbox(user, chat, attachments, db)
 
         user_meta = {}
         if attachments:
@@ -422,8 +503,20 @@ class CompletionService:
             search_enabled=search_enabled, search_mode=search_mode,
             sandbox_available=sandbox_manager.available,
         )
+        if workspace.instructions:
+            system_prompt = (
+                system_prompt
+                + "\n\nWORKSPACE INSTRUCTIONS (apply throughout this workspace):\n"
+                + workspace.instructions
+            ).strip()
         system_prompt = await PromptBuilder.inject_rag(
-            system_prompt, req.message, chat.id, inlined_doc_file_ids, db
+            system_prompt,
+            req.message,
+            chat.id,
+            user.id,
+            inlined_doc_file_ids,
+            db,
+            workspace_id=chat.workspace_id,
         )
         if system_prompt:
             history.insert(0, {"role": "system", "content": system_prompt})
@@ -437,11 +530,22 @@ class CompletionService:
         )
         db.add(assistant_msg)
         await db.flush()
+        run = ChatRun(
+            chat_id=chat.id,
+            user_id=user.id,
+            assistant_message_id=assistant_msg.id,
+            status="running",
+            model=effective_model,
+            started_at=datetime.now(UTC),
+        )
+        db.add(run)
+        await db.flush()
         await db.commit()
 
         chat_id_str = str(chat.id)
         user_msg_id = str(user_msg.id)
         assistant_msg_id = str(assistant_msg.id)
+        run_id = run.id
         user_id = user.id
         user_parent_id_str = str(user_msg.parent_id) if user_msg.parent_id else None
         model_supports_tools = model_info.get("supports_tools", True)
@@ -455,6 +559,7 @@ class CompletionService:
                 "chat_id": chat_id_str,
                 "user_message_id": user_msg_id,
                 "message_id": assistant_msg_id,
+                "run_id": str(run_id),
                 "user_parent_id": user_parent_id_str,
             })
 
@@ -544,8 +649,35 @@ class CompletionService:
 
             yield sse_event("done", {})
 
+        async def tracked_generate():
+            error_message = None
+            terminal = False
+            try:
+                async for frame in generate():
+                    event_type, event_data = _parse_sse_frame(frame)
+                    if event_type == "error":
+                        error_message = str(event_data.get("error") or event_data.get("message") or "Generation failed")
+                    yield frame
+                if error_message:
+                    await _set_run_status(run_id, "failed", error_message, db)
+                else:
+                    await _set_run_status(run_id, "completed", db=db)
+                terminal = True
+            except asyncio.CancelledError:
+                await _set_run_status(run_id, "cancelled", "Client disconnected", db)
+                terminal = True
+                raise
+            except Exception as exc:
+                logger.exception("Chat run %s failed", run_id)
+                await _set_run_status(run_id, "failed", str(exc), db)
+                terminal = True
+                yield sse_event("error", {"error": "Generation failed"})
+            finally:
+                if not terminal:
+                    await _set_run_status(run_id, "cancelled", "Stream closed before completion", db)
+
         return StreamingResponse(
-            generate(),
+            tracked_generate(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -569,6 +701,9 @@ class CompletionService:
         chat = result.scalar_one_or_none()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
+        if chat.workspace_id is None:
+            chat.workspace_id = (await ensure_personal_workspace(user, db)).id
+        workspace = await get_workspace_for_user(chat.workspace_id, user.id, db)
 
         result = await db.execute(
             select(Message).where(Message.id == req.message_id, Message.chat_id == req.chat_id)
@@ -616,11 +751,23 @@ class CompletionService:
             search_enabled=search_enabled, search_mode=False,
             sandbox_available=sandbox_manager.available,
         )
+        if workspace.instructions:
+            system_prompt = (
+                system_prompt
+                + "\n\nWORKSPACE INSTRUCTIONS (apply throughout this workspace):\n"
+                + workspace.instructions
+            ).strip()
         # Inject RAG context using the last user message in the chain
         last_user_msg = next((m.content for m in reversed(chain) if m.role == "user"), "")
         if last_user_msg:
             system_prompt = await PromptBuilder.inject_rag(
-                system_prompt, last_user_msg, chat.id, set(), db
+                system_prompt,
+                last_user_msg,
+                chat.id,
+                user.id,
+                set(),
+                db,
+                workspace_id=chat.workspace_id,
             )
         if system_prompt:
             history.insert(0, {"role": "system", "content": system_prompt})
@@ -636,14 +783,28 @@ class CompletionService:
         )
         db.add(new_msg)
         await db.flush()
+        run = ChatRun(
+            chat_id=chat.id,
+            user_id=user.id,
+            assistant_message_id=new_msg.id,
+            status="running",
+            model=effective_model,
+            started_at=datetime.now(UTC),
+        )
+        db.add(run)
+        await db.flush()
         await db.commit()
 
         chat_id_str = str(chat.id)
         new_msg_id = str(new_msg.id)
+        run_id = run.id
         user_id = user.id
 
         async def generate():
-            yield sse_event("chat", {"chat_id": chat_id_str, "message_id": new_msg_id})
+            yield sse_event(
+                "chat",
+                {"chat_id": chat_id_str, "message_id": new_msg_id, "run_id": str(run_id)},
+            )
 
             orchestrator = StreamOrchestrator(
                 messages=list(history),
@@ -700,8 +861,35 @@ class CompletionService:
 
             yield sse_event("done", {})
 
+        async def tracked_generate():
+            error_message = None
+            terminal = False
+            try:
+                async for frame in generate():
+                    event_type, event_data = _parse_sse_frame(frame)
+                    if event_type == "error":
+                        error_message = str(event_data.get("error") or event_data.get("message") or "Generation failed")
+                    yield frame
+                if error_message:
+                    await _set_run_status(run_id, "failed", error_message, db)
+                else:
+                    await _set_run_status(run_id, "completed", db=db)
+                terminal = True
+            except asyncio.CancelledError:
+                await _set_run_status(run_id, "cancelled", "Client disconnected", db)
+                terminal = True
+                raise
+            except Exception as exc:
+                logger.exception("Regeneration run %s failed", run_id)
+                await _set_run_status(run_id, "failed", str(exc), db)
+                terminal = True
+                yield sse_event("error", {"error": "Generation failed"})
+            finally:
+                if not terminal:
+                    await _set_run_status(run_id, "cancelled", "Stream closed before completion", db)
+
         return StreamingResponse(
-            generate(),
+            tracked_generate(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

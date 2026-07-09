@@ -4,6 +4,8 @@ import re
 
 import httpx
 
+from quip.services.url_security import safe_get
+
 logger = logging.getLogger(__name__)
 
 JINA_TIMEOUT = 15.0
@@ -44,8 +46,8 @@ async def _jina_reader(url: str, max_chars: int) -> str:
 
 async def _direct_fetch(url: str, max_chars: int) -> str:
     """Fallback: fetch HTML and strip tags."""
-    async with httpx.AsyncClient(timeout=DIRECT_TIMEOUT, follow_redirects=True) as client:
-        resp = await client.get(url, headers={
+    async with httpx.AsyncClient(timeout=DIRECT_TIMEOUT, follow_redirects=False) as client:
+        resp = await safe_get(client, url, headers={
             "User-Agent": "Mozilla/5.0 (compatible; QUIP/1.0; +https://quip.dev)",
         })
         resp.raise_for_status()

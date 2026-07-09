@@ -3,14 +3,17 @@
 Model: google/gemini-2.0-flash-001 (mocked — no real API calls).
 """
 import json
-import pytest
 from io import BytesIO
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from quip.providers.openrouter import StreamChunk, UsageInfo
+import pytest
+
 from quip.core.config import set_setting
-from quip.models.file import File, DocumentChunk
-from quip.models.chat import Chat, Message
+from quip.models.chat import Message
+from quip.models.file import DocumentChunk, File
+from quip.models.user import User
+from quip.providers.openrouter import StreamChunk, UsageInfo
+from quip.services.auth import create_access_token
 
 MODEL = "google/gemini-2.0-flash-001"
 
@@ -72,6 +75,7 @@ async def test_completion_creates_chat(client, auth_headers):
     chat_ev = next(e for name, e in events if name == "chat")
     assert "chat_id" in chat_ev
     assert "message_id" in chat_ev
+    assert "run_id" in chat_ev
 
     # Should contain the streamed content
     content_events = [e for name, e in events if name == "content"]
@@ -79,6 +83,12 @@ async def test_completion_creates_chat(client, auth_headers):
 
     # Should end with "done"
     assert events[-1][0] == "done"
+
+    persisted = await client.get(f"/api/chats/{chat_ev['chat_id']}", headers=auth_headers)
+    assert persisted.status_code == 200
+    run = next(item for item in persisted.json()["runs"] if item["id"] == chat_ev["run_id"])
+    assert run["status"] == "completed"
+    assert run["finished_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -132,6 +142,89 @@ async def test_completion_with_image_attachment(client, auth_headers, tmp_upload
 
 
 @pytest.mark.asyncio
+async def test_completion_rejects_cross_user_attachment(
+    client,
+    auth_headers,
+    tmp_upload_dir,
+    db_session,
+):
+    """A completion cannot load an attachment owned by another user."""
+    set_setting("openrouter_api_key", "test-key")
+    set_setting("rag_enabled", "false")
+    set_setting("sandbox_enabled", "false")
+
+    upload_res = await client.post(
+        "/api/files/upload",
+        headers=auth_headers,
+        files=[("files", ("owner.png", _png_bytes(), "image/png"))],
+    )
+    owner_file_id = upload_res.json()["files"][0]["id"]
+
+    attacker = User(
+        email="attacker-completion@test.dev",
+        username="attacker-completion",
+        name="Attacker",
+        role="user",
+    )
+    db_session.add(attacker)
+    await db_session.commit()
+    attacker_headers = {
+        "Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"
+    }
+
+    res = await client.post(
+        "/api/chat/completions",
+        headers=attacker_headers,
+        json={
+            "model": MODEL,
+            "message": "Read the other user's file",
+            "file_ids": [owner_file_id],
+        },
+    )
+
+    assert res.status_code == 404
+    assert res.json()["detail"] == "One or more files not found"
+
+
+@pytest.mark.asyncio
+async def test_completion_rejects_attachment_from_another_chat(
+    client,
+    auth_headers,
+    tmp_upload_dir,
+):
+    """A file already linked to one chat cannot be attached to another chat."""
+    set_setting("openrouter_api_key", "test-key")
+    set_setting("rag_enabled", "false")
+    set_setting("sandbox_enabled", "false")
+
+    first_chat = await client.post(
+        "/api/chats", headers=auth_headers, json={"title": "First"}
+    )
+    second_chat = await client.post(
+        "/api/chats", headers=auth_headers, json={"title": "Second"}
+    )
+    upload_res = await client.post(
+        "/api/files/upload",
+        headers=auth_headers,
+        data={"chat_id": first_chat.json()["id"]},
+        files=[("files", ("first.txt", b"private chat context", "text/plain"))],
+    )
+
+    res = await client.post(
+        "/api/chat/completions",
+        headers=auth_headers,
+        json={
+            "chat_id": second_chat.json()["id"],
+            "model": MODEL,
+            "message": "Reuse it",
+            "file_ids": [upload_res.json()["files"][0]["id"]],
+        },
+    )
+
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_completion_with_rag_context(client, auth_headers, tmp_upload_dir, db_session):
     """Upload doc + seed chunks → completion injects RAG context into system prompt."""
     set_setting("openrouter_api_key", "test-key")
@@ -155,7 +248,8 @@ async def test_completion_with_rag_context(client, auth_headers, tmp_upload_dir,
 
     # Manually mark file as embedded and seed a chunk
     from uuid import UUID
-    from sqlalchemy import select, update
+
+    from sqlalchemy import update
 
     await db_session.execute(
         update(File).where(File.id == UUID(file_id)).values(embedding_status="completed")
@@ -223,6 +317,7 @@ async def test_completion_links_files_to_new_chat(client, auth_headers, tmp_uplo
 
     # Verify file is now linked to the new chat
     from uuid import UUID
+
     from sqlalchemy import select
 
     result = await db_session.execute(select(File).where(File.id == UUID(file_id)))
@@ -259,6 +354,7 @@ async def test_completion_saves_attachment_metadata(client, auth_headers, tmp_up
 
     # Check user message has attachment metadata in DB
     from uuid import UUID
+
     from sqlalchemy import select
 
     result = await db_session.execute(

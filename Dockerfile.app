@@ -10,11 +10,13 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y nginx supervisor tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv
+ARG UV_VERSION=0.11.15
+RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 
-COPY backend/pyproject.toml ./
-RUN mkdir -p quip && touch quip/__init__.py
-RUN uv pip install --system -e ".[dev]"
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file /tmp/requirements.lock \
+    && uv pip install --system --require-hashes --no-deps --requirement /tmp/requirements.lock \
+    && rm /tmp/requirements.lock
 
 COPY backend/ ./
 RUN mkdir -p /app/data /app/data/sandbox
