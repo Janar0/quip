@@ -58,6 +58,8 @@ backend/quip/data/*.mmdb
 .opencode/
 .sisyphus/
 docs/
+# Superpowers planning artifacts generated locally
+docs/superpowers/plans/
 
 # OS
 .DS_Store

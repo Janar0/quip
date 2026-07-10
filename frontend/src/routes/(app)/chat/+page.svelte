@@ -59,7 +59,6 @@
       fileIds.length ? fileIds : undefined,
       uploadedFiles.length ? uploadedFiles : undefined,
       undefined,
-      false,
       workspaceId,
     );
     if (newChatId && !chatId) {

@@ -1,18 +1,15 @@
 """SSE streaming orchestrator for chat completions."""
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 
-from quip.providers import openrouter, ollama
+from quip.providers import openrouter
 from quip.services.streaming import (
     sse_event,
     TextCoalescer,
-    is_ollama_model,
 )
 from quip.services.tools import accumulate_tool_calls
 from quip.services.completion.prompt import PromptBuilder
 from quip.services.completion.tool_executor import ToolExecutor
-from quip.services.research import run_deep_research, ResearchEvent
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +33,6 @@ class StreamOrchestrator:
     ):
         self.messages = messages
         self.model = model
-        self.is_ollama = is_ollama_model(model)
         self.base_url = base_url
         self.api_key = api_key
         self.tool_gating_enabled = tool_gating_enabled
@@ -59,15 +55,6 @@ class StreamOrchestrator:
         )
 
     def _call_provider(self, tools: list[dict]):
-        if self.is_ollama:
-            ollama_model = self.model.removeprefix("ollama/")
-            return ollama.stream_completion(
-                messages=self.messages,
-                model=ollama_model,
-                base_url=self.base_url,
-                tools=tools,
-                context_length=self.context_length,
-            )
         return openrouter.stream_completion(
             messages=self.messages,
             model=self.model,
@@ -248,93 +235,8 @@ class StreamOrchestrator:
             if top:
                 yield sse_event("search_images", {"images": top})
 
-    @staticmethod
-    async def run_deep_research_stream(
-        query: str,
-        model: str,
-        api_key: str,
-        ollama_url: str,
-        locale: str | None,
-        location: str | None,
-        is_ollama: bool,
-    ) -> AsyncGenerator[str, None]:
-        """Deep research mode: coordinator agent spawns sub-agents."""
-        queue: asyncio.Queue[ResearchEvent] = asyncio.Queue()
-
-        async def _emit(event: ResearchEvent) -> None:
-            await queue.put(event)
-
-        research_kwargs: dict = {
-            "query": query,
-            "emit": _emit,
-            "model": model,
-            "is_ollama": is_ollama,
-            "locale": locale,
-            "location": location,
-        }
-        if is_ollama:
-            research_kwargs["ollama_url"] = ollama_url
-        else:
-            research_kwargs["api_key"] = api_key
-
-        task = asyncio.create_task(run_deep_research(**research_kwargs))
-
-        def _relay(event: ResearchEvent) -> str | None:
-            t = event.type
-            if t in ("content", "reasoning", "error", "finish"):
-                return sse_event(t, event.data)
-            if t == "status":
-                return sse_event("research_status", event.data)
-            if t == "usage":
-                return sse_event("usage", event.data)
-            if t in (
-                "subagent_spawned",
-                "subagent_progress",
-                "subagent_result",
-                "subagent_error",
-            ):
-                return sse_event(t, event.data)
-            if t == "artifact":
-                return sse_event("artifact", event.data)
-            return None
-
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
-                except asyncio.TimeoutError:
-                    if task.done():
-                        while not queue.empty():
-                            event = queue.get_nowait()
-                            relayed = _relay(event)
-                            if relayed:
-                                yield relayed
-                        break
-                    continue
-
-                if event.type == "done":
-                    break
-
-                relayed = _relay(event)
-                if relayed:
-                    yield relayed
-
-            if task.done() and task.exception():
-                logger.error("Deep research task failed: %s", task.exception())
-                yield sse_event("error", {"message": str(task.exception())})
-        except Exception as e:
-            logger.error("Deep research stream error: %s", e)
-            yield sse_event("error", {"message": str(e)})
-
-    async def cost_fetch(self, last_usage) -> None:
-        """Fetch generation cost if not provided in stream."""
-        await fetch_generation_cost(self.is_ollama, self.api_key, last_usage)
-
-
-async def fetch_generation_cost(is_ollama: bool, api_key: str, last_usage) -> None:
+async def fetch_generation_cost(api_key: str, last_usage) -> None:
     """Fetch generation cost from OpenRouter if not already in stream."""
-    if is_ollama:
-        return
     if isinstance(last_usage, dict):
         gen_id = last_usage.get("generation_id")
         has_cost = last_usage.get("cost")

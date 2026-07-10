@@ -14,10 +14,13 @@ services:
       QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
       SANDBOX_EXECUTOR_URL: http://executor:8765
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
     volumes:
       - quip_data:/app/data
     restart: unless-stopped
     depends_on:
+      searxng:
+        condition: service_healthy
       sandbox_build:
         condition: service_completed_successfully
       executor:
@@ -89,6 +92,20 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: "no"
+
+  searxng:
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
 volumes:
   quip_data:

@@ -10,13 +10,9 @@
   let {
     onRegenerate,
     onEdit,
-    onStartResearch,
-    onDeclineResearch,
   }: {
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
-    onStartResearch?: (query: string) => void;
-    onDeclineResearch?: (messageId: string) => void;
   } = $props();
 
   let container: HTMLDivElement;
@@ -77,7 +73,7 @@
             ? `border-left-color: hsl(${depthHue}, 40%, 35%); padding-left: ${Math.min(8 + message.branchDepth * 4, 24)}px`
             : ''}
         >
-          <MessageBubble {message} {onRegenerate} {onEdit} {onStartResearch} {onDeclineResearch} />
+          <MessageBubble {message} {onRegenerate} {onEdit} />
         </div>
         {#if message.siblingCount > 1}
           <div

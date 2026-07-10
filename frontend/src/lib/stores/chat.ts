@@ -39,6 +39,12 @@ export interface AttachmentInfo {
   content_type: string;
 }
 
+export interface SearchImageInfo {
+  img_src: string;
+  source_url: string;
+  title: string;
+}
+
 export interface ResearchStatusInfo {
   phase: string;
   detail?: string;
@@ -48,15 +54,19 @@ export interface ResearchStatusInfo {
   urls_read?: number;
 }
 
-export interface SearchImageInfo {
-  img_src: string;
-  source_url: string;
-  title: string;
-}
-
 export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool'; executionId: string };
+
+export interface SubAgentHandle {
+  task_id: string;
+  type: 'search' | 'sandbox' | 'artifact';
+  status: 'running' | 'done' | 'error';
+  goal: string;
+  detail?: string;
+  result?: string;
+  error?: string;
+}
 
 export interface MessageInfo {
   id: string;
@@ -72,9 +82,6 @@ export interface MessageInfo {
   artifacts?: Artifact[];
   toolExecutions?: ToolExecution[];
   attachments?: AttachmentInfo[];
-  researchStatus?: ResearchStatusInfo;
-  researchHistory?: ResearchStatusInfo[];
-  researchProposal?: { title: string; questions: string[]; approach?: string };
   searchImages?: SearchImageInfo[];
   contentBlocks?: ContentBlock[];
   created_at: string;
@@ -95,20 +102,6 @@ export const abortController = writable<AbortController | null>(null);
 export const branchSelections = writable<Record<string, string>>({});
 
 export const searchEnabled = writable<boolean>(false);
-
-export type ModePreference = 'auto' | 'search' | 'research';
-export const modePreference = writable<ModePreference>('auto');
-
-export interface SubAgentHandle {
-  task_id: string;
-  type: 'search' | 'sandbox' | 'artifact';
-  status: 'running' | 'done' | 'error';
-  goal: string;
-  detail?: string;
-  result?: string;
-  error?: string;
-}
-
 export const subAgents = writable<Record<string, SubAgentHandle>>({});
 
 export function setDefaultModel(model: string): void {

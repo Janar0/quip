@@ -59,7 +59,7 @@ async def web_search(
 ) -> tuple[list[SearchResult], list[ImageResult]]:
     """Dispatch to the configured search provider. Returns (text_results, image_results)."""
     from quip.services.skill_store import get_skill_setting
-    provider = get_skill_setting("web_search", "provider", None) or get_setting("search_provider", "tavily")
+    provider = get_skill_setting("web_search", "provider", None) or get_setting("search_provider", "searxng")
 
     cache_key = (provider, query.strip(), max_results)
     cached = _search_cache_get(cache_key)
@@ -146,7 +146,10 @@ async def _searxng_search(
 ) -> tuple[list[SearchResult], list[ImageResult]]:
     """Search via a self-hosted SearXNG instance — runs text + image queries concurrently."""
     from quip.services.skill_store import get_skill_setting
-    base_url = (get_skill_setting("web_search", "searxng_url", "") or get_setting("searxng_url", "")).rstrip("/")
+    base_url = (
+        get_skill_setting("web_search", "searxng_url", "")
+        or get_setting("searxng_url", "http://127.0.0.1:8888")
+    ).rstrip("/")
     if not base_url:
         return (
             [SearchResult(title="Error", url="", snippet="SearXNG URL not configured")],

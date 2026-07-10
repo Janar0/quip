@@ -25,8 +25,6 @@
   import SearchProgress from '$lib/components/chat/SearchProgress.svelte';
   import SearchImageGrid from '$lib/components/chat/SearchImageGrid.svelte';
   import PrimarySourceBanner from '$lib/components/chat/PrimarySourceBanner.svelte';
-  import DeepResearchProgress from '$lib/components/chat/DeepResearchProgress.svelte';
-  import ResearchProposal from '$lib/components/chat/ResearchProposal.svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import AttachmentGrid from '$lib/components/chat/AttachmentGrid.svelte';
   import ReasoningSection from '$lib/components/chat/ReasoningSection.svelte';
@@ -36,14 +34,10 @@
     message,
     onRegenerate,
     onEdit,
-    onStartResearch,
-    onDeclineResearch,
   }: {
     message: MessageInfo;
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
-    onStartResearch?: (query: string) => void;
-    onDeclineResearch?: (messageId: string) => void;
   } = $props();
 
   let isUser = $derived(message.role === 'user');
@@ -71,20 +65,6 @@
   let hasWidgetExecs = $derived(widgetExecs.length > 0);
   let hasImageGenExecs = $derived(imageGenExecs.length > 0);
   let hasMusicGenExecs = $derived(musicGenExecs.length > 0);
-  let hasRunningTools = $derived(sandboxExecs.some((e) => e.status === 'running'));
-  let hasResearch = $derived(!!(message.researchHistory?.length && message.researchStatus));
-  let researchPlan = $derived.by(() => {
-    if (message.researchProposal) return message.researchProposal;
-    const re = /\[\[research_plan\]\]\s*([\s\S]*?)\s*\[\[\/research_plan\]\]/;
-    const m = message.content.match(re);
-    if (!m) return null;
-    try {
-      const plan = JSON.parse(m[1]);
-      if (plan.title && Array.isArray(plan.questions)) return plan;
-    } catch {}
-    return null;
-  });
-  let hasResearchPlan = $derived(!!researchPlan);
   let execById = $derived(new Map((message.toolExecutions ?? []).map((e) => [e.id, e])));
   let hasContentBlocks = $derived(!!(message.contentBlocks?.length));
 
@@ -123,9 +103,7 @@
   // Always strip artifact tags — even during streaming when hasArtifacts is still false
   // (incomplete <artifact> tags contain raw HTML that would inject into the page via {@html})
   let stripped = $derived(
-    isUser
-      ? message.content
-      : stripArtifactTags(message.content).replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim()
+    isUser ? message.content : stripArtifactTags(message.content).trim()
   );
   let primarySourceResult = $derived(
     isUser ? { primarySource: null, stripped } : extractPrimarySource(stripped),
@@ -157,7 +135,7 @@
     if (!message.contentBlocks) return [] as string[];
     return message.contentBlocks.map((b) => {
       if (b.type !== 'text') return '';
-      const text = stripMusicWidgetRefs(stripArtifactTags(b.content)).replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim();
+      const text = stripMusicWidgetRefs(stripArtifactTags(b.content)).trim();
       return text.trim() ? renderMarkdown(text, sources, message.chat_id) : '';
     });
   });
@@ -291,16 +269,6 @@
         <AttachmentGrid attachments={attachmentsList} mb="mb-3" />
       {/if}
 
-      {#if hasResearch}
-        <DeepResearchProgress history={message.researchHistory!} current={message.researchStatus!} />
-      {/if}
-      {#if hasResearchPlan && onStartResearch}
-        <ResearchProposal
-          plan={researchPlan!}
-          onStart={() => onStartResearch(researchPlan!.title)}
-          onDecline={() => onDeclineResearch?.(message.id)}
-        />
-      {/if}
       {#if hasSearchExecs}
         <SearchProgress executions={searchExecs} />
       {/if}

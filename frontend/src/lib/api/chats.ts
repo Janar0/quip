@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, modePreference, branchSelections, subAgents, type MessageInfo, type AttachmentInfo, type ResearchStatusInfo, type SearchImageInfo, type ContentBlock, type SubAgentHandle, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, branchSelections, type AttachmentInfo, type SearchImageInfo, type ContentBlock, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
@@ -148,25 +148,6 @@ export function stopGeneration(): void {
   isStreaming.set(false);
 }
 
-/** Parse [[research_plan]]...[[/research_plan]] from content. Returns parsed plan or null. */
-function parseResearchPlan(content: string): { title: string; questions: string[]; approach?: string } | null {
-  const re = /\[\[research_plan\]\]\s*([\s\S]*?)\s*\[\[\/research_plan\]\]/;
-  const m = content.match(re);
-  if (!m) return null;
-  try {
-    const plan = JSON.parse(m[1]);
-    if (plan.title && Array.isArray(plan.questions)) {
-      return plan;
-    }
-  } catch {}
-  return null;
-}
-
-/** Strip research_plan markers from content */
-export function stripResearchPlanContent(content: string): string {
-  return content.replace(/\[\[research_plan\]\][\s\S]*?\[\[\/research_plan\]\]/g, '').trim();
-}
-
 /** Parse SSE stream, update the streaming message, return real message IDs */
 async function processSSEStream(
   response: Response,
@@ -311,66 +292,6 @@ async function processSSEStream(
                   return { ...m, searchImages: imgs };
                 }),
               );
-            } else if (currentEvent === 'research_status') {
-              const targetId = messageId || 'streaming';
-              const status = data as ResearchStatusInfo;
-              messages.update((msgs) =>
-                msgs.map((m) => {
-                  if (m.id !== targetId) return m;
-                  const history = [...(m.researchHistory ?? [])];
-                  // Append to history if it's a new phase
-                  if (!history.length || history[history.length - 1].phase !== status.phase) {
-                    history.push(status);
-                  } else {
-                    history[history.length - 1] = status;
-                  }
-                  return { ...m, researchStatus: status, researchHistory: history };
-                }),
-              );
-            } else if (currentEvent === 'subagent_spawned') {
-              subAgents.update((agents) => ({
-                ...agents,
-                [data.task_id]: {
-                  task_id: data.task_id,
-                  type: data.agent_type ?? 'search',
-                  status: 'running',
-                  goal: data.goal ?? '',
-                  detail: data.detail ?? '',
-                },
-              }));
-            } else if (currentEvent === 'subagent_progress') {
-              subAgents.update((agents) => {
-                const a = agents[data.task_id];
-                if (!a) return agents;
-                return {
-                  ...agents,
-                  [data.task_id]: { ...a, detail: (a.detail ?? '') + (data.detail ?? '') },
-                };
-              });
-            } else if (currentEvent === 'subagent_result') {
-              subAgents.update((agents) => {
-                const a = agents[data.task_id];
-                if (!a) return agents;
-                const raw = data.result;
-                const formatted = typeof raw === 'object' && raw !== null
-                  ? (typeof (raw as Record<string, unknown>).summary === 'string'
-                      ? (raw as Record<string, unknown>).summary as string
-                      : JSON.stringify(raw, null, 2))
-                  : String(raw ?? '');
-                return {
-                  ...agents,
-                  [data.task_id]: { ...a, status: 'done', result: formatted },
-                };
-              });
-            } else if (currentEvent === 'subagent_error') {
-              subAgents.update((agents) => {
-                const a = agents[data.task_id];
-                if (!a) return agents;
-                return {
-                  ...agents,
-                  [data.task_id]: { ...a, status: 'error', error: data.message ?? '' },
-                };
-              });
             } else if (currentEvent === 'usage') {
               const targetId = messageId || 'streaming';
               messages.update((msgs) =>
@@ -403,20 +324,6 @@ async function processSSEStream(
     }
   }
 
-  // Detect and strip research plan markers — keeps only non-marker content
-  if (fullContent) {
-    const plan = parseResearchPlan(fullContent);
-    if (plan) {
-      fullContent = stripResearchPlanContent(fullContent);
-      const targetId = messageId || 'streaming';
-      messages.update((msgs) =>
-        msgs.map((m) =>
-          m.id === targetId ? { ...m, content: fullContent, researchProposal: plan } : m,
-        ),
-      );
-    }
-  }
-
   // If model sent only reasoning with no content, promote reasoning to content
   if (!fullContent && fullReasoning) {
     fullContent = fullReasoning;
@@ -444,14 +351,18 @@ function updateStreamingContent(
   );
 }
 
-export async function streamChat(text: string, chatId?: string, fileIds?: string[], uploadedFiles?: UploadedFile[], branchFromMessageId?: string, deepResearch = false, workspaceId?: string): Promise<string | undefined> {
+export async function streamChat(
+  text: string,
+  chatId?: string,
+  fileIds?: string[],
+  uploadedFiles?: UploadedFile[],
+  branchFromMessageId?: string,
+  workspaceId?: string,
+): Promise<string | undefined> {
   const model = get(selectedModel);
-  const mode = get(modePreference);
   const ctrl = new AbortController();
   abortController.set(ctrl);
   isStreaming.set(true);
-
-  subAgents.set({});
 
   // Build attachment info for the temp user message
   const attachments: AttachmentInfo[] | undefined = uploadedFiles?.length
@@ -499,8 +410,6 @@ export async function streamChat(text: string, chatId?: string, fileIds?: string
     };
     if (fileIds?.length) body.file_ids = fileIds;
     if (workspaceId) body.workspace_id = workspaceId;
-    if (mode !== 'auto') body.mode_hint = mode;
-    if (deepResearch) body.deep_research = true;
     if (branchFromMessageId) body.branch_from_message_id = branchFromMessageId;
 
     const res = await api('/api/chat/completions', {
@@ -597,68 +506,4 @@ export async function editMessage(chatId: string, messageId: string, newContent:
   await streamChat(newContent, chatId, undefined, undefined, messageId);
   // Persist branch selections so the user's chosen fork survives page refresh.
   persistBranchSelections(chatId);
-}
-
-/**
- * Start deep research without creating a visible user message.
- * Adds a streaming assistant placeholder as sibling of the last user message,
- * then sends deep_research: true to the backend.
- */
-export async function startDeepResearch(chatId: string, query: string): Promise<void> {
-  const model = get(selectedModel);
-  const ctrl = new AbortController();
-  abortController.set(ctrl);
-  isStreaming.set(true);
-  subAgents.set({});
-
-  // Find parent user message for correct threading
-  const allMsgs = get(messages);
-  const lastUserMsg = [...allMsgs].reverse().find((m) => m.role === 'user');
-  const parentId = lastUserMsg?.id ?? null;
-
-  // Add streaming placeholder only (no temp-user)
-  messages.update((msgs) => [
-    ...msgs,
-    {
-      id: 'streaming',
-      chat_id: chatId ?? '',
-      role: 'assistant' as const,
-      content: '',
-      model,
-      parent_id: parentId,
-      created_at: new Date().toISOString(),
-    },
-  ]);
-
-  try {
-    const res = await api('/api/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: chatId || null,
-        model,
-        message: query,
-        deep_research: true,
-      }),
-      signal: ctrl.signal,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-      updateStreamingContent(undefined, `Error: ${formatError(err, res.status)}`);
-      return;
-    }
-
-    await processSSEStream(res);
-  } catch (e) {
-    if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      updateStreamingContent(undefined, `Error: ${e}`);
-    }
-  } finally {
-    isStreaming.set(false);
-    abortController.set(null);
-    await loadChats();
-  }
 }

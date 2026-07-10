@@ -93,8 +93,7 @@ class CompletionRequest(BaseModel):
     model: str
     message: str  # user's message text
     file_ids: list[UUID] = Field(default_factory=list)  # attached file IDs
-    deep_research: bool = False  # use deep research pipeline
-    mode_hint: str | None = None  # "auto" | "search" | "research" — fast search mode dispatch
+    mode_hint: str | None = None  # "auto" | "search" — fast search mode dispatch
     branch_from_message_id: UUID | None = None  # branch edit: create sibling of this message
     max_tokens: int | None = None  # optional max tokens for response generation
 

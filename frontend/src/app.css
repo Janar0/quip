@@ -266,6 +266,8 @@
 	--quip-noise-blend: overlay;
 	--quip-noise-opacity: 0.9;
 	--quip-success: #4ade80;
+	--quip-selection-bg: #0f172a;
+	--quip-selection-text: #f8fafc;
 }
 
 /* ── Light Theme (Liquid Glass v5 — bright) ────────────────────────── */
@@ -307,6 +309,8 @@
 	--quip-noise-blend: multiply;
 	--quip-noise-opacity: 0.35;
 	--quip-success: #16a34a;
+	--quip-selection-bg: #111827;
+	--quip-selection-text: #f8fafc;
 }
 
 /* ── Gray Theme (Neutral Dark) ────────────────────────────────────── */
@@ -559,6 +563,12 @@
 /* ── Body bg uses theme token ──────────────────────────────────────── */
 html, body {
   background: var(--quip-body-bg, var(--quip-bg));
+}
+
+*::selection,
+*::-moz-selection {
+  background: var(--quip-selection-bg, #c7d2fe);
+  color: var(--quip-selection-text, #111827);
 }
 
 /* ── Liquid Glass v5 utilities ─────────────────────────────────────── */

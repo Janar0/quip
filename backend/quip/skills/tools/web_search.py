@@ -45,10 +45,10 @@ CITATION RULES:
     'api_config': None,
     'settings_schema': [
         {'key': 'provider', 'label': 'Provider', 'type': 'select',
-         'options': ['tavily', 'searxng'], 'default': 'tavily'},
+         'options': ['searxng', 'tavily'], 'default': 'searxng'},
         {'key': 'tavily_api_key', 'label': 'Tavily API key', 'type': 'password', 'default': ''},
         {'key': 'searxng_url', 'label': 'SearXNG URL', 'type': 'text', 'default': '',
          'help': 'Only used when provider = searxng.'},
     ],
-    'default_settings': {'provider': 'tavily', 'tavily_api_key': '', 'searxng_url': ''},
+    'default_settings': {'provider': 'searxng', 'tavily_api_key': '', 'searxng_url': ''},
 }

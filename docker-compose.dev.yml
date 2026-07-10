@@ -16,12 +16,15 @@ services:
       CORS_ORIGINS: http://localhost:5173
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
       QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
       SANDBOX_EXECUTOR_URL: http://executor:8765
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-dev-executor-change-in-production}
     ports:
       - "8000:8000"
     depends_on:
+      searxng:
+        condition: service_healthy
       executor:
         condition: service_healthy
     volumes:
@@ -55,6 +58,22 @@ services:
       context: .
       dockerfile: Dockerfile.sandbox
     command: ["true"]
+
+  searxng:
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-dev-only-change-me}
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   postgres:
     profiles: ["production"]

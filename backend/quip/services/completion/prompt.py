@@ -20,10 +20,10 @@ from quip.services.tools import (
     GENERATE_IMAGE_TOOL,
     GENERATE_MUSIC_TOOL,
     GET_DOCUMENT_IMAGE_TOOL,
+    SEARCH_TOOLS,
     LOAD_SKILL_TOOL,
     READ_URL_TOOL,
     SANDBOX_TOOLS,
-    SEARCH_TOOLS,
     WIDGET_TOOL,
 )
 
@@ -99,8 +99,9 @@ class PromptBuilder:
             )
         parts.append("\n".join(rt_lines))
 
-        # Fast search: inject full skill body directly — avoids lazy load_skill round-trip
-        if "fast_search" in enabled_skills:
+        # Fast-search mode: inject full skill body directly (no lazy
+        # load_skill round-trip) only when user explicitly asks search mode.
+        if search_mode and "fast_search" in enabled_skills:
             skill = get_skill("fast_search")
             if skill and skill.prompt_instructions:
                 parts.append(skill.prompt_instructions)
@@ -126,20 +127,6 @@ class PromptBuilder:
                 "CRITICAL: every line must start with [N], use ' - ' between title and full URL, "
                 "never split across lines, never use domain names as URLs. "
                 "Only present what the search actually returned."
-            )
-
-        if search_enabled and get_bool_setting("research_enabled", True):
-            parts.append(
-                "RESEARCH PROPOSAL: When the user's question would benefit from in-depth "
-                "research (multiple web searches, cross-referencing sources, data analysis), "
-                "do NOT answer yet. Instead, output a research plan inside these markers:\n"
-                "[[research_plan]]\n"
-                '{"title": "Brief research topic", "questions": ["Sub-question 1", "Sub-question 2", ...], '
-                '"approach": "How you will conduct the research (optional)"}\n'
-                "[[/research_plan]]\n"
-                "After the marker, you may optionally add a brief note inviting the user to start "
-                "the research. Use the user's language. Only propose research when the query is "
-                "complex enough to warrant it — simple factual questions should be answered directly."
             )
 
         admin = get_setting("system_prompt", "").strip()
@@ -193,17 +180,12 @@ class PromptBuilder:
     def resolve_model(
         model: str,
         search_mode: bool = False,
-        deep_research: bool = False,
     ) -> str:
         """Resolve effective model with optional overrides."""
         if search_mode:
             _sm = get_setting("search_model", "")
             if _sm:
                 return _sm
-        if deep_research:
-            _rm = get_setting("research_model", "")
-            if _rm:
-                return _rm
         return model
 
     @staticmethod
@@ -221,6 +203,7 @@ class PromptBuilder:
             READ_URL_TOOL,
             GET_DOCUMENT_IMAGE_TOOL,
         ]
+
         if tool_gating_enabled and not search_mode:
             return build_gated_tools_for_api(
                 base_tools=base_tools,

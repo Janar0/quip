@@ -25,7 +25,7 @@ from quip.services.messages_persist import save_assistant_message
 from quip.services.multimodal import build_multimodal_message
 from quip.services.sandbox import sandbox_manager
 from quip.services.skill_store import get_skill as get_skill_by_name
-from quip.services.streaming import is_ollama_model, sse_event
+from quip.services.streaming import sse_event
 from quip.services.title import generate_title
 from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
@@ -240,15 +240,13 @@ def _parse_sse_frame(frame: str) -> tuple[str, dict]:
     return ev, data
 
 
-def _resolve_model(model: str, *, search_mode: bool = False, deep_research: bool = False) -> str:
+def _resolve_model(model: str, *, search_mode: bool = False) -> str:
     """Resolve effective model — shared between chat_completion and regenerate.
 
-    Applies search_mode and deep_research overrides from config, then falls
-    back to the cached model list if nothing selected.
+    Applies search_mode override from config, then falls back to cached model list
+    if nothing selected.
     """
-    effective = PromptBuilder.resolve_model(
-        model, search_mode=search_mode, deep_research=deep_research
-    )
+    effective = PromptBuilder.resolve_model(model, search_mode=search_mode)
     if not effective:
         default = get_default_model()
         if default:
@@ -390,18 +388,14 @@ class CompletionService:
         from fastapi import HTTPException
         from fastapi.responses import StreamingResponse
 
-        is_ollama = is_ollama_model(req.model)
         await _check_budget(user, db)
 
-        if is_ollama:
-            ollama_url = get_setting("ollama_url", "http://localhost:11434")
-        else:
-            api_key = get_setting("openrouter_api_key")
-            if not api_key:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No OpenRouter API key configured. Add one in Admin > Settings.",
-                )
+        api_key = get_setting("openrouter_api_key")
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail="No OpenRouter API key configured. Add one in Admin > Settings.",
+            )
 
         is_new_chat = False
         if req.chat_id:
@@ -484,13 +478,13 @@ class CompletionService:
             db, chat, req.branch_from_message_id, user_msg
         )
         history, inlined_doc_file_ids = await _build_history_dicts(
-            messages_for_history, file_path_map, is_ollama, db
+            messages_for_history, file_path_map, False, db
         )
 
         search_enabled = get_bool_setting("search_enabled", False)
         search_mode = req.mode_hint == "search" and search_enabled
         effective_model = _resolve_model(
-            req.model, search_mode=search_mode, deep_research=req.deep_research
+            req.model, search_mode=search_mode
         )
         # Validate effective model against cache
         model_info = _validate_model(effective_model)
@@ -563,60 +557,40 @@ class CompletionService:
                 "user_parent_id": user_parent_id_str,
             })
 
-            # Deep Research mode
-            if req.deep_research and search_enabled and get_bool_setting("research_enabled", True):
-                async for sse_frame in StreamOrchestrator.run_deep_research_stream(
-                    query=req.message,
-                    model=effective_model,
-                    api_key=api_key if not is_ollama else "",
-                    ollama_url=ollama_url if is_ollama else "",
-                    locale=locale, location=location,
-                    is_ollama=is_ollama,
-                ):
-                    ev_type, data = _parse_sse_frame(sse_frame)
-                    if ev_type == "content":
-                        full_content += data.get("text", "")
-                    elif ev_type == "reasoning":
-                        full_reasoning += data.get("text", "")
-                    elif ev_type == "usage":
-                        last_usage = _accumulate_usage(last_usage, data)
+            orchestrator = StreamOrchestrator(
+                messages=list(history),
+                model=effective_model,
+                base_url="",
+                api_key=api_key,
+                tool_gating_enabled=tool_gating_enabled,
+                search_enabled=search_enabled,
+                search_mode=search_mode,
+                sandbox_available=sandbox_manager.available,
+                loaded_skills=set(),
+                supports_tools=model_supports_tools,
+                context_length=model_info.get("context_length", 0),
+            )
+            max_rounds = 3 if search_mode else 12
+            async for sse_frame in orchestrator.run(
+                chat_id=chat_id_str, user_id=user_id, max_rounds=max_rounds
+            ):
+                ev_type, data = _parse_sse_frame(sse_frame)
+                if ev_type == "content":
+                    full_content += data.get("text", "")
+                elif ev_type == "reasoning":
+                    full_reasoning += data.get("text", "")
+                elif ev_type == "usage":
+                    last_usage = _accumulate_usage(last_usage, data)
+                elif ev_type == "error":
                     yield sse_frame
-            else:
-                # Normal mode via StreamOrchestrator
-                orchestrator = StreamOrchestrator(
-                    messages=list(history),
-                    model=effective_model,
-                    base_url=ollama_url if is_ollama else "",
-                    api_key=api_key if not is_ollama else "",
-                    tool_gating_enabled=tool_gating_enabled,
-                    search_enabled=search_enabled,
-                    search_mode=search_mode,
-                    sandbox_available=sandbox_manager.available,
-                    loaded_skills=set(),
-                    supports_tools=model_supports_tools,
-                    context_length=model_info.get("context_length", 0),
-                )
-                max_rounds = 3 if search_mode else 12
-                async for sse_frame in orchestrator.run(
-                    chat_id=chat_id_str, user_id=user_id, max_rounds=max_rounds
-                ):
-                    ev_type, data = _parse_sse_frame(sse_frame)
-                    if ev_type == "content":
-                        full_content += data.get("text", "")
-                    elif ev_type == "reasoning":
-                        full_reasoning += data.get("text", "")
-                    elif ev_type == "usage":
-                        last_usage = _accumulate_usage(last_usage, data)
-                    elif ev_type == "error":
-                        yield sse_frame
-                        if full_content:
-                            await save_assistant_message(
-                                assistant_msg_id, chat_id_str, user_id,
-                                full_content, effective_model, last_usage,
-                                reasoning=full_reasoning,
-                            )
-                        return
-                    yield sse_frame
+                    if full_content:
+                        await save_assistant_message(
+                            assistant_msg_id, chat_id_str, user_id,
+                            full_content, effective_model, last_usage,
+                            reasoning=full_reasoning,
+                        )
+                    return
+                yield sse_frame
 
             if not full_content and full_reasoning:
                 full_content = full_reasoning
@@ -624,8 +598,8 @@ class CompletionService:
                 yield sse_event("content", {"text": full_content})
 
             # Cost fetch for OpenRouter
-            if not is_ollama and last_usage:
-                await fetch_generation_cost(is_ollama, api_key, last_usage)
+            if last_usage:
+                await fetch_generation_cost(api_key, last_usage)
 
             if full_content:
                 await save_assistant_message(
@@ -728,19 +702,14 @@ class CompletionService:
         effective_model = _resolve_model(raw_model, search_mode=False)
         model_info = _validate_model(effective_model)
 
-        is_ollama = is_ollama_model(effective_model)
-
-        if is_ollama:
-            ollama_url = get_setting("ollama_url", "http://localhost:11434")
-        else:
-            api_key = get_setting("openrouter_api_key")
-            if not api_key:
-                raise HTTPException(
-                    status_code=400, detail="No OpenRouter API key configured."
-                )
+        api_key = get_setting("openrouter_api_key")
+        if not api_key:
+            raise HTTPException(
+                status_code=400, detail="No OpenRouter API key configured."
+            )
 
         chain, file_path_map = await HistoryService.build_for_regenerate(db, chat, orig_msg)
-        history, _ = await _build_history_dicts(chain, file_path_map, is_ollama, db)
+        history, _ = await _build_history_dicts(chain, file_path_map, False, db)
 
         search_enabled = get_bool_setting("search_enabled", False)
         tool_gating_enabled = get_bool_setting("tool_gating_enabled", True)
@@ -809,8 +778,8 @@ class CompletionService:
             orchestrator = StreamOrchestrator(
                 messages=list(history),
                 model=effective_model,
-                base_url=ollama_url if is_ollama else "",
-                api_key=api_key if not is_ollama else "",
+                base_url="",
+                api_key=api_key,
                 tool_gating_enabled=tool_gating_enabled,
                 search_enabled=search_enabled,
                 search_mode=False,
@@ -850,8 +819,8 @@ class CompletionService:
                 full_reasoning = ""
                 yield sse_event("content", {"text": full_content})
 
-            if not is_ollama and last_usage:
-                await fetch_generation_cost(is_ollama, api_key, last_usage)
+            if last_usage:
+                await fetch_generation_cost(api_key, last_usage)
 
             if full_content:
                 await save_assistant_message(

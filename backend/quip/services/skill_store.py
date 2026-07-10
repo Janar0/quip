@@ -158,8 +158,11 @@ def build_enabled_skills(
         cat = sk.category
         if cat == "artifact" or cat == "widget":
             enabled.add(sid)
-        elif sid in ("web_search", "fast_search"):
+        elif sid == "web_search":
             if search_enabled:
+                enabled.add(sid)
+        elif sid == "fast_search":
+            if search_enabled and search_mode:
                 enabled.add(sid)
         elif sid == "sandbox":
             if sandbox_available:
