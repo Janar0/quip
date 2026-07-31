@@ -884,7 +884,7 @@ class TelegramBotService:
         error_text = ""
         widget_fallbacks: list[str] = []
         generated_topic_title: str | None = None
-        generated_topic_emoji: str | None = None
+        generated_topic_emoji: str | None = str((chat.meta or {}).get("emoji") or "").strip() or None
         last_update = 0.0
 
         try:
@@ -1001,17 +1001,19 @@ class TelegramBotService:
             logger.exception("Telegram completion failed")
             error_text = "Не удалось выполнить запрос. Проверьте настройки QUIP и попробуйте ещё раз."
 
-        if generated_topic_title and thread_id != "0":
+        if thread_id != "0" and (generated_topic_title or generated_topic_emoji):
             try:
                 topic_payload = {
                     "chat_id": telegram_chat_id,
                     "message_thread_id": int(thread_id),
-                    "name": generated_topic_title[:128],
                 }
+                if generated_topic_title:
+                    topic_payload["name"] = generated_topic_title[:128]
                 icon_id = await self._topic_icon_id(api, generated_topic_emoji)
                 if icon_id:
                     topic_payload["icon_custom_emoji_id"] = icon_id
-                await api.call("editForumTopic", topic_payload)
+                if len(topic_payload) > 2:
+                    await api.call("editForumTopic", topic_payload)
             except (TelegramAPIError, httpx.HTTPError) as exc:
                 logger.warning(
                     "Could not rename Telegram topic %s/%s: %s",
