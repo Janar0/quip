@@ -39,6 +39,13 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalize SQLite's naive UTC datetimes before Python comparisons."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -152,6 +159,10 @@ async def _link_user_to_telegram(
             )
             await db.execute(update(ChatRun).where(ChatRun.user_id == legacy.id).values(user_id=user.id))
             legacy.telegram_user_id = None
+            # Free the unique Telegram identity before assigning it to the
+            # real WebUI account. SQLite may otherwise flush the two UPDATEs
+            # in the opposite order and raise a UNIQUE constraint error.
+            await db.flush()
 
     user.telegram_user_id = telegram_user_id
     if sender:
@@ -177,7 +188,7 @@ async def consume_telegram_link(
     )
     link = result.scalar_one_or_none()
     now = _now()
-    if link is None or link.consumed_at is not None or link.expires_at <= now:
+    if link is None or link.consumed_at is not None or _as_utc(link.expires_at) <= now:
         raise TelegramAuthError("This Telegram link has expired or was already used")
     if link.user_id is None:
         raise TelegramAuthError("Open this Telegram link in the QUIP WebUI")
@@ -198,6 +209,7 @@ async def consume_telegram_link(
             TelegramLinkToken.telegram_user_id.is_(None),
         )
         .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
     )
     if claim.rowcount != 1:
         raise TelegramAuthError("This Telegram link has expired or was already used")
@@ -219,7 +231,7 @@ async def claim_telegram_link(db: AsyncSession, raw_token: str, user: User) -> U
     if (
         link is None
         or link.consumed_at is not None
-        or link.expires_at <= now
+        or _as_utc(link.expires_at) <= now
         or link.user_id is not None
         or not link.telegram_user_id
     ):
@@ -239,6 +251,7 @@ async def claim_telegram_link(db: AsyncSession, raw_token: str, user: User) -> U
             TelegramLinkToken.telegram_user_id == telegram_user_id,
         )
         .values(user_id=user.id, consumed_at=now)
+        .execution_options(synchronize_session=False)
     )
     if claim.rowcount != 1:
         raise TelegramAuthError("This Telegram link has expired or was already used")
