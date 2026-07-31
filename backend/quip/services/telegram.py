@@ -259,6 +259,7 @@ class TelegramBotService:
         self._api: TelegramBotAPI | None = None
         self._lifecycle_lock = asyncio.Lock()
         self._thread_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._topic_icon_ids: dict[str, str] | None = None
         self._last_maintenance = 0.0
 
     async def start(self) -> None:
@@ -281,6 +282,7 @@ class TelegramBotService:
             if self._api:
                 await self._api.close()
                 self._api = None
+            self._topic_icon_ids = None
 
     async def reconfigure(self) -> None:
         async with self._lifecycle_lock:
@@ -299,6 +301,7 @@ class TelegramBotService:
             if self._api:
                 await self._api.close()
                 self._api = None
+            self._topic_icon_ids = None
 
             token = get_setting("telegram_bot_token", "").strip()
             if not token:
@@ -516,6 +519,7 @@ class TelegramBotService:
             else (False if topic_edited and topic_name else None)
         )
         topic_event = bool(topic_created or topic_edited)
+        topic_service_message = topic_event and not text and media is None
         if command == "/start" and argument.startswith("link_"):
             await self._link_user(chat_id, thread_id, sender_id, sender, argument)
             return
@@ -523,6 +527,8 @@ class TelegramBotService:
         async with async_session() as db:
             user = await self._get_linked_user(sender_id, db)
             if user is None:
+                if topic_service_message:
+                    return
                 if command == "/start":
                     await self._send_telegram_auth_link(chat_id, thread_id, sender_id, db)
                     return
@@ -569,7 +575,7 @@ class TelegramBotService:
                 )
                 return
 
-            if topic_event and not text and media is None:
+            if topic_service_message:
                 if topic_name:
                     await self._get_or_create_chat(
                         user,
@@ -629,6 +635,31 @@ class TelegramBotService:
                 thread_id,
                 file_ids,
             )
+
+    async def _topic_icon_id(
+        self, api: TelegramBotAPI, emoji: str | None
+    ) -> str | None:
+        """Resolve a QUIP emoji to Telegram's allowed custom topic icon ID."""
+        if not emoji:
+            return None
+        if self._topic_icon_ids is None:
+            try:
+                stickers = await api.call("getForumTopicIconStickers")
+            except (TelegramAPIError, httpx.HTTPError) as exc:
+                logger.warning("Could not load Telegram topic icons: %s", exc)
+                return None
+            icon_ids: dict[str, str] = {}
+            for sticker in stickers or []:
+                sticker_emoji = str(sticker.get("emoji") or "").strip()
+                custom_emoji_id = str(sticker.get("custom_emoji_id") or "").strip()
+                if not sticker_emoji or not custom_emoji_id:
+                    continue
+                icon_ids.setdefault(sticker_emoji, custom_emoji_id)
+                icon_ids.setdefault(sticker_emoji.replace("\ufe0f", ""), custom_emoji_id)
+            self._topic_icon_ids = icon_ids
+        return self._topic_icon_ids.get(emoji) or self._topic_icon_ids.get(
+            emoji.replace("\ufe0f", "")
+        )
 
     async def _link_user(
         self,
@@ -853,6 +884,7 @@ class TelegramBotService:
         error_text = ""
         widget_fallbacks: list[str] = []
         generated_topic_title: str | None = None
+        generated_topic_emoji: str | None = None
         last_update = 0.0
 
         try:
@@ -920,6 +952,7 @@ class TelegramBotService:
                                 )
                     elif event_type == "title":
                         generated_topic_title = str(data.get("title") or "").strip() or None
+                        generated_topic_emoji = str(data.get("emoji") or "").strip() or None
                     elif event_type == "error":
                         error_text = str(data.get("error") or data.get("message") or "Generation failed")
 
@@ -970,14 +1003,15 @@ class TelegramBotService:
 
         if generated_topic_title and thread_id != "0":
             try:
-                await api.call(
-                    "editForumTopic",
-                    {
-                        "chat_id": telegram_chat_id,
-                        "message_thread_id": int(thread_id),
-                        "name": generated_topic_title[:128],
-                    },
-                )
+                topic_payload = {
+                    "chat_id": telegram_chat_id,
+                    "message_thread_id": int(thread_id),
+                    "name": generated_topic_title[:128],
+                }
+                icon_id = await self._topic_icon_id(api, generated_topic_emoji)
+                if icon_id:
+                    topic_payload["icon_custom_emoji_id"] = icon_id
+                await api.call("editForumTopic", topic_payload)
             except (TelegramAPIError, httpx.HTTPError) as exc:
                 logger.warning(
                     "Could not rename Telegram topic %s/%s: %s",
