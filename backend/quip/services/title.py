@@ -24,10 +24,7 @@ _IMPLICIT_CHAT_TITLES = frozenset(
 _FALLBACK_EMOJIS = (
     ("погод|weather|дожд|температур|снег", "🌤"),
     ("код|программ|python|javascript|api|сервер", "💻"),
-    (r"уравнен|матем|арифмет|формул|equation|math|formula|\d+\s*[+*/=-]", "🧮"),
     ("рецепт|еда|готов|recipe|cook", "🍽"),
-    ("кот|кошка|животн|cat|pet", "🐱"),
-    ("привет|здравств|hello|greet", "👋"),
     ("путеше|отпуск|город|место|travel", "🧭"),
     ("спорт|матч|футбол", "🏆"),
     ("музык|песн|music", "🎵"),
@@ -64,11 +61,7 @@ def _parse_identity(raw: str, message: str) -> tuple[str, str]:
             title = payload.get("title", "")
             candidate = str(payload.get("emoji", "")).strip()
             if candidate and any(ord(char) > 0x1F000 for char in candidate):
-                # Some cheap models answer every identity request with a
-                # generic speech-bubble emoji. Prefer a semantic fallback
-                # when one is available instead of making every topic equal.
-                if candidate not in {"💬", "💭"} or emoji == "💬":
-                    emoji = candidate[:8]
+                emoji = candidate[:8]
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
     return _clean_title(title, message), emoji
@@ -79,6 +72,8 @@ async def generate_chat_identity(message: str, model: str, api_key: str) -> tupl
     prompt = (
         "Return ONLY strict JSON with exactly two fields: "
         '{"title":"3-5 word title in the same language","emoji":"one emoji"}. '
+        "Choose one specific emoji that matches the topic. Do not use generic "
+        "speech bubbles or smileys unless the topic is genuinely general. "
         "No markdown, no explanation, no quotes around the whole JSON.\n\n"
         f"Conversation opening message:\n{message[:300]}"
     )
