@@ -69,6 +69,12 @@ def test_chat_identity_parses_json_and_uses_fallback_emoji():
     assert emoji == "🌤"
 
 
+def test_chat_identity_replaces_generic_model_emoji_with_semantic_fallback():
+    _, emoji = _parse_identity('{"title":"Equation Solving Fun","emoji":"💬"}', "2x+3=12")
+
+    assert emoji == "🧮"
+
+
 def test_telegram_default_topic_names_are_implicit():
     assert is_implicit_chat_title("Новый чат")
     assert not is_implicit_chat_title("Моя тема")
