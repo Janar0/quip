@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import { fade, fly } from 'svelte/transition';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -37,6 +38,10 @@
   });
 
   onMount(() => {
+    if (page.url.searchParams.get('telegram') === 'linked') {
+      toast.success($t('settings.telegramConnected'));
+      goto('/chat', { replaceState: true });
+    }
     messages.set([]);
     chatId = undefined;
     mounted = true;

@@ -3,10 +3,13 @@ from unittest.mock import patch
 from quip.services.telegram import (
     TelegramBotService,
     _allowed_user_ids,
+    _normalize_telegram_markdown,
     _split_text,
     markdown_to_markdown_v2,
 )
 from quip.services.telegram_media import describe_media, media_prompt
+from quip.services.telegram_widgets import widget_to_markdown
+from quip.services.title import _parse_identity
 
 
 def test_markdown_to_telegram_markdown_v2_preserves_common_formatting():
@@ -26,6 +29,30 @@ def test_markdown_to_telegram_escapes_plain_special_characters():
 
     assert "10\\.50" in converted
     assert "готово\\!" in converted
+
+
+def test_telegram_sources_become_links_without_raw_preview_urls():
+    normalized = _normalize_telegram_markdown("[1] Погода Mail - https://example.com/weather.")
+
+    assert normalized == "[1] [Погода Mail](https://example.com/weather)"
+    assert "https://example.com/weather." not in normalized
+
+
+def test_telegram_widget_has_readable_native_fallback():
+    rendered = widget_to_markdown(
+        "weather",
+        {"city": "Москва", "temp": 24, "condition": "ясно", "forecast": []},
+    )
+
+    assert "Москва" in rendered
+    assert "24°C" in rendered
+
+
+def test_chat_identity_parses_json_and_uses_fallback_emoji():
+    title, emoji = _parse_identity('{"title":"Погода в Москве","emoji":"🌤"}', "погода")
+
+    assert title == "Погода в Москве"
+    assert emoji == "🌤"
 
 
 def test_split_text_keeps_chunks_under_telegram_limit():

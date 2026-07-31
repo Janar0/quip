@@ -5,6 +5,7 @@ export interface ChatInfo {
   id: string;
   workspace_id: string | null;
   title: string;
+  emoji?: string | null;
   model: string | null;
   source?: 'web' | 'telegram';
   external_chat_id?: string | null;

@@ -7,12 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class ChatCreate(BaseModel):
     title: str | None = "New Chat"
+    emoji: str | None = None
     model: str | None = None
     workspace_id: UUID | None = None
 
 
 class ChatUpdate(BaseModel):
     title: str | None = None
+    emoji: str | None = None
     model: str | None = None
     pinned: bool | None = None
     archived: bool | None = None
@@ -26,6 +28,7 @@ class ChatResponse(BaseModel):
     user_id: UUID
     workspace_id: UUID | None = None
     title: str
+    emoji: str | None = None
     model: str | None = None
     source: str = "web"
     external_chat_id: str | None = None

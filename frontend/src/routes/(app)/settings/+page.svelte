@@ -39,9 +39,13 @@ import { createTelegramLink, getTelegramStatus, getUserSettings, unlinkTelegram,
   });
 
   async function refreshTelegramStatus() {
+    const wasLinked = telegramLinked;
     const telegram = await getTelegramStatus();
     telegramLinked = telegram.linked;
     telegramUserId = telegram.telegram_user_id;
+    if (!wasLinked && telegram.linked) {
+      toast.success($t('settings.telegramConnected'));
+    }
     if (telegram.linked && telegramPoll) {
       clearInterval(telegramPoll);
       telegramPoll = undefined;

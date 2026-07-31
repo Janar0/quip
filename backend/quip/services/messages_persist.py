@@ -6,12 +6,13 @@ detached from the request-scoped session by the time we save.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
 
 from quip.database import async_session
-from quip.models.chat import Message
+from quip.models.chat import Chat, Message
 from quip.models.usage import UsageLog
 from quip.services.artifacts import extract_artifacts
 
@@ -38,6 +39,9 @@ async def save_assistant_message(
             )
             msg = result.scalar_one_or_none()
             if msg:
+                chat = await db.get(Chat, UUID(chat_id))
+                if chat:
+                    chat.updated_at = datetime.now(UTC)
                 artifacts, display_content = extract_artifacts(content)
                 msg.content = display_content
                 if artifacts:

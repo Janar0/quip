@@ -26,7 +26,7 @@ from quip.services.multimodal import build_multimodal_message
 from quip.services.sandbox import sandbox_manager
 from quip.services.skill_store import get_skill as get_skill_by_name
 from quip.services.streaming import sse_event
-from quip.services.title import generate_title
+from quip.services.title import generate_chat_identity
 from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
 logger = logging.getLogger(__name__)
@@ -548,6 +548,8 @@ class CompletionService:
             full_content = ""
             full_reasoning = ""
             last_usage = None
+            tool_executions: list[dict] = []
+            search_images: list[dict] = []
 
             yield sse_event("chat", {
                 "chat_id": chat_id_str,
@@ -581,6 +583,35 @@ class CompletionService:
                     full_reasoning += data.get("text", "")
                 elif ev_type == "usage":
                     last_usage = _accumulate_usage(last_usage, data)
+                elif ev_type == "tool_executing":
+                    tool_executions.append(
+                        {
+                            "id": data.get("id"),
+                            "name": data.get("name"),
+                            "arguments": data.get("arguments"),
+                            "status": "running",
+                        }
+                    )
+                elif ev_type == "tool_result":
+                    result = data.get("result")
+                    try:
+                        result = json.loads(result) if isinstance(result, str) else result
+                    except json.JSONDecodeError:
+                        pass
+                    for execution in tool_executions:
+                        if execution.get("id") == data.get("id"):
+                            execution.update({"result": result, "status": data.get("status", "completed")})
+                            break
+                elif ev_type == "search_images":
+                    incoming = data.get("images") or []
+                    if not data.get("append"):
+                        search_images = list(incoming)
+                    else:
+                        known = {item.get("img_src") for item in search_images}
+                        search_images.extend(
+                            item for item in incoming if item.get("img_src") not in known
+                        )
+                    search_images = search_images[:10]
                 elif ev_type == "error":
                     yield sse_frame
                     if full_content:
@@ -588,6 +619,8 @@ class CompletionService:
                             assistant_msg_id, chat_id_str, user_id,
                             full_content, effective_model, last_usage,
                             reasoning=full_reasoning,
+                            tool_executions=tool_executions,
+                            search_images=search_images,
                         )
                     return
                 yield sse_frame
@@ -605,24 +638,27 @@ class CompletionService:
                 await save_assistant_message(
                     assistant_msg_id, chat_id_str, user_id,
                     full_content, effective_model, last_usage, reasoning=full_reasoning,
+                    tool_executions=tool_executions,
+                    search_images=search_images,
                 )
                 from quip.services.telegram_notify import notify_telegram_chat
 
                 asyncio.create_task(notify_telegram_chat(chat, full_content, request))
 
-            if is_new_chat:
-                _title_model = get_setting("title_model", "")
-                if _title_model:
-                    new_title = await generate_title(
-                        req.message, _title_model, get_setting("openrouter_api_key", "")
-                    )
-                    if new_title:
-                        async with async_session() as _tdb:
-                            _chat = await _tdb.get(Chat, chat.id)
-                            if _chat:
-                                _chat.title = new_title[:200]
-                                await _tdb.commit()
-                        yield sse_event("title", {"title": new_title})
+            if is_new_chat or (chat.source == "telegram" and chat.title == "Telegram Chat"):
+                identity_model = get_setting("title_model", "") or effective_model
+                identity = await generate_chat_identity(
+                    req.message, identity_model, get_setting("openrouter_api_key", "")
+                )
+                if identity:
+                    new_title, emoji = identity
+                    async with async_session() as _tdb:
+                        _chat = await _tdb.get(Chat, chat.id)
+                        if _chat:
+                            _chat.title = new_title[:200]
+                            _chat.meta = {**(_chat.meta or {}), "emoji": emoji}
+                            await _tdb.commit()
+                    yield sse_event("title", {"title": new_title, "emoji": emoji})
 
             yield sse_event("done", {})
 
@@ -795,6 +831,8 @@ class CompletionService:
             full_content = ""
             full_reasoning = ""
             last_usage = None
+            tool_executions: list[dict] = []
+            search_images: list[dict] = []
 
             async for sse_frame in orchestrator.run(
                 chat_id=chat_id_str, user_id=user_id, max_rounds=12
@@ -806,6 +844,35 @@ class CompletionService:
                     full_reasoning += data.get("text", "")
                 elif ev_type == "usage":
                     last_usage = _accumulate_usage(last_usage, data)
+                elif ev_type == "tool_executing":
+                    tool_executions.append(
+                        {
+                            "id": data.get("id"),
+                            "name": data.get("name"),
+                            "arguments": data.get("arguments"),
+                            "status": "running",
+                        }
+                    )
+                elif ev_type == "tool_result":
+                    result = data.get("result")
+                    try:
+                        result = json.loads(result) if isinstance(result, str) else result
+                    except json.JSONDecodeError:
+                        pass
+                    for execution in tool_executions:
+                        if execution.get("id") == data.get("id"):
+                            execution.update({"result": result, "status": data.get("status", "completed")})
+                            break
+                elif ev_type == "search_images":
+                    incoming = data.get("images") or []
+                    if not data.get("append"):
+                        search_images = list(incoming)
+                    else:
+                        known = {item.get("img_src") for item in search_images}
+                        search_images.extend(
+                            item for item in incoming if item.get("img_src") not in known
+                        )
+                    search_images = search_images[:10]
                 elif ev_type == "error":
                     yield sse_frame
                     if full_content:
@@ -813,6 +880,8 @@ class CompletionService:
                             new_msg_id, chat_id_str, user_id,
                             full_content, effective_model, last_usage,
                             reasoning=full_reasoning,
+                            tool_executions=tool_executions,
+                            search_images=search_images,
                         )
                     return
                 yield sse_frame
@@ -829,6 +898,8 @@ class CompletionService:
                 await save_assistant_message(
                     new_msg_id, chat_id_str, user_id,
                     full_content, effective_model, last_usage, reasoning=full_reasoning,
+                    tool_executions=tool_executions,
+                    search_images=search_images,
                 )
                 from quip.services.telegram_notify import notify_telegram_chat
 

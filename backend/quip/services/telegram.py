@@ -9,6 +9,7 @@ message persistence stay consistent across clients.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -27,6 +28,7 @@ from quip.models.chat import Chat
 from quip.models.user import TelegramLinkToken, TelegramUpdate, User
 from quip.routers.models import get_default_model
 from quip.schemas.chat import CompletionRequest
+from quip.services.artifacts import extract_artifacts
 from quip.services.completion import CompletionService
 from quip.services.completion.service import _parse_sse_frame
 from quip.services.telegram_auth import (
@@ -42,6 +44,8 @@ from quip.services.telegram_media import (
     media_prompt,
     persist_media,
 )
+from quip.services.telegram_widgets import widget_to_markdown
+from quip.services.title import fallback_chat_emoji
 from quip.services.workspaces import ensure_personal_workspace
 
 logger = logging.getLogger(__name__)
@@ -127,6 +131,27 @@ def _split_text(text: str, limit: int = MAX_MESSAGE_LENGTH - 80) -> list[str]:
 _MDV2_SPECIAL = set("_*[]()~`>#+-=|{}.!\\")
 
 
+_SOURCE_LINE = re.compile(
+    r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE
+)
+
+
+def _normalize_telegram_markdown(markdown: str) -> str:
+    """Turn common search source lines into Markdown links."""
+    def replace(match: re.Match[str]) -> str:
+        prefix, number, title, url = match.groups()
+        return f"{prefix}[{number}] [{title}]({url.rstrip('.,;')})"
+
+    return _SOURCE_LINE.sub(replace, markdown)
+
+
+def _telegram_display_text(text: str) -> tuple[str, list[dict]]:
+    """Remove WebUI-only artifact tags before sending text to Telegram."""
+    artifacts, cleaned = extract_artifacts(text)
+    cleaned = re.sub(r"<artifact\b[^>]*>.*$", "", cleaned, flags=re.DOTALL).rstrip()
+    return cleaned, artifacts
+
+
 def _escape_markdown_v2(text: str) -> str:
     return "".join(f"\\{char}" if char in _MDV2_SPECIAL else char for char in text)
 
@@ -140,6 +165,7 @@ def markdown_to_markdown_v2(markdown: str) -> str:
     as plain text rather than making the whole Telegram message fail.
     """
 
+    markdown = _normalize_telegram_markdown(markdown)
     protected: list[str] = []
 
     def protect(value: str) -> str:
@@ -274,7 +300,7 @@ class TelegramBotService:
                     {
                         "commands": [
                             {"command": "start", "description": "Войти и открыть чат"},
-                            {"command": "new", "description": "Начать новый чат"},
+                            {"command": "new", "description": "Сбросить текущую тему"},
                             {"command": "search", "description": "Поиск в интернете"},
                             {"command": "model", "description": "Показать модель"},
                             {"command": "unlink", "description": "Отвязать Telegram"},
@@ -417,7 +443,8 @@ class TelegramBotService:
             return
         media = describe_media(message)
         text = (message.get("text") or message.get("caption") or "").strip()
-        if not text and media is None:
+        topic_created = message.get("forum_topic_created") or {}
+        if not text and media is None and not topic_created:
             return
 
         chat_id = chat.get("id")
@@ -452,7 +479,9 @@ class TelegramBotService:
         if api is None:
             return
 
+        topic_created = message.get("forum_topic_created") or {}
         command, argument = self._command(text)
+        topic_name = str(topic_created.get("name") or "").strip() or None
         if command == "/start" and argument.startswith("link_"):
             await self._link_user(chat_id, thread_id, sender_id, sender, argument)
             return
@@ -506,7 +535,13 @@ class TelegramBotService:
                 )
                 return
 
-            current_chat = await self._get_or_create_chat(user, chat_id, thread_id, db)
+            if topic_name and not text and media is None:
+                await self._get_or_create_chat(user, chat_id, thread_id, db, topic_name=topic_name)
+                return
+
+            current_chat = await self._get_or_create_chat(
+                user, chat_id, thread_id, db, topic_name=topic_name
+            )
             if command == "/model":
                 await self._send_text(
                     chat_id,
@@ -633,7 +668,8 @@ class TelegramBotService:
             "QUIP в Telegram\n\n"
             "/start — войти или открыть чат\n"
             "Просто напишите вопрос — ответ будет идти потоком.\n\n"
-            "/new — новый чат в текущем треде\n"
+            "Новая тема Telegram — отдельный чат QUIP.\n"
+            "/new — сбросить текущую тему в режиме без тредов\n"
             "/search запрос — поиск в интернете\n"
             "/model — текущая модель\n"
             "/threads — как включить треды\n"
@@ -659,7 +695,14 @@ class TelegramBotService:
         )
         return result.scalar_one_or_none()
 
-    async def _get_or_create_chat(self, user: User, chat_id: int, thread_id: str, db) -> Chat:
+    async def _get_or_create_chat(
+        self,
+        user: User,
+        chat_id: int,
+        thread_id: str,
+        db,
+        topic_name: str | None = None,
+    ) -> Chat:
         result = await db.execute(
             select(Chat)
             .where(
@@ -674,17 +717,25 @@ class TelegramBotService:
         )
         current = result.scalar_one_or_none()
         if current:
+            if topic_name and current.title in {"Telegram Chat", "New Chat"}:
+                current.title = topic_name[:500]
+                current.meta = {
+                    **(current.meta or {}),
+                    "emoji": current.emoji or fallback_chat_emoji(topic_name),
+                }
+                await db.commit()
             return current
 
         workspace = await ensure_personal_workspace(user, db)
         current = Chat(
             user_id=user.id,
             workspace_id=workspace.id,
-            title="Telegram Chat",
+            title=(topic_name or "Telegram Chat")[:500],
             model=self._default_model() or None,
             source="telegram",
             external_chat_id=str(chat_id),
             external_thread_id=thread_id,
+            meta={"emoji": fallback_chat_emoji(topic_name)} if topic_name else None,
         )
         db.add(current)
         await db.commit()
@@ -744,6 +795,7 @@ class TelegramBotService:
         placeholder_id: int | None = None
         full_text = ""
         error_text = ""
+        widget_fallbacks: list[str] = []
         last_update = 0.0
 
         try:
@@ -753,7 +805,7 @@ class TelegramBotService:
                     {
                         **_thread_payload(telegram_chat_id, thread_id),
                         "draft_id": draft_id,
-                        "rich_message": {"markdown": " "},
+                        "rich_message": {"markdown": " ", "skip_entity_detection": True},
                     },
                 )
             except (TelegramAPIError, httpx.HTTPError):
@@ -786,12 +838,36 @@ class TelegramBotService:
                     event_type, data = _parse_sse_frame(frame)
                     if event_type == "content":
                         full_text += data.get("text", "")
+                    elif event_type == "tool_result":
+                        raw_result = data.get("result")
+                        try:
+                            result = (
+                                json.loads(raw_result)
+                                if isinstance(raw_result, str)
+                                else raw_result
+                            )
+                        except (TypeError, json.JSONDecodeError):
+                            result = None
+                        if (
+                            data.get("name") == "use_widget"
+                            and isinstance(result, dict)
+                            and result.get("widget")
+                        ):
+                            widget_data = result.get("data")
+                            if isinstance(widget_data, dict):
+                                widget_fallbacks.append(
+                                    widget_to_markdown(
+                                        str(result.get("template") or "widget"),
+                                        widget_data,
+                                    )
+                                )
                     elif event_type == "error":
                         error_text = str(data.get("error") or data.get("message") or "Generation failed")
 
                     now = time.monotonic()
                     if full_text and now - last_update >= DRAFT_INTERVAL:
-                        preview = full_text[: MAX_MESSAGE_LENGTH - 80]
+                        preview, _ = _telegram_display_text(full_text)
+                        preview = preview[: MAX_MESSAGE_LENGTH - 80]
                         if stream_mode == "rich":
                             try:
                                 await api.call(
@@ -799,7 +875,7 @@ class TelegramBotService:
                                     {
                                         **_thread_payload(telegram_chat_id, thread_id),
                                         "draft_id": draft_id,
-                                        "rich_message": {"markdown": preview},
+                                        "rich_message": {"markdown": preview, "skip_entity_detection": True},
                                     },
                                 )
                             except (TelegramAPIError, httpx.HTTPError):
@@ -834,13 +910,25 @@ class TelegramBotService:
             error_text = "Не удалось выполнить запрос. Проверьте настройки QUIP и попробуйте ещё раз."
 
         if full_text:
-            if stream_mode == "rich":
+            display_text, artifacts = _telegram_display_text(full_text)
+            if display_text and stream_mode == "rich":
                 try:
-                    await self._finish_rich_response(api, telegram_chat_id, thread_id, full_text)
+                    await self._finish_rich_response(api, telegram_chat_id, thread_id, display_text)
                 except (TelegramAPIError, httpx.HTTPError):
-                    await self._finish_response(api, telegram_chat_id, thread_id, full_text, None)
-            else:
-                await self._finish_response(api, telegram_chat_id, thread_id, full_text, placeholder_id)
+                    await self._finish_response(api, telegram_chat_id, thread_id, display_text, None)
+            elif display_text:
+                await self._finish_response(api, telegram_chat_id, thread_id, display_text, placeholder_id)
+            for artifact in artifacts:
+                title = artifact.get("title") or "Artifact"
+                body = artifact.get("content") or ""
+                fence = chr(96) * 3
+                artifact_text = (
+                    f"🧩 **{title}**\n\n"
+                    f"{fence}{artifact.get('language') or ''}\n{body}\n{fence}"
+                )
+                await self._send_formatted(api, telegram_chat_id, thread_id, artifact_text)
+            for widget in widget_fallbacks:
+                await self._send_formatted(api, telegram_chat_id, thread_id, widget)
         elif error_text:
             if placeholder_id:
                 with suppress(TelegramAPIError, httpx.HTTPError):
@@ -872,6 +960,7 @@ class TelegramBotService:
                         **_edit_payload(chat_id, placeholder_id),
                         "text": first or "…",
                         "parse_mode": "MarkdownV2",
+                        "link_preview_options": {"is_disabled": True},
                     },
                 )
             except (TelegramAPIError, httpx.HTTPError):
@@ -897,12 +986,13 @@ class TelegramBotService:
         # split for unusually long generations and let Telegram render tables,
         # nested quotes and other new Markdown constructs natively.
         for chunk in _split_text(text, 32000):
+            chunk = _normalize_telegram_markdown(chunk)
             try:
                 await api.call(
                     "sendRichMessage",
                     {
                         **_thread_payload(chat_id, thread_id),
-                        "rich_message": {"markdown": chunk},
+                        "rich_message": {"markdown": chunk, "skip_entity_detection": True},
                     },
                 )
             except (TelegramAPIError, httpx.HTTPError):
@@ -919,6 +1009,7 @@ class TelegramBotService:
                     **_thread_payload(chat_id, thread_id),
                     "text": formatted or "…",
                     "parse_mode": "MarkdownV2",
+                    "link_preview_options": {"is_disabled": True},
                 },
             )
         except (TelegramAPIError, httpx.HTTPError):
@@ -932,6 +1023,7 @@ class TelegramBotService:
             return
         for chunk in _split_text(text):
             payload = {**_thread_payload(chat_id, thread_id), "text": chunk}
+            payload["link_preview_options"] = {"is_disabled": True}
             if markdown:
                 payload["parse_mode"] = "MarkdownV2"
             with suppress(TelegramAPIError, httpx.HTTPError):

@@ -63,6 +63,7 @@ async def create_chat(
         workspace_id=workspace.id,
         title=data.title,
         model=data.model or workspace.default_model,
+        meta={"emoji": data.emoji} if data.emoji else None,
     )
     db.add(chat)
     await db.commit()
@@ -108,6 +109,7 @@ async def get_chat(
         user_id=chat.user_id,
         workspace_id=chat.workspace_id,
         title=chat.title,
+        emoji=chat.emoji,
         model=chat.model,
         source=chat.source,
         external_chat_id=chat.external_chat_id,
@@ -134,6 +136,14 @@ async def update_chat(
         raise HTTPException(status_code=404, detail="Chat not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    emoji = update_data.pop("emoji", None) if "emoji" in update_data else None
+    if "emoji" in data.model_fields_set:
+        meta = dict(chat.meta or {})
+        if emoji:
+            meta["emoji"] = emoji
+        else:
+            meta.pop("emoji", None)
+        chat.meta = meta or None
     if "workspace_id" in update_data:
         workspace_id = update_data["workspace_id"]
         if workspace_id is None:

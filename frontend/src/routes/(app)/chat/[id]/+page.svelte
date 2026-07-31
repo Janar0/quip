@@ -5,12 +5,13 @@
   import { fly } from 'svelte/transition';
   import { D2, easeOut } from '$lib/motion';
   import { loadChat, streamChat, regenerateMessage, editMessage } from '$lib/api/chats';
-  import { activeChat, messages, isLoading } from '$lib/stores/chat';
+  import { activeChat, messages, isLoading, isStreaming } from '$lib/stores/chat';
   import type { UploadedFile } from '$lib/api/files';
   import { exportAsMarkdown } from '$lib/utils/export';
   import ModelSelector from '$lib/components/chat/ModelSelector.svelte';
   import ChatPane from '$lib/components/chat/ChatPane.svelte';
   import { selectedWorkspaceId } from '$lib/stores/workspaces';
+  import { onMount } from 'svelte';
   import { activeDrawer, closeDrawer, openDrawer } from '$lib/stores/drawer';
 
   let chatId = $derived(page.params.id ?? '');
@@ -19,6 +20,15 @@
 
   $effect(() => {
     if (chatId) loadChat(chatId);
+  });
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      if (chatId && $activeChat?.source === 'telegram' && !$isLoading && !$isStreaming) {
+        loadChat(chatId);
+      }
+    }, 4000);
+    return () => clearInterval(timer);
   });
 
   async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = []) {

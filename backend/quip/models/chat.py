@@ -28,6 +28,12 @@ class Chat(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    @property
+    def emoji(self) -> str | None:
+        """Optional chat emoji stored alongside other chat metadata."""
+        value = (self.meta or {}).get("emoji")
+        return value if isinstance(value, str) else None
+
 
 class Message(Base):
     __tablename__ = "messages"

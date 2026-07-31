@@ -307,9 +307,9 @@ async function processSSEStream(
               const realId = chatId;
               if (realId && data.title) {
                 chatList.update((list) =>
-                  list.map((c) => (c.id === realId ? { ...c, title: data.title } : c)),
+                  list.map((c) => (c.id === realId ? { ...c, title: data.title, emoji: data.emoji ?? c.emoji } : c)),
                 );
-                activeChat.update((c) => (c?.id === realId ? { ...c, title: data.title } : c));
+                activeChat.update((c) => (c?.id === realId ? { ...c, title: data.title, emoji: data.emoji ?? c.emoji } : c));
               }
             }
           } catch {

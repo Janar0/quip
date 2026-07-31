@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
+    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:-latest}
     ports:
       - "${PORT:-3000}:80"
     environment:
@@ -41,7 +41,7 @@ services:
   # The only long-running process allowed to access Docker. Its API constructs
   # fixed, labelled QUIP sandboxes and never accepts arbitrary images/mounts.
   executor:
-    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
+    image: ghcr.io/janar0/quip/app:${QUIP_IMAGE_TAG:-latest}
     command: ["uvicorn", "quip.executor_app:app", "--host", "0.0.0.0", "--port", "8765"]
     environment:
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
@@ -75,8 +75,8 @@ services:
       retries: 10
       start_period: 10s
 
-  # Pulls the sandbox image for the exact app release, gives it a local alias,
-  # then exits. The executor uses this local alias for code containers.
+  # Pulls the configured sandbox image tag, gives it a local alias, then exits.
+  # The executor uses this local alias for code containers.
   sandbox_build:
     image: docker:cli
     entrypoint:
@@ -84,17 +84,18 @@ services:
       - -ec
       - |
         case "$${QUIP_IMAGE_TAG}" in
-          ""|*[!0-9a-f]*) echo "QUIP_IMAGE_TAG must be the full 40-character lowercase git SHA" >&2; exit 64 ;;
+          latest) ;;
+          ""|*[!0-9a-f]*) echo "QUIP_IMAGE_TAG must be latest or a 40-character lowercase git SHA" >&2; exit 64 ;;
+          *) [ "$${#QUIP_IMAGE_TAG}" -eq 40 ] || {
+            echo "QUIP_IMAGE_TAG must be latest or a 40-character lowercase git SHA" >&2
+            exit 64
+          } ;;
         esac
-        [ "$${#QUIP_IMAGE_TAG}" -eq 40 ] || {
-          echo "QUIP_IMAGE_TAG must be the full 40-character lowercase git SHA" >&2
-          exit 64
-        }
         image="ghcr.io/janar0/quip/sandbox:$${QUIP_IMAGE_TAG}"
         docker pull "$${image}"
         docker tag "$${image}" quip-sandbox:latest
     environment:
-      QUIP_IMAGE_TAG: ${QUIP_IMAGE_TAG:?Set QUIP_IMAGE_TAG to the full 40-character release SHA}
+      QUIP_IMAGE_TAG: ${QUIP_IMAGE_TAG:-latest}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: "no"

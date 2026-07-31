@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 
 from quip.core.config import get_setting
 from quip.models.chat import Chat
+from quip.services.artifacts import extract_artifacts
 
 logger = logging.getLogger(__name__)
 
 _MAX_TELEGRAM_TEXT = 4096
+_SOURCE_LINE = re.compile(
+    r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE
+)
+
+
+def _telegram_text(text: str) -> tuple[str, list[dict]]:
+    artifacts, cleaned = extract_artifacts(text)
+
+    def source_link(match: re.Match[str]) -> str:
+        prefix, number, title, url = match.groups()
+        return f"{prefix}[{number}] [{title}]({url.rstrip('.,;')})"
+
+    cleaned = _SOURCE_LINE.sub(source_link, cleaned)
+    return cleaned, artifacts
 
 
 def _chunks(text: str) -> list[str]:
@@ -46,26 +62,57 @@ async def notify_telegram_chat(chat: Chat, text: str, request) -> None:
     if chat.external_thread_id and chat.external_thread_id != "0":
         payload["message_thread_id"] = int(chat.external_thread_id)
 
+    display_text, artifacts = _telegram_text(text)
     try:
         async with httpx.AsyncClient(
             base_url=f"https://api.telegram.org/bot{token}",
             timeout=httpx.Timeout(20.0, connect=5.0),
         ) as client:
-            for chunk in _chunks(text):
-                rich_response = await client.post(
-                    "/sendRichMessage",
-                    json={**payload, "rich_message": {"markdown": chunk}},
+            if display_text:
+                for chunk in _chunks(display_text):
+                    rich_response = await client.post(
+                        "/sendRichMessage",
+                        json={
+                            **payload,
+                            "rich_message": {
+                                "markdown": chunk,
+                                "skip_entity_detection": True,
+                            },
+                        },
+                    )
+                    rich_body = rich_response.json()
+                    if rich_body.get("ok"):
+                        continue
+                    plain_response = await client.post(
+                        "/sendMessage",
+                        json={
+                            **payload,
+                            "text": chunk,
+                            "link_preview_options": {"is_disabled": True},
+                        },
+                    )
+                    plain_response.raise_for_status()
+                    plain_body = plain_response.json()
+                    if not plain_body.get("ok"):
+                        raise RuntimeError(plain_body.get("description") or "Telegram rejected the message")
+            for artifact in artifacts:
+                fence = chr(96) * 3
+                artifact_text = (
+                    f"🧩 **{artifact.get('title') or 'Artifact'}**\n\n"
+                    f"{fence}{artifact.get('language') or ''}\n"
+                    f"{artifact.get('content') or ''}\n{fence}"
                 )
-                rich_body = rich_response.json()
-                if rich_body.get("ok"):
-                    continue
-                plain_response = await client.post(
-                    "/sendMessage",
-                    json={**payload, "text": chunk},
-                )
-                plain_response.raise_for_status()
-                plain_body = plain_response.json()
-                if not plain_body.get("ok"):
-                    raise RuntimeError(plain_body.get("description") or "Telegram rejected the message")
+                for chunk in _chunks(artifact_text):
+                    response = await client.post(
+                        "/sendRichMessage",
+                        json={
+                            **payload,
+                            "rich_message": {
+                                "markdown": chunk,
+                                "skip_entity_detection": True,
+                            },
+                        },
+                    )
+                    response.raise_for_status()
     except (httpx.HTTPError, ValueError, RuntimeError) as exc:
         logger.warning("Could not mirror WebUI reply to Telegram chat %s: %s", external_chat_id, exc)

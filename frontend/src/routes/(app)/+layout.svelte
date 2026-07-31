@@ -157,7 +157,15 @@
       if (e.matches) showSidebar.set(true);
     };
     mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    const chatSync = setInterval(() => {
+      if (!renamingChatId && !searchQuery) {
+        loadChats().catch(() => {});
+      }
+    }, 8000);
+    return () => {
+      clearInterval(chatSync);
+      mql.removeEventListener('change', handler);
+    };
   });
 
   // Page transitions using View Transitions API when available
@@ -330,6 +338,9 @@
                   ondblclick={(e) => { e.preventDefault(); startRename(chat.id, chat.title); }}
                 >
                   <span class="truncate w-full group-hover:pr-[72px] transition-all flex items-center gap-1.5" style="transition-duration: var(--quip-d-1)">
+                    {#if chat.emoji}
+                      <span class="shrink-0" aria-hidden="true">{chat.emoji}</span>
+                    {/if}
                     {#if chat.source === 'telegram'}
                       <span class="shrink-0 text-[10px] text-sky-400" title={$t('chat.telegram')}>TG</span>
                     {/if}
