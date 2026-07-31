@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,11 @@ class SettingsUpdate(BaseModel):
     ocr_provider: str | None = None
     ocr_tesseract_langs: str | None = None
     archive_max_mb: int | None = None
+    telegram_bot_token: str | None = None
+    telegram_allowed_user_ids: str | None = None
+    telegram_model: str | None = None
+    telegram_login_redirect_uri: str | None = None
+    public_app_url: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -73,6 +78,11 @@ class SettingsResponse(BaseModel):
     ocr_tesseract_langs: str = "eng+rus"
     archive_max_mb: int = 150
     tool_gating_enabled: bool = True
+    telegram_bot_token_set: bool = False
+    telegram_allowed_user_ids: str = ""
+    telegram_model: Optional[str] = None
+    telegram_login_redirect_uri: Optional[str] = None
+    public_app_url: Optional[str] = None
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -107,6 +117,11 @@ async def get_settings(user: User = Depends(get_admin_user)):
         ocr_tesseract_langs=get_setting("ocr_tesseract_langs", "eng+rus"),
         archive_max_mb=int(get_setting("archive_max_mb", "150")),
         tool_gating_enabled=get_bool_setting("tool_gating_enabled", True),
+        telegram_bot_token_set=bool(get_setting("telegram_bot_token")),
+        telegram_allowed_user_ids=get_setting("telegram_allowed_user_ids", ""),
+        telegram_model=get_setting("telegram_model") or None,
+        telegram_login_redirect_uri=get_setting("telegram_login_redirect_uri") or None,
+        public_app_url=get_setting("public_app_url") or None,
     )
 
 
@@ -115,7 +130,11 @@ _BOOL_SETTING_FIELDS = {"rag_enabled", "search_enabled", "research_enabled", "to
 
 
 @router.put("/settings")
-async def update_settings(data: SettingsUpdate, user: User = Depends(get_admin_user)):
+async def update_settings(
+    data: SettingsUpdate,
+    request: Request,
+    user: User = Depends(get_admin_user),
+):
     for key, val in data.model_dump(exclude_none=True).items():
         if key in _JSON_SETTING_FIELDS:
             set_setting(key, json.dumps(val))
@@ -124,6 +143,10 @@ async def update_settings(data: SettingsUpdate, user: User = Depends(get_admin_u
         else:
             set_setting(key, str(val) if not isinstance(val, str) else val)
     await save_settings()
+    if any(key.startswith("telegram_") for key in data.model_dump(exclude_none=True)):
+        telegram_bot = getattr(request.app.state, "telegram_bot", None)
+        if telegram_bot is not None:
+            await telegram_bot.reconfigure()
     return {"status": "ok"}
 
 

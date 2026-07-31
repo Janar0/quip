@@ -91,3 +91,25 @@ export async function updateUserSettings(data: Record<string, string>): Promise<
   });
   return res.ok;
 }
+
+export interface TelegramStatus {
+  linked: boolean;
+  telegram_user_id: string | null;
+}
+
+export async function getTelegramStatus(): Promise<TelegramStatus> {
+  const res = await api('/api/auth/telegram/status');
+  if (res.ok) return res.json();
+  return { linked: false, telegram_user_id: null };
+}
+
+export async function createTelegramLink(): Promise<{ url: string; expires_at: string } | null> {
+  const res = await api('/api/auth/telegram/link');
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function unlinkTelegram(): Promise<boolean> {
+  const res = await api('/api/auth/telegram/link', { method: 'DELETE' });
+  return res.ok;
+}

@@ -6,6 +6,9 @@ export interface ChatInfo {
   workspace_id: string | null;
   title: string;
   model: string | null;
+  source?: 'web' | 'telegram';
+  external_chat_id?: string | null;
+  external_thread_id?: string | null;
   pinned: boolean;
   created_at: string;
   updated_at: string;
@@ -35,7 +38,7 @@ export interface Artifact {
 export interface AttachmentInfo {
   file_id: string;
   filename: string;
-  file_type: 'image' | 'document' | 'video';
+  file_type: 'image' | 'document' | 'video' | 'audio' | string;
   content_type: string;
 }
 

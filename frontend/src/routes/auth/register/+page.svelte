@@ -16,6 +16,9 @@
   let setupRequired = $state(false);
   let adminEmailConfigured = $state(false);
   let bootstrapToken = $state('');
+  const telegramLink = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('telegram_link')
+    : null;
 
   onMount(() => {
     getSetupStatus().then((setup) => {
@@ -38,7 +41,11 @@
     loading = false;
 
     if (result.ok) {
-      goto('/chat');
+      if (telegramLink) {
+        window.location.assign(`/api/auth/telegram/claim?token=${encodeURIComponent(telegramLink)}`);
+      } else {
+        goto('/chat');
+      }
     } else {
       error = result.error ?? 'Registration failed';
     }
@@ -97,7 +104,7 @@
 
     <p class="text-center text-sm opacity-70">
       {$t('auth.hasAccount')}
-      <a href="/auth/login" class="anchor">{$t('auth.login')}</a>
+      <a href={telegramLink ? `/auth/login?telegram_link=${encodeURIComponent(telegramLink)}` : '/auth/login'} class="anchor">{$t('auth.login')}</a>
     </p>
   </div>
 </div>

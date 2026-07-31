@@ -27,6 +27,9 @@ class ChatResponse(BaseModel):
     workspace_id: UUID | None = None
     title: str
     model: str | None = None
+    source: str = "web"
+    external_chat_id: str | None = None
+    external_thread_id: str | None = None
     pinned: bool
     archived: bool
     created_at: datetime

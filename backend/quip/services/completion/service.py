@@ -606,6 +606,9 @@ class CompletionService:
                     assistant_msg_id, chat_id_str, user_id,
                     full_content, effective_model, last_usage, reasoning=full_reasoning,
                 )
+                from quip.services.telegram_notify import notify_telegram_chat
+
+                asyncio.create_task(notify_telegram_chat(chat, full_content, request))
 
             if is_new_chat:
                 _title_model = get_setting("title_model", "")
@@ -827,6 +830,9 @@ class CompletionService:
                     new_msg_id, chat_id_str, user_id,
                     full_content, effective_model, last_usage, reasoning=full_reasoning,
                 )
+                from quip.services.telegram_notify import notify_telegram_chat
+
+                asyncio.create_task(notify_telegram_chat(chat, full_content, request))
 
             yield sse_event("done", {})
 

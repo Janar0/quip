@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+import { onDestroy, onMount } from 'svelte';
   import { t, locale } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import { fade } from 'svelte/transition';
   import { D2 } from '$lib/motion';
-  import { getUserSettings, updateUserSettings, fetchMe } from '$lib/api/auth';
+import { createTelegramLink, getTelegramStatus, getUserSettings, unlinkTelegram, updateUserSettings, fetchMe } from '$lib/api/auth';
   import { currentUser } from '$lib/stores/auth';
   import { selectedModel, setDefaultModel } from '$lib/stores/chat';
   import { getModels } from '$lib/api/admin';
@@ -16,6 +16,11 @@
   let models = $state<{ id: string; name: string }[]>([]);
   let loading = $state(true);
   let saving = $state(false);
+  let telegramLinked = $state(false);
+  let telegramUserId = $state<string | null>(null);
+  let telegramLinkUrl = $state('');
+  let telegramLinkLoading = $state(false);
+  let telegramPoll: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
     const [settings, modelList] = await Promise.all([getUserSettings(), getModels()]);
@@ -23,8 +28,50 @@
     defaultModel = settings.default_model || localStorage.getItem('default_model') || '';
     selectedLocale = settings.locale || $locale || 'en';
     models = modelList.map((m) => ({ id: m.id, name: m.name || m.id }));
+    const telegram = await getTelegramStatus();
+    telegramLinked = telegram.linked;
+    telegramUserId = telegram.telegram_user_id;
     loading = false;
   });
+
+  onDestroy(() => {
+    if (telegramPoll) clearInterval(telegramPoll);
+  });
+
+  async function refreshTelegramStatus() {
+    const telegram = await getTelegramStatus();
+    telegramLinked = telegram.linked;
+    telegramUserId = telegram.telegram_user_id;
+    if (telegram.linked && telegramPoll) {
+      clearInterval(telegramPoll);
+      telegramPoll = undefined;
+    }
+  }
+
+  async function connectTelegram() {
+    telegramLinkLoading = true;
+    const link = await createTelegramLink();
+    telegramLinkLoading = false;
+    if (!link) {
+      toast.error($t('settings.telegramLinkFailed'));
+      return;
+    }
+    telegramLinkUrl = link.url;
+    window.open(link.url, '_blank', 'noopener,noreferrer');
+    if (telegramPoll) clearInterval(telegramPoll);
+    telegramPoll = setInterval(refreshTelegramStatus, 2500);
+  }
+
+  async function disconnectTelegram() {
+    if (await unlinkTelegram()) {
+      telegramLinked = false;
+      telegramUserId = null;
+      telegramLinkUrl = '';
+      toast.success($t('settings.telegramUnlinked'));
+    } else {
+      toast.error($t('common.error'));
+    }
+  }
 
   async function handleSave() {
     saving = true;
@@ -102,6 +149,27 @@
           >Русский</button>
         </div>
       </div>
+
+      <!-- Telegram account link -->
+      <section class="card p-4 space-y-3">
+        <div>
+          <h2 class="font-semibold">{$t('settings.telegram')}</h2>
+          <p class="text-sm opacity-60 mt-1">{$t('settings.telegramDesc')}</p>
+        </div>
+        {#if telegramLinked}
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-sm">{$t('settings.telegramConnected')} {telegramUserId ? `(${telegramUserId})` : ''}</span>
+            <button class="btn btn-sm preset-outlined" onclick={disconnectTelegram}>{$t('settings.telegramUnlink')}</button>
+          </div>
+        {:else}
+          <button class="btn preset-outlined w-full" onclick={connectTelegram} disabled={telegramLinkLoading}>
+            {telegramLinkLoading ? $t('common.loading') : $t('settings.telegramConnect')}
+          </button>
+          {#if telegramLinkUrl}
+            <a class="text-xs break-all underline opacity-70" href={telegramLinkUrl} target="_blank" rel="noreferrer">{telegramLinkUrl}</a>
+          {/if}
+        {/if}
+      </section>
 
       <button
         class="btn preset-filled-primary-500 w-full"

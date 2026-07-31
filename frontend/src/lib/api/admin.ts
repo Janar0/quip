@@ -23,12 +23,22 @@ export interface SettingsPayload {
   default_model?: string | null;
   mistral_api_key?: string;
   archive_max_mb?: number;
+  telegram_bot_token?: string;
+  telegram_allowed_user_ids?: string;
+  telegram_model?: string | null;
+  telegram_login_redirect_uri?: string | null;
+  public_app_url?: string | null;
 }
 
 export interface SettingsResponse extends SettingsPayload {
   openrouter_api_key_set: boolean;
   openrouter_key_info: Record<string, unknown> | null;
   mistral_api_key_set?: boolean;
+  telegram_bot_token_set?: boolean;
+  telegram_allowed_user_ids?: string;
+  telegram_model?: string | null;
+  telegram_login_redirect_uri?: string | null;
+  public_app_url?: string | null;
 }
 
 export const getSettings = (): Promise<SettingsResponse> =>

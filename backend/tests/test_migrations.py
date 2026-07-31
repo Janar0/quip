@@ -12,15 +12,16 @@ async def _schema_snapshot(database_url: str):
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
-            tables, chat_columns, file_columns = await connection.run_sync(
+            tables, chat_columns, file_columns, token_columns = await connection.run_sync(
                 lambda sync_connection: (
                     set(inspect(sync_connection).get_table_names()),
                     {column["name"] for column in inspect(sync_connection).get_columns("chats")},
                     {column["name"] for column in inspect(sync_connection).get_columns("files")},
+                    {column["name"] for column in inspect(sync_connection).get_columns("telegram_link_tokens")},
                 )
             )
             revision = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-            return tables, chat_columns, file_columns, revision
+            return tables, chat_columns, file_columns, token_columns, revision
     finally:
         await engine.dispose()
 
@@ -32,13 +33,14 @@ def test_fresh_database_migrates_to_workspace_head(tmp_path):
     # A second boot must be an idempotent no-op.
     upgrade_schema(database_url)
 
-    tables, chat_columns, file_columns, revision = asyncio.run(
+    tables, chat_columns, file_columns, token_columns, revision = asyncio.run(
         _schema_snapshot(database_url)
     )
-    assert {"workspaces", "workspace_members", "chat_runs"}.issubset(tables)
+    assert {"workspaces", "workspace_members", "chat_runs", "telegram_link_tokens", "telegram_updates"}.issubset(tables)
     assert "workspace_id" in chat_columns
     assert "workspace_id" in file_columns
-    assert revision == "0003"
+    assert {"user_id", "telegram_user_id"}.issubset(token_columns)
+    assert revision == "0007"
 
 
 async def _seed_unversioned_baseline(database_url: str):
@@ -114,4 +116,4 @@ def test_unversioned_database_is_stamped_and_backfilled(tmp_path, monkeypatch):
     assert workspace_count == 1
     assert chat_workspace
     assert file_workspace == chat_workspace
-    assert revision == "0003"
+    assert revision == "0007"

@@ -40,7 +40,15 @@ async def load_settings():
             _settings.update(row.data)
 
     # Env vars can bootstrap settings not yet in DB
-    env_keys = ["openrouter_api_key"]
+    env_keys = [
+        "openrouter_api_key",
+        "telegram_bot_token",
+        "telegram_allowed_user_ids",
+        "telegram_model",
+        "telegram_login_redirect_uri",
+        "public_app_url",
+        "telegram_max_file_mb",
+    ]
     for key in env_keys:
         val = os.getenv(key.upper(), "")
         if val and key not in _settings:

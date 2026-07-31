@@ -28,6 +28,7 @@ from quip.routers.skills import router as skills_router
 from quip.routers.workspaces import router as workspaces_router
 from quip.services.openwebui_migration import run_migration_if_needed
 from quip.services.sandbox import sandbox_cleanup_loop, sandbox_manager
+from quip.services.telegram import TelegramBotService
 
 
 @asynccontextmanager
@@ -41,7 +42,11 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         await seed_builtin_skills(db)
     cleanup_task = asyncio.create_task(sandbox_cleanup_loop())
+    telegram_bot = TelegramBotService()
+    app.state.telegram_bot = telegram_bot
+    await telegram_bot.start()
     yield
+    await telegram_bot.stop()
     cleanup_task.cancel()
     await engine.dispose()
 

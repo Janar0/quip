@@ -38,6 +38,31 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Return the browser/API user when present, without rejecting anonymous requests."""
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE_NAME)
+    if not token:
+        return None
+
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "access":
+        return None
+    try:
+        user_id = UUID(payload["sub"])
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active or user.role == "pending":
+        return None
+    return user
+
+
 async def get_admin_user(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")

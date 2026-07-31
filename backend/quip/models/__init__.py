@@ -6,12 +6,14 @@ from quip.models.file import DocumentChunk, DocumentImage, File
 from quip.models.sandbox import Sandbox
 from quip.models.skill import Skill
 from quip.models.usage import UsageLog
-from quip.models.user import ApiKey, Auth, User
+from quip.models.user import ApiKey, Auth, TelegramLinkToken, TelegramUpdate, User
 from quip.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
     "ApiKey",
     "Auth",
+    "TelegramLinkToken",
+    "TelegramUpdate",
     "Budget",
     "BootstrapState",
     "Chat",

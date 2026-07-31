@@ -12,6 +12,12 @@
   let keyIsSet = $state(false);
   let keyInfo = $state<Record<string, unknown> | null>(null);
   let ollamaUrl = $state('http://localhost:11434');
+  let telegramToken = $state('');
+  let telegramTokenIsSet = $state(false);
+  let telegramAllowedUserIds = $state('');
+  let telegramModel = $state('');
+  let telegramLoginRedirectUri = $state('');
+  let publicAppUrl = $state('');
   let systemPrompt = $state('');
   let searchEnabled = $state(false);
   let researchEnabled = $state(true);
@@ -36,6 +42,11 @@
     keyIsSet = settings.openrouter_api_key_set;
     keyInfo = settings.openrouter_key_info;
     ollamaUrl = settings.ollama_url ?? 'http://localhost:11434';
+    telegramTokenIsSet = settings.telegram_bot_token_set ?? false;
+    telegramAllowedUserIds = settings.telegram_allowed_user_ids ?? '';
+    telegramModel = settings.telegram_model ?? '';
+    telegramLoginRedirectUri = settings.telegram_login_redirect_uri ?? '';
+    publicAppUrl = settings.public_app_url ?? '';
     systemPrompt = settings.system_prompt ?? '';
     searchEnabled = settings.search_enabled ?? false;
     researchEnabled = settings.research_enabled ?? true;
@@ -100,6 +111,26 @@
     saving = true;
     const ok = await updateSettings({ ollama_url: ollamaUrl });
     toast[ok ? 'success' : 'error'](ok ? $t('toast.ollamaSaved') : $t('admin.failedToSave'));
+    saving = false;
+  }
+
+  async function saveTelegram() {
+    saving = true;
+    const payload: Record<string, string> = {
+      telegram_allowed_user_ids: telegramAllowedUserIds,
+      telegram_model: telegramModel,
+      telegram_login_redirect_uri: telegramLoginRedirectUri,
+      public_app_url: publicAppUrl,
+    };
+    if (telegramToken.trim()) payload.telegram_bot_token = telegramToken.trim();
+    const ok = await updateSettings(payload);
+    if (ok) {
+      telegramTokenIsSet = telegramTokenIsSet || Boolean(telegramToken.trim());
+      telegramToken = '';
+      toast.success($t('toast.settingsSaved'));
+    } else {
+      toast.error($t('admin.failedToSave'));
+    }
     saving = false;
   }
 
@@ -293,6 +324,46 @@
           <input type="text" class="input flex-1" placeholder="http://localhost:11434" bind:value={ollamaUrl} />
           <button class="btn preset-filled-primary-500" onclick={saveOllama} disabled={saving}>{$t('common.save')}</button>
         </div>
+      </section>
+
+      <section class="card p-4 sm:p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 5L3 12l7 2 2 7 9-16z"/><path d="M10 14l4-4"/></svg>
+          <h2 class="text-lg font-semibold">{$t('admin.telegram')}</h2>
+        </div>
+        <p class="text-sm opacity-40">{$t('admin.telegramDesc')}</p>
+        {#if telegramTokenIsSet}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success-500/15 text-success-400">
+            <span class="size-1.5 rounded-full bg-success-500"></span>
+            {$t('admin.connected')}
+          </span>
+        {/if}
+        <div class="space-y-1">
+          <label for="telegram-token" class="text-xs opacity-50">{$t('admin.telegramToken')}</label>
+          <input id="telegram-token" type="password" class="input w-full" placeholder={telegramTokenIsSet ? $t('admin.enterNewKey') : '123456:AA...'} bind:value={telegramToken} />
+        </div>
+        <div class="space-y-1">
+          <label for="telegram-allowed-ids" class="text-xs opacity-50">{$t('admin.telegramAllowedIds')}</label>
+          <input id="telegram-allowed-ids" type="text" class="input w-full" placeholder="123456789, 987654321" bind:value={telegramAllowedUserIds} />
+          <p class="text-xs opacity-40">{$t('admin.telegramAllowedIdsDesc')}</p>
+        </div>
+        <div class="space-y-1">
+          <label for="telegram-redirect-uri" class="text-xs opacity-50">{$t('admin.telegramRedirectUri')}</label>
+          <input id="telegram-redirect-uri" type="url" class="input w-full" placeholder="https://quip.example.com/api/auth/telegram/callback" bind:value={telegramLoginRedirectUri} />
+          <p class="text-xs opacity-40">{$t('admin.telegramRedirectUriDesc')}</p>
+        </div>
+        <div class="space-y-1">
+          <label for="public-app-url" class="text-xs opacity-50">{$t('admin.publicAppUrl')}</label>
+          <input id="public-app-url" type="url" class="input w-full" placeholder="https://quip.example.com" bind:value={publicAppUrl} />
+          <p class="text-xs opacity-40">{$t('admin.publicAppUrlDesc')}</p>
+        </div>
+        <div class="space-y-1">
+          <label for="telegram-model" class="text-xs opacity-50">{$t('admin.telegramModel')}</label>
+          <input id="telegram-model" type="text" class="input w-full" placeholder={$t('admin.telegramModelPlaceholder')} bind:value={telegramModel} />
+        </div>
+        <button class="btn preset-filled-primary-500 self-start" onclick={saveTelegram} disabled={saving || (!telegramToken.trim() && !telegramTokenIsSet)}>
+          {saving ? '...' : $t('common.save')}
+        </button>
       </section>
     </div>
 

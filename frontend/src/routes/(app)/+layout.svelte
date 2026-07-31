@@ -329,7 +329,12 @@
                   in:fade={{ duration: D1 }}
                   ondblclick={(e) => { e.preventDefault(); startRename(chat.id, chat.title); }}
                 >
-                  <span class="truncate w-full group-hover:pr-[72px] transition-all" style="transition-duration: var(--quip-d-1)">{chat.title}</span>
+                  <span class="truncate w-full group-hover:pr-[72px] transition-all flex items-center gap-1.5" style="transition-duration: var(--quip-d-1)">
+                    {#if chat.source === 'telegram'}
+                      <span class="shrink-0 text-[10px] text-sky-400" title={$t('chat.telegram')}>TG</span>
+                    {/if}
+                    <span class="truncate">{chat.title}</span>
+                  </span>
                   <span class="absolute right-0 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1 rounded-r-lg" style="background: linear-gradient(to right, transparent, var(--quip-sidebar-bg, #0f172a) 20%)">
                     <button
                       class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300"
