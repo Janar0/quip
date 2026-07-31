@@ -217,8 +217,32 @@ def markdown_to_markdown_v2(markdown: str) -> str:
     result = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", italic, result)
     result = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", italic, result)
 
+    result = re.sub(
+        r"^\s*>\s?(.*?)\s*$",
+        lambda match: f"{protect('>')} {match.group(1)}",
+        result,
+        flags=re.MULTILINE,
+    )
+    result = re.sub(r"^\s*[-+*]\s+\[[xX]\]\s+", "☑ ", result, flags=re.MULTILINE)
+    result = re.sub(r"^\s*[-+*]\s+\[\s\]\s+", "☐ ", result, flags=re.MULTILINE)
     result = re.sub(r"^\s*[-+*]\s+", "• ", result, flags=re.MULTILINE)
     result = re.sub(r"^(\s*)(\d+)\.\s+", r"\1\2\\. ", result, flags=re.MULTILINE)
+
+    def table(match: re.Match[str]) -> str:
+        rows = []
+        for row in match.group(0).splitlines():
+            if re.fullmatch(r"\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*", row):
+                continue
+            rows.append(row.strip())
+        fence = chr(96) * 3
+        return protect(f"{fence}\n{chr(10).join(rows)}\n{fence}") if rows else ""
+
+    result = re.sub(
+        r"(?:^[ \t]*\|.*\|[ \t]*\n?){2,}",
+        table,
+        result,
+        flags=re.MULTILINE,
+    )
 
     result = _escape_markdown_v2(result)
     for index, value in enumerate(protected):
@@ -444,7 +468,8 @@ class TelegramBotService:
         media = describe_media(message)
         text = (message.get("text") or message.get("caption") or "").strip()
         topic_created = message.get("forum_topic_created") or {}
-        if not text and media is None and not topic_created:
+        topic_edited = message.get("forum_topic_edited") or {}
+        if not text and media is None and not topic_created and not topic_edited:
             return
 
         chat_id = chat.get("id")
@@ -480,8 +505,17 @@ class TelegramBotService:
             return
 
         topic_created = message.get("forum_topic_created") or {}
+        topic_edited = message.get("forum_topic_edited") or {}
         command, argument = self._command(text)
-        topic_name = str(topic_created.get("name") or "").strip() or None
+        topic_name = str(
+            topic_edited.get("name") or topic_created.get("name") or ""
+        ).strip() or None
+        topic_name_implicit: bool | None = (
+            bool(topic_created.get("is_name_implicit"))
+            if topic_created
+            else (False if topic_edited and topic_name else None)
+        )
+        topic_event = bool(topic_created or topic_edited)
         if command == "/start" and argument.startswith("link_"):
             await self._link_user(chat_id, thread_id, sender_id, sender, argument)
             return
@@ -535,12 +569,25 @@ class TelegramBotService:
                 )
                 return
 
-            if topic_name and not text and media is None:
-                await self._get_or_create_chat(user, chat_id, thread_id, db, topic_name=topic_name)
+            if topic_event and not text and media is None:
+                if topic_name:
+                    await self._get_or_create_chat(
+                        user,
+                        chat_id,
+                        thread_id,
+                        db,
+                        topic_name=topic_name,
+                        topic_name_implicit=topic_name_implicit,
+                    )
                 return
 
             current_chat = await self._get_or_create_chat(
-                user, chat_id, thread_id, db, topic_name=topic_name
+                user,
+                chat_id,
+                thread_id,
+                db,
+                topic_name=topic_name,
+                topic_name_implicit=topic_name_implicit,
             )
             if command == "/model":
                 await self._send_text(
@@ -702,6 +749,7 @@ class TelegramBotService:
         thread_id: str,
         db,
         topic_name: str | None = None,
+        topic_name_implicit: bool | None = None,
     ) -> Chat:
         result = await db.execute(
             select(Chat)
@@ -717,11 +765,12 @@ class TelegramBotService:
         )
         current = result.scalar_one_or_none()
         if current:
-            if topic_name and current.title in {"Telegram Chat", "New Chat"}:
+            if topic_name and topic_name_implicit is not None:
                 current.title = topic_name[:500]
                 current.meta = {
                     **(current.meta or {}),
                     "emoji": current.emoji or fallback_chat_emoji(topic_name),
+                    "telegram_topic_implicit": topic_name_implicit,
                 }
                 await db.commit()
             return current
@@ -735,7 +784,14 @@ class TelegramBotService:
             source="telegram",
             external_chat_id=str(chat_id),
             external_thread_id=thread_id,
-            meta={"emoji": fallback_chat_emoji(topic_name)} if topic_name else None,
+            meta=(
+                {
+                    "emoji": fallback_chat_emoji(topic_name),
+                    "telegram_topic_implicit": bool(topic_name_implicit),
+                }
+                if topic_name
+                else None
+            ),
         )
         db.add(current)
         await db.commit()
@@ -796,6 +852,7 @@ class TelegramBotService:
         full_text = ""
         error_text = ""
         widget_fallbacks: list[str] = []
+        generated_topic_title: str | None = None
         last_update = 0.0
 
         try:
@@ -861,6 +918,8 @@ class TelegramBotService:
                                         widget_data,
                                     )
                                 )
+                    elif event_type == "title":
+                        generated_topic_title = str(data.get("title") or "").strip() or None
                     elif event_type == "error":
                         error_text = str(data.get("error") or data.get("message") or "Generation failed")
 
@@ -908,6 +967,24 @@ class TelegramBotService:
         except Exception:
             logger.exception("Telegram completion failed")
             error_text = "Не удалось выполнить запрос. Проверьте настройки QUIP и попробуйте ещё раз."
+
+        if generated_topic_title and thread_id != "0":
+            try:
+                await api.call(
+                    "editForumTopic",
+                    {
+                        "chat_id": telegram_chat_id,
+                        "message_thread_id": int(thread_id),
+                        "name": generated_topic_title[:128],
+                    },
+                )
+            except (TelegramAPIError, httpx.HTTPError) as exc:
+                logger.warning(
+                    "Could not rename Telegram topic %s/%s: %s",
+                    telegram_chat_id,
+                    thread_id,
+                    exc,
+                )
 
         if full_text:
             display_text, artifacts = _telegram_display_text(full_text)

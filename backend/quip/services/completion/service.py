@@ -26,7 +26,7 @@ from quip.services.multimodal import build_multimodal_message
 from quip.services.sandbox import sandbox_manager
 from quip.services.skill_store import get_skill as get_skill_by_name
 from quip.services.streaming import sse_event
-from quip.services.title import generate_chat_identity
+from quip.services.title import generate_chat_identity, is_implicit_chat_title
 from quip.services.workspaces import ensure_personal_workspace, get_workspace_for_user
 
 logger = logging.getLogger(__name__)
@@ -645,7 +645,16 @@ class CompletionService:
 
                 asyncio.create_task(notify_telegram_chat(chat, full_content, request))
 
-            if is_new_chat or (chat.source == "telegram" and chat.title == "Telegram Chat"):
+            telegram_topic_implicit = (chat.meta or {}).get("telegram_topic_implicit")
+            should_generate_telegram_title = (
+                chat.source == "telegram"
+                and (
+                    telegram_topic_implicit
+                    if "telegram_topic_implicit" in (chat.meta or {})
+                    else is_implicit_chat_title(chat.title)
+                )
+            )
+            if is_new_chat or should_generate_telegram_title:
                 identity_model = get_setting("title_model", "") or effective_model
                 identity = await generate_chat_identity(
                     req.message, identity_model, get_setting("openrouter_api_key", "")
@@ -656,7 +665,11 @@ class CompletionService:
                         _chat = await _tdb.get(Chat, chat.id)
                         if _chat:
                             _chat.title = new_title[:200]
-                            _chat.meta = {**(_chat.meta or {}), "emoji": emoji}
+                            _chat.meta = {
+                                **(_chat.meta or {}),
+                                "emoji": emoji,
+                                "telegram_topic_implicit": False,
+                            }
                             await _tdb.commit()
                     yield sse_event("title", {"title": new_title, "emoji": emoji})
 

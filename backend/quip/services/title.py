@@ -11,6 +11,16 @@ from quip.core.config import get_setting
 
 logger = logging.getLogger(__name__)
 
+_IMPLICIT_CHAT_TITLES = frozenset(
+    {
+        "telegram chat",
+        "new chat",
+        "новый чат",
+        "новая тема",
+        "new topic",
+    }
+)
+
 _FALLBACK_EMOJIS = (
     ("погод|weather|дожд|температур|снег", "🌤"),
     ("код|программ|python|javascript|api|сервер", "💻"),
@@ -28,6 +38,10 @@ def fallback_chat_emoji(message: str) -> str:
         if re.search(pattern, lowered):
             return emoji
     return "💬"
+
+
+def is_implicit_chat_title(title: str | None) -> bool:
+    return bool(title and title.strip().casefold() in _IMPLICIT_CHAT_TITLES)
 
 
 def _clean_title(value: object, message: str) -> str:
