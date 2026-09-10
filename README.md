@@ -39,6 +39,8 @@ npm run build
 
 Тесты провайдеров используют HTTPX MockTransport; реальные ключи и Docker daemon не нужны.
 
+Перед релизом дождитесь успешного workflow **Quality, Build & Push** в GitHub Actions: кроме этих проверок он запускает `pip-audit`, `npm audit --omit=dev --audit-level=high`, проверку Compose и сборку с публикацией Docker-образов. Успешная локальная сборка frontend не подтверждает прохождение всего CI.
+
 ## Навигация по проекту
 
 - [Архитектура и правила правок](docs/architecture.md)
