@@ -42,7 +42,7 @@
       <a
         href={tab.href}
         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
-          {isActive(tab.href) ? 'bg-slate-800 text-slate-200' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900'}"
+          {isActive(tab.href) ? 'bg-elevated text-foreground' : 'text-muted hover:text-foreground hover:bg-panel'}"
       >
         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={tab.icon}/></svg>
         {$t(tab.key)}
@@ -67,7 +67,7 @@
           href={tab.href}
           data-active={isActive(tab.href)}
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-colors shrink-0
-            {isActive(tab.href) ? 'bg-slate-700/80 text-slate-100' : 'text-slate-400'}"
+            {isActive(tab.href) ? 'bg-elevated/80 text-foreground' : 'text-muted'}"
           style={isActive(tab.href) ? '' : 'background: var(--quip-bg-raised)'}
         >
           <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={tab.icon}/></svg>

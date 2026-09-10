@@ -106,7 +106,7 @@
   }
 
   const roleBadge: Record<string, string> = {
-    admin: 'bg-slate-800 text-slate-200',
+    admin: 'bg-elevated text-foreground',
     user: 'bg-success-500/15 text-success-400',
     pending: 'bg-warning-500/15 text-warning-400',
   };
@@ -167,7 +167,7 @@
       </span>
       {$t('common.enabled')}
     {:else}
-      <span class="size-1.5 rounded-full bg-slate-600"></span>
+      <span class="size-1.5 rounded-full bg-elevated"></span>
       {$t('common.disabled')}
     {/if}
   </button>
@@ -223,7 +223,7 @@
   {#if loading}
     <div class="space-y-2">
       {#each [1,2,3,4] as _}
-        <div class="h-14 bg-slate-800/30 rounded-lg animate-pulse"></div>
+        <div class="h-14 bg-elevated/30 rounded-lg animate-pulse"></div>
       {/each}
     </div>
   {:else if filtered.length === 0}
@@ -235,14 +235,14 @@
         {@const isSelf = user.id === $currentUser?.id}
         <div class="admin-card !p-3.5">
           <div class="flex items-start gap-3">
-            <div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-300 shrink-0">
+            <div class="w-9 h-9 rounded-full bg-elevated flex items-center justify-center text-sm font-bold text-foreground shrink-0">
               {user.name.charAt(0).toUpperCase()}
             </div>
             <div class="min-w-0 flex-1">
               <div class="font-medium truncate">{user.name}</div>
               <div class="text-xs opacity-40 truncate">@{user.username} · {user.email}</div>
             </div>
-            <span class="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 {roleBadge[user.role] ?? 'bg-slate-800/40 text-slate-400'}">
+            <span class="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0 {roleBadge[user.role] ?? 'bg-elevated/40 text-muted'}">
               {$t('admin.users.role.' + user.role) ?? user.role}
             </span>
           </div>
@@ -263,12 +263,12 @@
     <div class="admin-table-scroll hidden md:block">
       <table class="table text-sm">
         <thead>
-          <tr class="border-b border-slate-800">
+          <tr class="border-b border-outline">
             {#each [['name', $t('admin.users.colName')], ['email', $t('admin.users.colEmail')], ['role', $t('admin.users.colRole')]] as [col, label]}
               <th class="px-4 py-3 select-none">
                 <button
                   type="button"
-                  class="flex items-center gap-1.5 w-full hover:bg-slate-800/30 transition-colors -mx-1 px-1 py-0.5 rounded"
+                  class="flex items-center gap-1.5 w-full hover:bg-elevated/30 transition-colors -mx-1 px-1 py-0.5 rounded"
                   onclick={() => toggleSort(col as 'name' | 'email' | 'role')}
                 >
                   {label}
@@ -288,10 +288,10 @@
         <tbody>
           {#each filtered as user (user.id)}
             {@const isSelf = user.id === $currentUser?.id}
-            <tr class="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+            <tr class="border-b border-outline/50 hover:bg-elevated/30 transition-colors">
               <td class="px-4 py-3">
                 <div class="flex items-center gap-2.5">
-                  <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">
+                  <div class="w-8 h-8 rounded-full bg-elevated flex items-center justify-center text-xs font-bold text-foreground shrink-0">
                     {user.name.charAt(0).toUpperCase()}
                   </div>
                   <div>
@@ -302,7 +302,7 @@
               </td>
               <td class="px-4 py-3 opacity-60">{user.email}</td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full uppercase tracking-wide {roleBadge[user.role] ?? 'bg-slate-800/40 text-slate-400'}">
+                <span class="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full uppercase tracking-wide {roleBadge[user.role] ?? 'bg-elevated/40 text-muted'}">
                   {$t('admin.users.role.' + user.role) ?? user.role}
                 </span>
               </td>

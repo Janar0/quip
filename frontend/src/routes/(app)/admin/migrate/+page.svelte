@@ -59,7 +59,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="border-2 border-dashed rounded-xl p-8 text-center transition-colors
-        {dragging ? 'border-slate-500/50 bg-slate-500/5' : 'border-slate-800'}"
+        {dragging ? 'border-outline/50 bg-elevated/5' : 'border-outline'}"
       ondragover={(e) => { e.preventDefault(); dragging = true; }}
       ondragleave={() => (dragging = false)}
       ondrop={handleDrop}
@@ -68,7 +68,7 @@
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
       </svg>
       <p class="opacity-50">{$t('migrate.dropzone')}</p>
-      <label class="text-slate-400 text-sm cursor-pointer underline">
+      <label class="text-muted text-sm cursor-pointer underline">
         {$t('migrate.browse')}
         <input type="file" accept=".json" class="hidden" onchange={handleFileSelect} />
       </label>

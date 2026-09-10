@@ -5,7 +5,8 @@
   import MessageBubble from './MessageBubble.svelte';
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
-  import { tick } from 'svelte';
+  import { tick, untrack, onMount } from 'svelte';
+  import { hasSelectionWithin } from '$lib/actions/selectable-html';
 
   let {
     onRegenerate,
@@ -17,7 +18,21 @@
 
   let container: HTMLDivElement;
   let isAtBottom = $state(true);
-  let userSentMessage = $state(false);
+  let pointerSelecting = false;
+  onMount(() => {
+    const startSelection = (event: PointerEvent) => {
+      pointerSelecting = !!container?.contains(event.target as Node);
+    };
+    const endSelection = () => { pointerSelecting = false; };
+    document.addEventListener('pointerdown', startSelection);
+    window.addEventListener('pointerup', endSelection);
+    window.addEventListener('pointercancel', endSelection);
+    return () => {
+      document.removeEventListener('pointerdown', startSelection);
+      window.removeEventListener('pointerup', endSelection);
+      window.removeEventListener('pointercancel', endSelection);
+    };
+  });
 
   // Build thread from messages + selections (selections in store, shared with streamChat)
   let thread = $derived(buildThread($messages, $branchSelections));
@@ -41,27 +56,23 @@
     }
   }
 
-  // Auto-scroll only if user was at bottom or just sent a message
+  // Follow new content only if the reader stayed at the bottom. A drag or
+  // keyboard selection must never be interrupted by streaming updates.
   $effect(() => {
-    if ($messages.length > 0 && (isAtBottom || userSentMessage)) {
-      tick().then(() => {
-        if (container) {
-          container.scrollTop = container.scrollHeight;
-        }
-        userSentMessage = false;
-      });
-    }
-  });
-
-  // Detect when user sends a message (temp-user appears)
-  $effect(() => {
-    if ($messages.some((m) => m.id === 'temp-user')) {
-      userSentMessage = true;
-    }
+    const current = $messages;
+    const justSent = current.some((m) => m.id === 'temp-user');
+    if (!current.length || !(untrack(() => isAtBottom) || justSent)) return;
+    let cancelled = false;
+    tick().then(() => {
+      if (!cancelled && container && !pointerSelecting && !hasSelectionWithin(container)) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+    return () => { cancelled = true; };
   });
 </script>
 
-<div bind:this={container} class="flex-1 overflow-y-auto pt-20 pb-44 relative" onscroll={checkScroll}>
+<div bind:this={container} class="flex-1 min-h-0 overflow-y-auto pt-20 pb-6 relative" onscroll={checkScroll}>
   <div class="max-w-4xl mx-auto w-full space-y-8">
     {#each thread as message, i (message.id)}
       <!--suppress svelte-garden/derived-var-used-in-key: branchDepth is stable per message id -->
@@ -82,17 +93,17 @@
           >
             <!-- Prev button -->
             <button
-              class="p-1 rounded-lg hover:bg-slate-800 disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
+              class="p-1 rounded-lg hover:bg-elevated disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
               disabled={message.siblingIndex <= 1}
               onclick={() => selectSibling(message.parent_id, message.siblingIds[message.siblingIndex - 2])}
               aria-label={$t('chat.prevBranch')}
             >
-              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
 
             <!-- Branch indicator -->
-            <div class="flex items-center gap-1.5 text-xs text-slate-500">
-              <svg class="w-3.5 h-3.5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <div class="flex items-center gap-1.5 text-xs text-muted">
+              <svg class="w-3.5 h-3.5 text-subtle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="6" y1="3" x2="6" y2="15"/>
                 <circle cx="6" cy="18" r="3"/>
                 <path d="M18 9a9 9 0 01-9 9"/>
@@ -103,12 +114,12 @@
 
             <!-- Next button -->
             <button
-              class="p-1 rounded-lg hover:bg-slate-800 disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
+              class="p-1 rounded-lg hover:bg-elevated disabled:opacity-20 disabled:cursor-default transition-all active:scale-[0.90]"
               disabled={message.siblingIndex >= message.siblingCount}
               onclick={() => selectSibling(message.parent_id, message.siblingIds[message.siblingIndex])}
               aria-label={$t('chat.nextBranch')}
             >
-              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
             </button>
           </div>
         {/if}
@@ -118,8 +129,8 @@
 
   {#if !isAtBottom}
     <button
-      class="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 p-1.5 rounded-full transition-all text-slate-400 hover:text-slate-200"
-      style="background: rgba(22,22,26,0.5); border: 1px solid var(--quip-glass-border); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4);"
+      class="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 p-1.5 rounded-full transition-all text-muted hover:text-foreground"
+      style="background: var(--quip-bg-elevated); border: 1px solid var(--quip-glass-border); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4);"
       onclick={scrollToBottom}
       title={$t('chat.scrollToBottom')}
       aria-label={$t('chat.scrollToBottom')}

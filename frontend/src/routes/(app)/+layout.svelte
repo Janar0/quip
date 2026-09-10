@@ -221,7 +221,7 @@
 <ShortcutsModal open={showShortcuts} onClose={() => (showShortcuts = false)} />
 
 {#if $isAuthenticated}
-  <div class="flex h-screen" style="background: var(--quip-bg)">
+  <div class="flex h-dvh" style="background: var(--quip-bg)">
     <!-- Mobile backdrop -->
     {#if isMobile && $showSidebar}
       <button
@@ -246,7 +246,7 @@
             <span class="font-headline text-[15px] font-extrabold tracking-tight" style="color: var(--quip-text)">QUIP</span>
           </span>
           <button
-            class="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded-lg transition-colors"
+            class="p-1.5 text-muted hover:text-foreground hover:bg-elevated/50 rounded-lg transition-colors"
             onclick={toggleSidebar}
             aria-label="Collapse sidebar"
           >
@@ -265,17 +265,17 @@
             onclick={clearSearch}
           >
             <span class="flex items-center gap-2.5">
-              <svg class="w-4 h-4 text-slate-400 group-hover:text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              <svg class="w-4 h-4 text-muted group-hover:text-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
               {$t('nav.newChat')}
             </span>
-            <span class="text-[10px] text-slate-600 font-mono">Ctrl+N</span>
+            <span class="text-[10px] text-subtle font-mono">Ctrl+N</span>
           </a>
         </div>
 
         <!-- Search -->
         <div class="px-3 pb-2 shrink-0">
           <div class="relative">
-            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
             <input
               type="text"
               class="w-full rounded-lg pl-9 pr-8 py-2 text-sm focus:outline-none transition-colors"
@@ -286,7 +286,7 @@
             />
             {#if searchQuery}
               <button
-                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
                 onclick={clearSearch}
                 aria-label={$t('search.clear')}
               >
@@ -300,19 +300,19 @@
         <nav class="flex-1 overflow-y-auto px-3 pb-2">
           {#if searchQuery}
             {#if isSearching}
-              <p class="text-xs text-slate-500 text-center py-4">{$t('search.searching')}</p>
+              <p class="text-xs text-muted text-center py-4">{$t('search.searching')}</p>
             {:else if searchResults.length === 0}
-              <p class="text-xs text-slate-500 text-center py-4">{$t('search.noResults')}</p>
+              <p class="text-xs text-muted text-center py-4">{$t('search.noResults')}</p>
             {:else}
               {#each searchResults as result (result.id)}
                 <a
                   href="/chat/{result.id}"
-                  class="block px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+                  class="block px-3 py-2 rounded-lg text-sm text-muted hover:bg-panel hover:text-foreground transition-colors"
                   onclick={clearSearch}
                 >
                   <div class="truncate">{result.title}</div>
                   {#if result.snippet}
-                    <div class="text-xs text-slate-600 truncate mt-0.5">{result.snippet}</div>
+                    <div class="text-xs text-subtle truncate mt-0.5">{result.snippet}</div>
                   {/if}
                 </a>
               {/each}
@@ -323,7 +323,7 @@
                 <div class="px-1" in:fade={{ duration: D1 }}>
                   <!-- svelte-ignore a11y_autofocus -->
                   <input
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600"
+                    class="w-full bg-panel border border-outline rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-outline"
                     bind:value={renameValue}
                     onkeydown={renameKeydown}
                     onblur={submitRename}
@@ -333,7 +333,7 @@
               {:else}
                 <a
                   href="/chat/{chat.id}"
-                  class="group relative flex items-center px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+                  class="group relative flex items-center px-3 py-2 rounded-lg text-sm text-muted hover:bg-panel hover:text-foreground transition-colors"
                   in:fade={{ duration: D1 }}
                   ondblclick={(e) => { e.preventDefault(); startRename(chat.id, chat.title); }}
                 >
@@ -348,21 +348,21 @@
                   </span>
                   <span class="absolute right-0 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1 rounded-r-lg" style="background: linear-gradient(to right, transparent, var(--quip-sidebar-bg, #0f172a) 20%)">
                     <button
-                      class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300"
+                      class="p-1 rounded hover:bg-elevated text-muted hover:text-foreground"
                       onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); togglePinChat(chat); }}
                       title={$t(chat.pinned ? 'sidebar.unpin' : 'sidebar.pin')}
                     >
                       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill={chat.pinned ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2"><path d="M12 17v5M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1v3.76z"/></svg>
                     </button>
                     <button
-                      class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300"
+                      class="p-1 rounded hover:bg-elevated text-muted hover:text-foreground"
                       onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); startRename(chat.id, chat.title); }}
                       title={$t('sidebar.rename')}
                     >
                       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </button>
                     <button
-                      class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-red-400"
+                      class="p-1 rounded hover:bg-elevated text-muted hover:text-red-400"
                       onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); deletingChatId = chat.id; }}
                       title={$t('confirm.delete')}
                     >
@@ -375,7 +375,7 @@
 
             {#if pinnedChats.length > 0}
               <div class="px-2 pt-3 pb-1.5">
-                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                <span class="text-[10px] font-bold text-muted uppercase tracking-widest flex items-center gap-1.5">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 17v5M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1v3.76z"/></svg>
                   {$t('sidebar.pinned')}
                 </span>
@@ -389,7 +389,7 @@
 
             {#each groupedChats as { group, chats } (group)}
               <div class="px-2 pt-4 pb-1.5">
-                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{$t('sidebar.' + group)}</span>
+                <span class="text-[10px] font-bold text-muted uppercase tracking-widest">{$t('sidebar.' + group)}</span>
               </div>
               {#each chats as chat (chat.id)}
                 <div animate:flip={{ duration: D2 }}>
@@ -398,7 +398,7 @@
               {/each}
             {/each}
             {#if !pinnedChats.length && !groupedChats.length}
-              <p class="text-xs text-slate-600 text-center py-8">{$t('sidebar.noChats')}</p>
+              <p class="text-xs text-subtle text-center py-8">{$t('sidebar.noChats')}</p>
             {:else if canLoadMoreChats()}
               <div use:sentinel class="h-6 flex items-center justify-center">
                 {#if loadingMore}<span class="text-xs opacity-30">···</span>{/if}
@@ -409,12 +409,12 @@
 
         <!-- Bottom bar -->
         <div class="flex flex-col gap-1.5 p-3 border-t shrink-0" style="border-color: var(--quip-border)">
-          <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-900 transition-colors">
+          <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-panel transition-colors">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             {$t('nav.settings')}
           </a>
           {#if isAdmin}
-            <a href="/admin/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-900 transition-colors">
+            <a href="/admin/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-panel transition-colors">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
               {$t('nav.admin')}
             </a>

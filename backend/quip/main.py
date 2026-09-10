@@ -33,6 +33,7 @@ from quip.services.telegram import TelegramBotService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    (Path(__file__).resolve().parent.parent / "data").mkdir(parents=True, exist_ok=True)
     if os.getenv("AUTO_MIGRATE", "true").strip().lower() in {"1", "true", "yes", "on"}:
         await asyncio.to_thread(upgrade_schema, DATABASE_URL)
     await run_migration_if_needed()

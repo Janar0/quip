@@ -51,7 +51,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="pointer-events-auto bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-sm space-y-4 shadow-xl"
+      class="pointer-events-auto bg-panel border border-outline rounded-xl p-6 w-full max-w-sm space-y-4 shadow-xl"
       in:scale={{ duration: D2, start: 0.96, easing: easeOut }}
       out:scale={{ duration: D1, start: 0.98, easing: easeOut }}
       role="dialog"
@@ -59,12 +59,12 @@
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
     >
-      <h3 class="text-lg font-semibold text-slate-100">{title}</h3>
+      <h3 class="text-lg font-semibold text-foreground">{title}</h3>
       {#if message}
-        <p class="text-sm text-slate-400">{message}</p>
+        <p class="text-sm text-muted">{message}</p>
       {/if}
       <div class="flex justify-end gap-2">
-        <button bind:this={cancelBtn} class="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-all active:scale-[0.97]" onclick={onCancel}>
+        <button bind:this={cancelBtn} class="px-3 py-1.5 text-sm rounded-lg border border-outline text-muted hover:text-foreground transition-all active:scale-[0.97]" onclick={onCancel}>
           {$t('common.cancel')}
         </button>
         <button class="px-3 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-500 transition-all active:scale-[0.97]" onclick={onConfirm}>

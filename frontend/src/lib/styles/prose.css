@@ -1,0 +1,55 @@
+/* ── Markdown prose ────────────────────────────────────────────────── */
+.prose { color: var(--quip-text); overflow-wrap: anywhere; min-width: 0; line-height: 1.7; }
+
+.prose p { margin: 0.5em 0; }
+.prose p:first-child { margin-top: 0; }
+.prose p:last-child { margin-bottom: 0; }
+.prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
+.prose li { margin: 0.2em 0; }
+.prose h1, .prose h2, .prose h3 { margin: 0.8em 0 0.4em; font-weight: 700; font-family: 'Manrope', system-ui, sans-serif; }
+.prose h1 { font-size: 1.4em; }
+.prose h2 { font-size: 1.2em; }
+.prose h3 { font-size: 1.1em; }
+.prose blockquote { border-left: 3px solid var(--quip-border); padding-left: 1em; opacity: 0.8; margin: 0.5em 0; }
+.prose a { color: var(--quip-link); text-decoration: underline; }
+.prose a:hover { color: var(--quip-link-hover); }
+.prose table { border-collapse: collapse; margin: 0.5em 0; font-size: 0.9em; }
+.prose th, .prose td { border: 1px solid var(--quip-border); padding: 0.3em 0.6em; }
+.prose th { background: var(--quip-hover); }
+
+/* ── Code blocks ───────────────────────────────────────────────────── */
+.code-block { border-radius: 0.75rem; overflow: hidden; margin: 0.5em 0; background: var(--quip-code-bg); border: 1px solid var(--quip-code-border); }
+.code-block pre { margin: 0; padding: 0.8em 1em; overflow-x: auto; font-size: 0.85em; }
+.code-block code { background: transparent !important; }
+.code-header { border-bottom: 1px solid var(--quip-code-border); }
+.copy-btn { cursor: pointer; background: none; border: none; color: inherit; }
+.copy-btn:hover { opacity: 1 !important; }
+
+/* ── Inline code ───────────────────────────────────────────────────── */
+.inline-code { background: var(--quip-hover); padding: 0.15em 0.4em; border-radius: 0.25rem; font-size: 0.9em; }
+
+
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose table { display: block; max-width: 100%; overflow-x: auto; }
+.prose img { max-width: 100%; height: auto; }
+.prose pre { white-space: pre; overflow-wrap: normal; }
+.prose :is(code, pre) { font-family: 'JetBrains Mono', monospace; }
+.code-header { color: var(--quip-text-dim); user-select: none; }
+.copy-btn { opacity: 1; padding: 0.25rem 0.5rem; border-radius: 0.25rem; }
+.copy-btn:focus-visible { outline: 2px solid var(--quip-link); }
+.hljs { color: var(--quip-text); }
+.hljs-comment, .hljs-quote { color: var(--quip-text-dim); }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--quip-syntax-keyword); }
+.hljs-string, .hljs-regexp, .hljs-attribute { color: var(--quip-syntax-string); }
+.hljs-number, .hljs-title, .hljs-built_in { color: var(--quip-syntax-number); }
+[data-theme='quip-dark'] {
+  --quip-syntax-keyword: #c4b5fd;
+  --quip-syntax-string: #86efac;
+  --quip-syntax-number: #93c5fd;
+}
+[data-theme='quip-light'] {
+  --quip-syntax-keyword: #6d28d9;
+  --quip-syntax-string: #166534;
+  --quip-syntax-number: #1d4ed8;
+}

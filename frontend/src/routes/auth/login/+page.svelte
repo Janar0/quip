@@ -18,22 +18,27 @@
     e.preventDefault();
     error = '';
     loading = true;
-    const result = await login({ email, password });
-    loading = false;
+    try {
+      const result = await login({ email, password });
 
-    if (result.ok) {
-      if (telegramLink) {
-        window.location.assign(`/api/auth/telegram/claim?token=${encodeURIComponent(telegramLink)}`);
+      if (result.ok) {
+        if (telegramLink) {
+          window.location.assign(`/api/auth/telegram/claim?token=${encodeURIComponent(telegramLink)}`);
+        } else {
+          goto('/chat');
+        }
       } else {
-        goto('/chat');
+        error = result.error ?? 'Login failed';
       }
-    } else {
-      error = result.error ?? 'Login failed';
+    } catch {
+      error = $t('error.connection');
+    } finally {
+      loading = false;
     }
   }
 </script>
 
-<div class="flex items-center justify-center min-h-screen p-4">
+<div class="flex items-center justify-center min-h-dvh p-4">
   <div class="card p-8 w-full max-w-md space-y-6" in:fly={{ y: 20, duration: D3, easing: easeOut }}>
     <h1 class="text-2xl font-bold text-center">{$t('auth.login')}</h1>
 

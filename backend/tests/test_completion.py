@@ -436,3 +436,32 @@ async def test_build_multimodal_no_images():
     result, ids = await _build_multimodal_message(msg, attachments, is_ollama=False)
     assert result["content"] == "Just text"
     assert ids == []
+
+
+async def test_ollama_completion_and_regeneration_do_not_require_openrouter(client, auth_headers, monkeypatch):
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    set_setting('openrouter_api_key', '')
+    set_setting('rag_enabled', 'false')
+    set_setting('ollama_url', 'http://localhost:11434')
+    captured = []
+
+    async def local_stream(**kwargs):
+        captured.append(kwargs)
+        yield StreamChunk(content='Local model answer', provider='ollama')
+        yield StreamChunk(finish_reason='stop')
+
+    with patch('quip.services.completion.stream.ollama.stream_completion', new=local_stream):
+        response = await client.post('/api/chat/completions', headers=auth_headers,
+                                     json={'model': 'ollama/test-model', 'message': 'Hello'})
+        assert response.status_code == 200
+        events = _parse_sse(response.text)
+        chat = next(data for event, data in events if event == 'chat')
+        assert any(data.get('text') == 'Local model answer' for event, data in events if event == 'content')
+        response = await client.post('/api/chat/regenerate', headers=auth_headers, json={
+            'chat_id': chat['chat_id'], 'message_id': chat['message_id'], 'model': 'ollama/test-model',
+        })
+        assert response.status_code == 200
+        assert 'Local model answer' in response.text
+    assert len(captured) == 2
+    assert all(call['model'] == 'test-model' for call in captured)
+    assert all(call['base_url'] == 'http://localhost:11434' for call in captured)

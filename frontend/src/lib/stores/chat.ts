@@ -73,6 +73,8 @@ export interface SubAgentHandle {
 }
 
 export interface MessageInfo {
+  /** Transient generation error, displayed alongside any partial answer. */
+  error?: string;
   id: string;
   chat_id: string;
   parent_id?: string | null;

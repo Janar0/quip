@@ -41,8 +41,8 @@
       <span></span>
     {/if}
     <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-      <button class="px-1.5 py-0.5 rounded hover:bg-slate-800 opacity-50 hover:opacity-100" onclick={copy}>{$t('chat.copy')}</button>
-      <button class="px-1.5 py-0.5 rounded hover:bg-slate-800 opacity-50 hover:opacity-100" onclick={download}>{$t('artifacts.download')}</button>
+      <button class="px-1.5 py-0.5 rounded hover:bg-elevated opacity-50 hover:opacity-100" onclick={copy}>{$t('chat.copy')}</button>
+      <button class="px-1.5 py-0.5 rounded hover:bg-elevated opacity-50 hover:opacity-100" onclick={download}>{$t('artifacts.download')}</button>
     </div>
   </div>
   <div class="overflow-x-auto">

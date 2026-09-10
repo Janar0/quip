@@ -24,12 +24,12 @@
   }
 </script>
 
-<div class="rounded-xl border border-slate-800 overflow-hidden my-3">
-  <div class="flex items-center justify-between px-3 py-1.5 bg-slate-900/50 text-xs">
+<div class="rounded-xl border border-outline overflow-hidden my-3">
+  <div class="flex items-center justify-between px-3 py-1.5 bg-panel/50 text-xs">
     <span class="font-medium opacity-70">{artifact.title}</span>
     <div class="flex gap-1">
       <button
-        class="px-1.5 py-0.5 rounded hover:bg-slate-800 opacity-50 hover:opacity-100 transition-opacity"
+        class="px-1.5 py-0.5 rounded hover:bg-elevated opacity-50 hover:opacity-100 transition-opacity"
         title={$t('artifacts.expand')}
         onclick={() => selectArtifact(artifact.id)}
       >
@@ -38,7 +38,7 @@
         </svg>
       </button>
       <button
-        class="px-1.5 py-0.5 rounded hover:bg-slate-800 opacity-50 hover:opacity-100 transition-opacity"
+        class="px-1.5 py-0.5 rounded hover:bg-elevated opacity-50 hover:opacity-100 transition-opacity"
         title={$t('artifacts.download')}
         onclick={download}
       >
@@ -47,7 +47,7 @@
         </svg>
       </button>
       <button
-        class="px-1.5 py-0.5 rounded hover:bg-slate-800 opacity-50 hover:opacity-100 transition-opacity"
+        class="px-1.5 py-0.5 rounded hover:bg-elevated opacity-50 hover:opacity-100 transition-opacity"
         title={$t('artifacts.copy')}
         onclick={copy}
       >
@@ -57,7 +57,7 @@
       </button>
     </div>
   </div>
-  <div class="bg-slate-950/50">
+  <div class="bg-canvas/50">
     <ArtifactRenderer {artifact} />
   </div>
 </div>

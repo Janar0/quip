@@ -19,7 +19,7 @@
   href={primarySource.url}
   target="_blank"
   rel="noopener noreferrer"
-  class="group block rounded-xl border p-3 mb-3 transition-all hover:border-slate-700 active:scale-[0.99]"
+  class="group block rounded-xl border p-3 mb-3 transition-all hover:border-outline active:scale-[0.99]"
   style="background: var(--quip-bg-raised); border-color: var(--quip-border-strong)"
   in:fly={{ y: -4, duration: D2, easing: easeOut }}
 >
@@ -30,12 +30,12 @@
       class="w-4 h-4 rounded"
       loading="lazy"
     />
-    <span class="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+    <span class="text-[10px] uppercase tracking-wide text-muted font-semibold">
       {$t('chat.primarySource')}
     </span>
-    <span class="text-xs text-slate-500 ml-auto truncate max-w-[40%]">{domain}</span>
+    <span class="text-xs text-muted ml-auto truncate max-w-[40%]">{domain}</span>
     <svg
-      class="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors flex-shrink-0"
+      class="w-3.5 h-3.5 text-subtle group-hover:text-muted transition-colors flex-shrink-0"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -46,8 +46,8 @@
       <line x1="10" y1="14" x2="21" y2="3" />
     </svg>
   </div>
-  <div class="text-sm font-medium text-slate-200 leading-snug">{primarySource.title}</div>
+  <div class="text-sm font-medium text-foreground leading-snug">{primarySource.title}</div>
   {#if primarySource.summary}
-    <div class="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{primarySource.summary}</div>
+    <div class="text-xs text-muted mt-1 line-clamp-2 leading-relaxed">{primarySource.summary}</div>
   {/if}
 </a>

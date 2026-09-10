@@ -53,7 +53,7 @@
     {#each thumbs as img, i (img.img_src)}
       <button
         type="button"
-        class="group relative flex-1 aspect-square rounded-lg overflow-hidden border transition-colors hover:border-slate-500"
+        class="group relative flex-1 aspect-square rounded-lg overflow-hidden border transition-colors hover:border-outline"
         style="border-color: var(--quip-border); background: var(--quip-bg-raised)"
         onclick={() => openLightbox(i)}
         aria-label={$t('search.openImage')}
@@ -67,7 +67,7 @@
           onerror={() => markBroken(img.img_src)}
         />
         {#if i === 3 && overflow > 0}
-          <div class="absolute inset-0 bg-black/60 flex items-center justify-center text-slate-100 text-sm font-medium">
+          <div class="absolute inset-0 bg-black/60 flex items-center justify-center text-foreground text-sm font-medium">
             +{overflow}
           </div>
         {/if}
@@ -95,7 +95,7 @@
     <!-- Close button -->
     <button
       type="button"
-      class="absolute top-4 right-4 z-10 p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-700"
+      class="absolute top-4 right-4 z-10 p-2 rounded-lg bg-panel/80 hover:bg-elevated text-foreground border border-outline"
       onclick={closeLightbox}
       aria-label="Close"
     >
@@ -109,7 +109,7 @@
     {#if visibleImages.length > 1}
       <button
         type="button"
-        class="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-700"
+        class="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-panel/80 hover:bg-elevated text-foreground border border-outline"
         onclick={prevImage}
         aria-label="Previous"
       >
@@ -119,7 +119,7 @@
       </button>
       <button
         type="button"
-        class="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-700"
+        class="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-panel/80 hover:bg-elevated text-foreground border border-outline"
         onclick={nextImage}
         aria-label="Next"
       >
@@ -145,13 +145,13 @@
       />
       <div class="flex flex-col items-center gap-1 text-center max-w-lg">
         {#if current.title}
-          <p class="text-sm text-slate-200 line-clamp-2">{current.title}</p>
+          <p class="text-sm text-foreground line-clamp-2">{current.title}</p>
         {/if}
         <a
           href={current.source_url}
           target="_blank"
           rel="noopener"
-          class="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+          class="text-xs text-muted hover:text-foreground underline underline-offset-2"
         >
           {$t('search.viewSource')}
         </a>

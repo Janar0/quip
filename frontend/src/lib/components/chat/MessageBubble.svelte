@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { selectableHtml } from '$lib/actions/selectable-html';
   import type { MessageInfo } from '$lib/stores/chat';
-  import { isStreaming } from '$lib/stores/chat';
+  import { isStreaming, messages } from '$lib/stores/chat';
   import MusicPlayer from '$lib/components/chat/MusicPlayer.svelte';
   import {
     renderMarkdown,
@@ -13,7 +14,7 @@
     type ImageMode,
   } from '$lib/utils/markdown';
   import { stripArtifactTags } from '$lib/utils/artifacts';
-  import { formatRelativeTime } from '$lib/utils/time';
+  import { formatRelativeTime, parseServerDate } from '$lib/utils/time';
   import { getGeneratedImageUrl, getGeneratedAudioUrl } from '$lib/api/files';
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
@@ -44,7 +45,7 @@
   let isAssistant = $derived(message.role === 'assistant');
   let hasReasoning = $derived(!!message.reasoning);
   let hasContent = $derived(!!message.content);
-  let isStreamingEmpty = $derived(message.id === 'streaming' && !message.content);
+  let isStreamingEmpty = $derived($isStreaming && !message.content && !message.error && (message.id === 'streaming' || message.id === $messages.at(-1)?.id));
   let editing = $state(false);
   let editText = $state('');
   const SEARCH_TOOLS = new Set(['web_search']);
@@ -155,7 +156,7 @@
   });
   let totalCost = $derived((Number(message.cost ?? 0)) + toolsCost);
   let timestamp = $derived(message.created_at ? formatRelativeTime(message.created_at) : '');
-  let fullDate = $derived(message.created_at ? new Date(message.created_at).toLocaleString() : '');
+  let fullDate = $derived(message.created_at ? parseServerDate(message.created_at).toLocaleString() : '');
 
   function copyContent() {
     navigator.clipboard.writeText(message.content);
@@ -180,7 +181,7 @@
   }
 
   function editKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       submitEdit();
     }
@@ -201,24 +202,24 @@
 {#if isUser}
   <!-- ═══ USER MESSAGE ═══ -->
   <div class="group flex justify-end px-4" in:fly={entryParams}>
-    <div class="max-w-[75%]">
+    <div class="min-w-0 max-w-[90%] sm:max-w-[75%]">
       <div class="quip-user-bubble px-[14px] py-[11px]">
         {#if hasAttachments}
           <AttachmentGrid attachments={attachmentsList} mb="mb-2" />
         {/if}
         {#if editing}
           <textarea
-            class="w-full min-h-20 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-slate-600 resize-none"
+            class="w-full min-h-20 bg-panel/50 border border-outline rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-outline resize-none"
             bind:value={editText}
             onkeydown={editKeydown}
           ></textarea>
-          <p class="text-[11px] text-slate-600 mt-1.5 flex items-center gap-1">
+          <p class="text-[11px] text-subtle mt-1.5 flex items-center gap-1">
             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
             {$t('chat.editBranchHint')}
           </p>
           <div class="flex gap-2 mt-1.5">
-            <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-950 hover:bg-white transition-colors" onclick={submitEdit}>{$t('common.save')}</button>
-            <button class="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-colors" onclick={cancelEdit}>{$t('common.cancel')}</button>
+            <button class="px-3 py-1.5 text-sm rounded-lg bg-action text-on-action hover:bg-white transition-colors" onclick={submitEdit}>{$t('common.save')}</button>
+            <button class="px-3 py-1.5 text-sm rounded-lg border border-outline text-muted hover:text-foreground transition-colors" onclick={cancelEdit}>{$t('common.cancel')}</button>
           </div>
         {:else}
           <div class="whitespace-pre-wrap break-words" style="color: var(--quip-text)">{message.content}</div>
@@ -228,15 +229,15 @@
       {#if hasContent && !$isStreaming && !editing && message.id !== 'streaming' && message.id !== 'temp-user'}
         <div class="flex items-center gap-1 mt-1 justify-end mr-1">
           {#if timestamp}
-            <span class="text-xs opacity-0 group-hover:opacity-30 transition-opacity mr-1 text-slate-500" title={fullDate}>{timestamp}</span>
+            <span class="text-xs opacity-0 group-hover:opacity-30 transition-opacity mr-1 text-muted" title={fullDate}>{timestamp}</span>
           {/if}
           <div class="flex gap-1">
-            <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
-              <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            <button class="p-1 rounded hover:bg-elevated transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
+              <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             </button>
-            {#if onEdit}
-              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={startEdit} title={$t('chat.editBranch')} aria-label={$t('chat.editBranch')}>
-                <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            {#if onEdit && !message.id.startsWith('local-')}
+              <button class="p-1 rounded hover:bg-elevated transition-all active:scale-[0.88]" onclick={startEdit} title={$t('chat.editBranch')} aria-label={$t('chat.editBranch')}>
+                <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
             {/if}
           </div>
@@ -247,19 +248,23 @@
 {:else}
   <!-- ═══ ASSISTANT MESSAGE ═══ -->
   <div class="group px-4" in:fly={entryParams}>
-    <div class="{hasArtifacts || hasToolExecs ? 'max-w-full' : 'max-w-full'}">
+    <div class="min-w-0 max-w-full">
       <!-- Role label: icon + QUIP + model -->
       <div class="flex items-center gap-1.5 mb-2">
-        <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor" opacity="0.3" stroke="none"/>
           <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
         </svg>
-        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">QUIP</span>
+        <span class="text-[10px] font-bold text-muted uppercase tracking-widest">QUIP</span>
         {#if message.model}
-          <span class="text-[10px] text-slate-600">&middot;</span>
-          <span class="text-[10px] text-slate-600">{message.model}</span>
+          <span class="text-[10px] text-subtle">&middot;</span>
+          <span class="text-[10px] text-subtle">{message.model}</span>
         {/if}
       </div>
+
+      {#if message.error}
+        <div role="alert" class="my-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm break-words" style="color: var(--quip-text)">{message.error}</div>
+      {/if}
 
       {#if hasReasoning}
         <ReasoningSection reasoning={message.reasoning ?? ''} html={renderedReasoning} />
@@ -290,7 +295,7 @@
         {#each message.contentBlocks! as block, i (block.type === 'tool' ? `tool-${block.executionId}` : `text-${i}`)}
           {#if block.type === 'text'}
             {#if renderedTextBlocks[i]}
-              <div class="prose prose-invert prose-sm max-w-none break-words">{@html renderedTextBlocks[i]}</div>
+              <div class="prose prose-invert prose-sm max-w-none break-words" use:selectableHtml={renderedTextBlocks[i]}></div>
             {/if}
           {:else if block.type === 'tool'}
             {@const exec = execById.get(block.executionId)}
@@ -382,7 +387,7 @@
             {/each}
           </div>
         {/if}
-        <div class="prose prose-invert prose-sm max-w-none break-words">{@html rendered}</div>
+        <div class="prose prose-invert prose-sm max-w-none break-words" use:selectableHtml={rendered}></div>
         {#if createdFiles.length}
           <div class="flex flex-col gap-1 mt-2">
             {#each createdFiles as file (file)}
@@ -458,21 +463,21 @@
         <div class="flex items-center justify-between mt-1.5 min-h-[28px]">
           <div class="flex items-center gap-1">
             {#if hasContent && !$isStreaming && message.id !== 'streaming' && message.id !== 'temp-user'}
-              <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
-                <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              <button class="p-1 rounded hover:bg-elevated transition-all active:scale-[0.88]" onclick={copyContent} title={$t('chat.copy')} aria-label={$t('chat.copy')}>
+                <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               </button>
-              {#if onRegenerate}
-                <button class="p-1 rounded hover:bg-slate-800 transition-all active:scale-[0.88]" onclick={() => onRegenerate(message.id)} title={$t('chat.regenerate')} aria-label={$t('chat.regenerate')}>
-                  <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              {#if onRegenerate && !message.id.startsWith('local-')}
+                <button class="p-1 rounded hover:bg-elevated transition-all active:scale-[0.88]" onclick={() => onRegenerate(message.id)} title={$t('chat.regenerate')} aria-label={$t('chat.regenerate')}>
+                  <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                 </button>
               {/if}
               {#if timestamp}
-                <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-slate-600" title={fullDate}>{timestamp}</span>
+                <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-subtle" title={fullDate}>{timestamp}</span>
               {/if}
             {/if}
           </div>
           {#if totalCost > 0}
-            <div class="text-xs text-slate-600 flex items-center gap-2">
+            <div class="text-xs text-subtle flex items-center gap-2">
               {#if toolsCost > 0 && message.cost}
                 <span class="opacity-0 group-hover:opacity-100 transition-opacity" title="LLM">${Number(message.cost).toFixed(4)}</span>
                 {#if imageGenExecs.some((e) => (e.result as Record<string,unknown> | undefined)?.cost)}

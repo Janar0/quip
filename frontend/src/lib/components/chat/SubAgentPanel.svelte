@@ -39,7 +39,7 @@
     </div>
     {#if onClose}
       <button
-        class="p-1.5 rounded-lg hover:bg-slate-800/50 transition-colors"
+        class="p-1.5 rounded-lg hover:bg-elevated/50 transition-colors"
         onclick={onClose}
         aria-label={$t('common.close')}
       >

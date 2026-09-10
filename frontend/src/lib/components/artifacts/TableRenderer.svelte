@@ -58,7 +58,7 @@
     </thead>
     <tbody>
       {#each sortedRows as row, i}
-        <tr class="border-b border-slate-800/50 {i % 2 ? 'bg-slate-900/20' : ''}">
+        <tr class="border-b border-outline/50 {i % 2 ? 'bg-panel/20' : ''}">
           {#each data.columns as col}
             <td
               class="px-3 py-2"

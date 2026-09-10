@@ -4,7 +4,7 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
-from quip.providers.openrouter import StreamChunk, UsageInfo, ToolCallDelta
+from quip.providers.types import StreamChunk, UsageInfo, ToolCallDelta
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 

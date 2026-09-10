@@ -25,7 +25,7 @@
   onMount(() => {
     const timer = setInterval(() => {
       if (chatId && $activeChat?.source === 'telegram' && !$isLoading && !$isStreaming) {
-        loadChat(chatId);
+        loadChat(chatId, { background: true });
       }
     }, 4000);
     return () => clearInterval(timer);
@@ -76,7 +76,7 @@
       <div class="flex-1 flex items-center gap-2 min-w-0 justify-center sm:justify-start">
         <ModelSelector />
         {#if $activeChat}
-          <span class="hidden sm:block text-sm text-slate-500 truncate max-w-[200px]">{$activeChat.title}</span>
+          <span class="hidden sm:block text-sm text-muted truncate max-w-[200px]">{$activeChat.title}</span>
         {/if}
       </div>
       {#if workspaceId}
@@ -104,7 +104,7 @@
             class="quip-export-menu absolute right-0 top-full mt-1 rounded-xl p-1 z-20 min-w-36"
             transition:fly={{ y: -4, duration: D2, easing: easeOut }}
           >
-            <button class="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 rounded-lg transition-colors" onclick={handleExportMarkdown}>
+            <button class="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-elevated rounded-lg transition-colors" onclick={handleExportMarkdown}>
               {$t('chat.exportMarkdown')}
             </button>
           </div>

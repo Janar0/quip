@@ -101,7 +101,7 @@
   {#if loading}
     <div class="space-y-2">
       {#each [1,2] as _}
-        <div class="h-14 bg-slate-800/30 rounded-lg animate-pulse"></div>
+        <div class="h-14 bg-elevated/30 rounded-lg animate-pulse"></div>
       {/each}
     </div>
   {:else if budgets.length === 0}

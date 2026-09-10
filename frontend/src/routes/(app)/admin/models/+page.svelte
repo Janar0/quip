@@ -89,8 +89,8 @@
     <div class="space-y-4">
       {#each [1, 2, 3] as _}
         <div class="card p-4 sm:p-6 space-y-3 animate-pulse">
-          <div class="h-5 w-40 bg-slate-800/50 rounded"></div>
-          <div class="h-32 bg-slate-800/30 rounded"></div>
+          <div class="h-5 w-40 bg-elevated/50 rounded"></div>
+          <div class="h-32 bg-elevated/30 rounded"></div>
         </div>
       {/each}
     </div>
@@ -124,7 +124,7 @@
 
       <div class="max-h-72 overflow-y-auto space-y-0.5">
         {#each filtered as model (model.id)}
-          <label class="flex items-center gap-2 text-sm py-1.5 px-2 rounded hover:bg-slate-800/50 cursor-pointer">
+          <label class="flex items-center gap-2 text-sm py-1.5 px-2 rounded hover:bg-elevated/50 cursor-pointer">
             <input
               type="checkbox"
               checked={whitelist.includes(model.id)}

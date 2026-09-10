@@ -204,8 +204,8 @@
     ] as tab}
       <button
         class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 {activeTab === tab.id
-          ? 'border-slate-400 text-slate-200'
-          : 'border-transparent text-slate-500 hover:text-slate-300'}"
+          ? 'border-outline text-foreground'
+          : 'border-transparent text-muted hover:text-foreground'}"
         onclick={() => (activeTab = tab.id as typeof activeTab)}
       >{tab.label}</button>
     {/each}
@@ -215,9 +215,9 @@
     <div class="space-y-4">
       {#each [1,2,3] as _}
         <div class="card p-4 sm:p-6 space-y-3 animate-pulse">
-          <div class="h-5 w-40 bg-slate-800/50 rounded"></div>
-          <div class="h-3 w-64 bg-slate-800/30 rounded"></div>
-          <div class="h-10 bg-slate-800/30 rounded"></div>
+          <div class="h-5 w-40 bg-elevated/50 rounded"></div>
+          <div class="h-3 w-64 bg-elevated/30 rounded"></div>
+          <div class="h-10 bg-elevated/30 rounded"></div>
         </div>
       {/each}
     </div>
@@ -242,7 +242,7 @@
             {/if}
           </div>
         {:else}
-          <p class="text-sm opacity-50">{$t('admin.noApiKey')} <a href="https://openrouter.ai/keys" target="_blank" class="text-slate-400 underline">openrouter.ai/keys</a></p>
+          <p class="text-sm opacity-50">{$t('admin.noApiKey')} <a href="https://openrouter.ai/keys" target="_blank" class="text-muted underline">openrouter.ai/keys</a></p>
         {/if}
 
         <div class="flex gap-2">
@@ -261,7 +261,7 @@
             <span class="opacity-40">{$t('admin.keyLimit')}</span><span>${keyInfo.limit ?? 'Unlimited'}</span>
             <span class="opacity-40">{$t('admin.keyUsage')}</span><span>${keyInfo.usage ?? 0}</span>
             <span class="opacity-40">{$t('admin.freeTier')}</span>
-            <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full {keyInfo.is_free_tier ? 'bg-warning-500/15 text-warning-400' : 'bg-slate-800/40 text-surface-300'}">
+            <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full {keyInfo.is_free_tier ? 'bg-warning-500/15 text-warning-400' : 'bg-elevated/40 text-surface-300'}">
               {keyInfo.is_free_tier ? $t('common.yes') : $t('common.no')}
             </span>
           </div>
@@ -390,7 +390,7 @@
         <h2 class="text-lg font-semibold">{$t('admin.tabs.skills')}</h2>
         <p class="text-sm opacity-60">
           Каждый инструмент / виджет / артефакт теперь настраивается на своей карточке в разделе
-          <button class="underline text-slate-300" onclick={() => goto('/admin/skills')}>Skills</button>:
+          <button class="underline text-foreground" onclick={() => goto('/admin/skills')}>Skills</button>:
           API-ключи, модели, лимиты, шаблоны. Включение/выключение — тумблером на карточке.
         </p>
       </section>

@@ -34,7 +34,7 @@
               el.nextElementSibling?.classList.remove('hidden');
             }}
           />
-          <div class="hidden items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm">
+          <div class="hidden items-center gap-2 px-3 py-2 rounded-lg bg-panel/50 border border-outline/30 text-sm">
             <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
@@ -56,7 +56,7 @@
       {:else if att.file_type === 'audio'}
         <audio src={getFileUrl(att.file_id)} controls preload="metadata" aria-label={att.filename}></audio>
       {:else}
-        <a href={getFileUrl(att.file_id)} target="_blank" rel="noopener" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/30 text-sm hover:bg-slate-800/60" in:scale={{ start: 0.9, duration: D1, delay: Math.min(i, 4) * 30 }}>
+        <a href={getFileUrl(att.file_id)} target="_blank" rel="noopener" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-panel/50 border border-outline/30 text-sm hover:bg-elevated/60" in:scale={{ start: 0.9, duration: D1, delay: Math.min(i, 4) * 30 }}>
           <svg class="w-4 h-4 opacity-50 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
             <polyline points="14 2 14 8 20 8" />

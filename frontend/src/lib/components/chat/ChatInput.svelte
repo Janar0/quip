@@ -176,6 +176,7 @@
     const trimmed = text.trim();
     const hasFiles = attachedFiles.some((a) => a.uploaded);
     if ((!trimmed && !hasFiles) || $isStreaming) return;
+    if (attachedFiles.some((a) => a.error)) return;
     if (attachedFiles.some((a) => a.uploading)) return;
 
     const uploaded = attachedFiles
@@ -192,7 +193,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -216,10 +217,10 @@
 
 {#if isDragOver}
   <div
-    class="fixed inset-0 z-50 bg-slate-500/5 border-2 border-dashed border-slate-500/40 pointer-events-none flex items-center justify-center"
+    class="fixed inset-0 z-50 bg-elevated/5 border-2 border-dashed border-outline/40 pointer-events-none flex items-center justify-center"
     transition:fade={{ duration: D1 }}
   >
-    <span class="text-lg text-slate-400">{$t('chat.dropFiles')}</span>
+    <span class="text-lg text-muted">{$t('chat.dropFiles')}</span>
   </div>
 {/if}
 
@@ -237,7 +238,7 @@
           {#each attachedFiles as att, i}
             <div class="relative group flex-shrink-0">
               {#if att.preview}
-                <div class="w-16 h-16 rounded-lg overflow-hidden border border-slate-700/30 bg-slate-800/50">
+                <div class="w-16 h-16 rounded-lg overflow-hidden border border-outline/30 bg-elevated/50">
                   <img src={att.preview} alt={att.file.name} class="w-full h-full object-cover" />
                   {#if att.uploading}
                     <div class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
@@ -251,14 +252,14 @@
                   {/if}
                 </div>
               {:else}
-                <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/30 bg-slate-800/50 max-w-48">
+                <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-outline/30 bg-elevated/50 max-w-48">
                   <span class="text-lg">{getFileIcon(att.file)}</span>
                   <div class="min-w-0 flex-1">
-                    <div class="text-xs font-medium truncate text-slate-300">{att.file.name}</div>
-                    <div class="text-[10px] text-slate-500">{formatSize(att.file.size)}</div>
+                    <div class="text-xs font-medium truncate text-foreground">{att.file.name}</div>
+                    <div class="text-[10px] text-muted">{formatSize(att.file.size)}</div>
                   </div>
                   {#if att.uploading}
-                    <div class="w-4 h-4 border-2 border-slate-600 border-t-slate-300 rounded-full animate-spin flex-shrink-0"></div>
+                    <div class="w-4 h-4 border-2 border-outline border-t-slate-300 rounded-full animate-spin flex-shrink-0"></div>
                   {/if}
                   {#if att.error}
                     <svg class="w-4 h-4 text-red-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
@@ -267,7 +268,7 @@
               {/if}
               <button
                 type="button"
-                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-elevated border border-outline flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
                 onclick={() => removeAttachment(i)}
                 aria-label="Remove attachment"
               >
@@ -337,7 +338,7 @@
             <button
               type="submit"
               class="quip-send-btn"
-              disabled={!text.trim() && !attachedFiles.some((a) => a.uploaded)}
+              disabled={(!text.trim() && !attachedFiles.some((a) => a.uploaded)) || attachedFiles.some((a) => a.uploading || a.error)}
               aria-label={$t('chat.sendMessage')}
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>

@@ -60,15 +60,15 @@
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         {#each [1,2,3,4] as _}
           <div class="admin-stat animate-pulse">
-            <div class="h-3 w-16 bg-slate-800/30 rounded mb-2"></div>
-            <div class="h-6 w-20 bg-slate-800/50 rounded"></div>
+            <div class="h-3 w-16 bg-elevated/30 rounded mb-2"></div>
+            <div class="h-6 w-20 bg-elevated/50 rounded"></div>
           </div>
         {/each}
       </div>
       <div class="admin-card animate-pulse space-y-3">
-        <div class="h-5 w-24 bg-slate-800/50 rounded"></div>
+        <div class="h-5 w-24 bg-elevated/50 rounded"></div>
         {#each [1,2,3] as _}
-          <div class="h-8 bg-slate-800/30 rounded"></div>
+          <div class="h-8 bg-elevated/30 rounded"></div>
         {/each}
       </div>
     </div>
@@ -108,7 +108,7 @@
                 <span class="font-mono shrink-0">${fmt(row.cost)}</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="flex-1 h-1.5 bg-slate-800/50 rounded-full overflow-hidden">
+                <div class="flex-1 h-1.5 bg-elevated/50 rounded-full overflow-hidden">
                   <div class="h-full bg-primary-500/60 rounded-full"
                     style="width: {maxCost > 0 ? barWidth(row.cost, maxCost) : barWidth(row.requests, maxReq)}">
                   </div>
@@ -159,7 +159,7 @@
           {#each data.by_day as row}
             <div class="flex items-center gap-2 text-sm">
               <span class="w-12 sm:w-16 opacity-60 text-xs font-mono shrink-0">{fmtDay(row.day)}</span>
-              <div class="flex-1 h-3 bg-slate-800/50 rounded overflow-hidden">
+              <div class="flex-1 h-3 bg-elevated/50 rounded overflow-hidden">
                 <div class="h-full bg-primary-500/50 rounded"
                   style="width: {maxDayCost > 0 ? barWidth(row.cost, maxDayCost) : barWidth(row.requests, maxDayReq)}">
                 </div>

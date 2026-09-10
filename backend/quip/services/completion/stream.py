@@ -2,7 +2,7 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from quip.providers import openrouter
+from quip.providers import ollama, openrouter
 from quip.services.streaming import (
     sse_event,
     TextCoalescer,
@@ -55,6 +55,14 @@ class StreamOrchestrator:
         )
 
     def _call_provider(self, tools: list[dict]):
+        if self.model.startswith("ollama/"):
+            return ollama.stream_completion(
+                messages=self.messages,
+                model=self.model.removeprefix("ollama/"),
+                base_url=self.base_url or ollama.DEFAULT_OLLAMA_URL,
+                tools=tools,
+                context_length=self.context_length,
+            )
         return openrouter.stream_completion(
             messages=self.messages,
             model=self.model,

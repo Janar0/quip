@@ -27,12 +27,12 @@
       Data: 'text-yellow-400 bg-yellow-500/15',
       Audio: 'text-purple-400 bg-purple-500/15',
       Video: 'text-pink-400 bg-pink-500/15',
-      Archive: 'text-slate-400 bg-slate-500/15',
+      Archive: 'text-muted bg-elevated/15',
       Script: 'text-cyan-400 bg-cyan-500/15',
-      Text: 'text-slate-400 bg-slate-500/15',
+      Text: 'text-muted bg-elevated/15',
       'Web page': 'text-indigo-400 bg-indigo-500/15',
     };
-    return colors[label] ?? 'text-slate-400 bg-slate-500/15';
+    return colors[label] ?? 'text-muted bg-elevated/15';
   });
 
   function getDownloadUrl(): string {
@@ -43,7 +43,7 @@
 <a
   href={getDownloadUrl()}
   target="_blank"
-  class="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/30 hover:bg-slate-800/50 transition-colors p-3 my-1.5 max-w-sm"
+  class="flex items-center gap-3 rounded-xl border border-outline bg-panel/30 hover:bg-elevated/50 transition-colors p-3 my-1.5 max-w-sm"
 >
   <!-- File icon -->
   <div class="flex-shrink-0 w-10 h-10 rounded-lg {iconColor} flex items-center justify-center">

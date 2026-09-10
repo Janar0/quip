@@ -35,7 +35,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="pointer-events-auto bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-sm space-y-4 shadow-xl"
+      class="pointer-events-auto bg-panel border border-outline rounded-xl p-6 w-full max-w-sm space-y-4 shadow-xl"
       in:scale={{ duration: D2, start: 0.96, easing: easeOut }}
       out:scale={{ duration: D1, start: 0.98, easing: easeOut }}
       role="dialog"
@@ -43,20 +43,20 @@
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
     >
-      <h3 class="text-lg font-semibold text-slate-100">{$t('shortcuts.title')}</h3>
+      <h3 class="text-lg font-semibold text-foreground">{$t('shortcuts.title')}</h3>
       <div class="space-y-2">
         {#each shortcuts as s}
           <div class="flex items-center justify-between text-sm">
-            <span class="text-slate-400">{$t(s.label)}</span>
+            <span class="text-muted">{$t(s.label)}</span>
             <span class="flex gap-1">
               {#each s.keys as key}
-                <kbd class="bg-slate-800 px-2 py-0.5 rounded text-xs font-mono text-slate-300">{key}</kbd>
+                <kbd class="bg-elevated px-2 py-0.5 rounded text-xs font-mono text-foreground">{key}</kbd>
               {/each}
             </span>
           </div>
         {/each}
       </div>
-      <button class="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-all active:scale-[0.98]" onclick={onClose}>{$t('common.cancel')}</button>
+      <button class="w-full px-3 py-1.5 text-sm rounded-lg border border-outline text-muted hover:text-foreground transition-all active:scale-[0.98]" onclick={onClose}>{$t('common.cancel')}</button>
     </div>
   </div>
 {/if}

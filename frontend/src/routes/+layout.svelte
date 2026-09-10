@@ -54,7 +54,7 @@
 <Toaster richColors position="bottom-right" theme={toasterTheme} />
 
 {#if $isLoading}
-  <div class="flex items-center justify-center min-h-screen">
+  <div class="flex items-center justify-center min-h-dvh">
     <p class="opacity-50">Loading...</p>
   </div>
 {:else}

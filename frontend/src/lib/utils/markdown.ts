@@ -1,4 +1,4 @@
-import { Marked } from 'marked';
+import { Marked, type Tokens } from 'marked';
 import { writable } from 'svelte/store';
 
 const marked = new Marked({
@@ -60,7 +60,8 @@ renderer.html = function ({ text }: { text: string }) {
 };
 
 // Intercept sandbox:/ links and turn them into real API download URLs
-renderer.link = function ({ href, text }: { href: string; title?: string | null; text: string }) {
+renderer.link = function ({ href, tokens }: Tokens.Link) {
+  const text = this.parser.parseInline(tokens);
   if (href?.startsWith('sandbox:/')) {
     const filename = href.slice('sandbox:/'.length).replace(/^\/+/, '');
     const url = `/api/sandbox/${encodeURIComponent(_chatId)}/file/${encodeURIComponent(filename)}`;
@@ -80,13 +81,13 @@ renderer.image = function ({ href, title, text }: { href: string; title?: string
 
 // Code blocks with syntax highlighting + copy button
 renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
-  const escaped = lang ? lang.replace(/"/g, '&quot;') : '';
-  const copyBtn = `<button class="copy-btn opacity-0 group-hover:opacity-100 transition-opacity" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">copy</button>`;
+  const escaped = escapeHtml(lang ?? '');
+  const copyBtn = `<button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button>`;
   if (_hljs) {
     const language = lang && _hljs.getLanguage(lang) ? lang : 'plaintext';
     const highlighted = _hljs.highlight(text, { language }).value;
     return `<div class="code-block group relative">
-    <div class="code-header flex items-center justify-between px-3 py-1 text-xs opacity-50">
+    <div class="code-header flex items-center justify-between px-3 py-1 text-xs">
       <span>${escaped}</span>
       ${copyBtn}
     </div>
@@ -96,7 +97,7 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
   // hljs not loaded yet — plain text fallback (re-render triggered once loaded)
   const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<div class="code-block group relative">
-    <div class="code-header flex items-center justify-between px-3 py-1 text-xs opacity-50">
+    <div class="code-header flex items-center justify-between px-3 py-1 text-xs">
       <span>${escaped}</span>
       ${copyBtn}
     </div>
@@ -166,36 +167,29 @@ function renderMath(text: string): { text: string; placeholders: string[] } {
   return { text, placeholders };
 }
 
-/** Render raw LaTeX commands outside of $ delimiters (e.g. \frac{a}{b}) */
-function renderBareLaTeX(text: string): string {
-  if (!_katex) return text; // katex not loaded yet
-
-  // Match common LaTeX commands not already inside KaTeX spans
-  // Only process if there are bare LaTeX commands
-  if (!text.includes('\\frac') && !text.includes('\\dfrac') && !text.includes('\\sqrt') &&
-      !text.includes('\\times') && !text.includes('\\div') && !text.includes('\\sum') &&
-      !text.includes('\\int') && !text.includes('\\alpha') && !text.includes('\\beta') &&
-      !text.includes('\\pi') && !text.includes('\\infty')) {
-    return text;
-  }
-
-  // Don't process inside existing katex spans or code blocks
-  const parts: string[] = [];
-  const protectedPattern = /(<span class="katex.*?<\/span>|<code[\s\S]*?<\/code>|<pre[\s\S]*?<\/pre>)/g;
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(protectedPattern)) {
-    if (match.index! > lastIndex) {
-      parts.push(processBareLaTeX(text.slice(lastIndex, match.index)));
+/** Transform text outside tags, links, code and already-rendered math. */
+function transformHtmlText(html: string, transform: (text: string) => string): string {
+  const protectedTags: string[] = [];
+  return html.split(/(<[^>]*>)/g).map((part) => {
+    if (part.startsWith('<')) {
+      const closing = /^<\/([a-z0-9]+)/i.exec(part);
+      if (closing && protectedTags.at(-1) === closing[1].toLowerCase()) protectedTags.pop();
+      const opening = /^<([a-z0-9]+)/i.exec(part);
+      if (opening) {
+        const tag = opening[1].toLowerCase();
+        if (['pre', 'code', 'a', 'script', 'style', 'math', 'annotation'].includes(tag) ||
+            (tag === 'span' && (protectedTags.includes('span') || /class="katex/.test(part)))) {
+          protectedTags.push(tag);
+        }
+      }
+      return part;
     }
-    parts.push(match[0]); // Keep protected content as-is
-    lastIndex = match.index! + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    parts.push(processBareLaTeX(text.slice(lastIndex)));
-  }
+    return protectedTags.length ? part : transform(part);
+  }).join('');
+}
 
-  return parts.join('');
+function renderBareLaTeX(html: string): string {
+  return _katex ? transformHtmlText(html, processBareLaTeX) : html;
 }
 
 function processBareLaTeX(text: string): string {
@@ -435,7 +429,7 @@ export function extractSources(content: string): { cleanContent: string; sources
   if (bestMatch) {
     const sources = parseSourcesBlock(bestMatch.block);
     if (sources.length > 0) {
-      const cleanContent = content.slice(0, bestMatch.index).trimEnd();
+      const cleanContent = (content.slice(0, bestMatch.index) + content.slice(bestMatch.index + bestMatch.full.length)).trim();
       return { cleanContent, sources };
     }
   }
@@ -459,13 +453,13 @@ function renderCitations(html: string, sources: SourceInfo[]): string {
     return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="source-badge" title="${escaped}"><img src="https://www.google.com/s2/favicons?domain=${domain}&amp;sz=32" alt="" /></a>`;
   };
 
-  return html.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g, (_full, numsStr: string) => {
+  return transformHtmlText(html, (text) => text.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g, (_full, numsStr: string) => {
     const nums = numsStr
       .split(',')
       .map((s) => parseInt(s.trim(), 10))
       .filter((n) => !Number.isNaN(n));
     return nums.map(renderOne).join('');
-  });
+  }));
 }
 
 export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: string): string {
@@ -474,7 +468,14 @@ export function renderMarkdown(text: string, sources?: SourceInfo[], chatId?: st
   // Render math before markdown to protect LaTeX from markdown parsing.
   // KaTeX output is stashed behind sentinel placeholders so marked's renderer.html
   // (which escapes raw HTML to block XSS) doesn't escape the trusted KaTeX spans.
-  const { text: mathText, placeholders } = renderMath(text);
+  const code: string[] = [];
+  const protectedText = text.replace(/(^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\2[^\n]*(?:\n|$)|(`+)[^`]*?\3)/gm, (value) => {
+    code.push(value);
+    return `\u0000CODE${code.length - 1}\u0000`;
+  });
+  const math = renderMath(protectedText);
+  const mathText = math.text.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => code[Number(index)] ?? '');
+  const placeholders = math.placeholders;
   let html = marked.parse(mathText) as string;
   // Restore KaTeX HTML now that marked is done escaping raw HTML tokens.
   if (placeholders.length) {

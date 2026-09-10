@@ -1,6 +1,6 @@
+import { processSSEStream, setStreamError } from './chat-stream';
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, branchSelections, type AttachmentInfo, type SearchImageInfo, type ContentBlock, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
-import { extractStreamingArtifacts } from '$lib/utils/artifacts';
+import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, branchSelections, type AttachmentInfo, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
 import { buildThread } from '$lib/utils/thread';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
@@ -10,43 +10,59 @@ import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
 const CHAT_PAGE_SIZE = 50;
 let chatOffset = 0;
 let hasMoreChats = true;
+let listVersion = 0;
+let loadingMore = false;
+let chatVersion = 0;
 
 export async function loadChats(): Promise<void> {
-  chatOffset = 0;
-  hasMoreChats = true;
+  const version = ++listVersion;
   const workspaceId = get(selectedWorkspaceId);
   const scope = workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : '';
   const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=0${scope}`);
+  if (version !== listVersion || workspaceId !== get(selectedWorkspaceId)) return;
   if (res.ok) {
-    const data: unknown[] = await res.json();
-    chatList.set(data as import('$lib/stores/chat').ChatInfo[]);
+    const data = await res.json();
+    if (version !== listVersion) return;
+    chatList.set(data);
+    chatOffset = data.length;
     hasMoreChats = data.length === CHAT_PAGE_SIZE;
   }
 }
 
 export function canLoadMoreChats(): boolean {
-  return hasMoreChats;
+  return hasMoreChats && !loadingMore;
 }
 
 export async function loadMoreChats(): Promise<void> {
-  if (!hasMoreChats) return;
-  chatOffset += CHAT_PAGE_SIZE;
+  if (!hasMoreChats || loadingMore) return;
+  loadingMore = true;
+  const version = listVersion;
   const workspaceId = get(selectedWorkspaceId);
   const scope = workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : '';
-  const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=${chatOffset}${scope}`);
-  if (res.ok) {
-    const data: unknown[] = await res.json();
-    chatList.update((existing) => [...existing, ...(data as import('$lib/stores/chat').ChatInfo[])]);
+  try {
+    const res = await api(`/api/chats?limit=${CHAT_PAGE_SIZE}&offset=${chatOffset}${scope}`);
+    if (!res.ok || version !== listVersion || workspaceId !== get(selectedWorkspaceId)) return;
+    const data = await res.json();
+    if (version !== listVersion) return;
+    chatList.update((existing) => {
+      const ids = new Set(existing.map((chat) => chat.id));
+      return [...existing, ...data.filter((chat: { id: string }) => !ids.has(chat.id))];
+    });
+    chatOffset += data.length;
     hasMoreChats = data.length === CHAT_PAGE_SIZE;
+  } finally {
+    loadingMore = false;
   }
 }
 
-export async function loadChat(chatId: string): Promise<void> {
-  isLoading.set(true);
+export async function loadChat(chatId: string, options: { background?: boolean } = {}): Promise<void> {
+  const version = ++chatVersion;
+  if (!options.background) isLoading.set(true);
   try {
     const res = await api(`/api/chats/${chatId}`);
     if (res.ok) {
       const data = await res.json();
+      if (version !== chatVersion) return;
       activeChat.set(data);
       if (data.workspace_id && data.workspace_id !== get(selectedWorkspaceId)) {
         selectWorkspace(data.workspace_id);
@@ -65,11 +81,18 @@ export async function loadChat(chatId: string): Promise<void> {
         }
         return mapped;
       });
-      messages.set(msgs);
-      restoreBranchSelections(chatId);
+      if (version !== chatVersion) return;
+      for (const run of data.runs ?? []) {
+        if (run.status === 'failed' && run.error) {
+          const message = msgs.find((m: { id: string }) => m.id === run.assistant_message_id);
+          if (message) message.error = run.error;
+        }
+      }
+      if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
+      if (!options.background) restoreBranchSelections(chatId);
     }
   } finally {
-    isLoading.set(false);
+    if (version === chatVersion) isLoading.set(false);
   }
 }
 
@@ -135,7 +158,7 @@ function formatError(err: { detail: unknown }, status: number): string {
       });
     }
   }
-  return typeof err.detail === 'string' ? err.detail : (err.detail as string | undefined) ?? 'Unknown error';
+  return typeof err.detail === 'string' ? err.detail : `Request failed (HTTP ${status})`;
 }
 
 /** Stop the current generation */
@@ -143,212 +166,20 @@ export function stopGeneration(): void {
   const ctrl = get(abortController);
   if (ctrl) {
     ctrl.abort();
-    abortController.set(null);
   }
-  isStreaming.set(false);
 }
 
-/** Parse SSE stream, update the streaming message, return real message IDs */
-async function processSSEStream(
-  response: Response,
-): Promise<{ chatId?: string; userMessageId?: string; messageId?: string }> {
-  const reader = response.body?.getReader();
-  if (!reader) return {};
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let currentEvent = '';
-  let fullContent = '';
-  let fullReasoning = '';
-  let contentBlocks: ContentBlock[] = [];
-  let chatId: string | undefined;
-  let userMessageId: string | undefined;
-  let messageId: string | undefined;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      while (buffer.includes('\n')) {
-        const idx = buffer.indexOf('\n');
-        const line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-
-            if (currentEvent === 'chat') {
-              chatId = data.chat_id;
-              messageId = data.message_id;
-              userMessageId = data.user_message_id;
-              const userParentId: string | null = data.user_parent_id ?? null;
-              // Set real IDs and parent_ids in one pass — prevents temp messages from
-              // appearing as false roots in the branch tree builder.
-              // For regenerate flow, userMessageId is undefined and the streaming
-              // placeholder already has its parent_id set — preserve it.
-              messages.update((msgs) =>
-                msgs.map((m) => {
-                  if (m.id === 'streaming') {
-                    return {
-                      ...m,
-                      id: messageId!,
-                      chat_id: chatId!,
-                      parent_id: userMessageId ?? m.parent_id,
-                    };
-                  }
-                  if (m.id === 'temp-user') {
-                    return { ...m, id: userMessageId!, parent_id: userParentId };
-                  }
-                  return m;
-                })
-              );
-            } else if (currentEvent === 'reasoning') {
-              fullReasoning += data.text;
-              updateStreamingContent(messageId, fullContent, fullReasoning);
-            } else if (currentEvent === 'content') {
-              fullContent += data.text;
-              // Track text in content blocks
-              const lastBlock = contentBlocks[contentBlocks.length - 1];
-              if (lastBlock?.type === 'text') {
-                contentBlocks[contentBlocks.length - 1] = { type: 'text', content: lastBlock.content + data.text };
-              } else {
-                contentBlocks = [...contentBlocks, { type: 'text', content: data.text }];
-              }
-              updateStreamingContent(messageId, fullContent, fullReasoning, contentBlocks);
-              // Detect completed artifact tags during streaming
-              const streamArtifacts = extractStreamingArtifacts(fullContent);
-              const completed = streamArtifacts.filter((a) => a.isComplete);
-              if (completed.length > 0) {
-                const artifacts = completed.map((a, i) => ({
-                  id: `stream-${i}-${a.identifier}`,
-                  identifier: a.identifier,
-                  type: a.type,
-                  title: a.title,
-                  content: a.content,
-                  language: a.language,
-                  version: 1,
-                }));
-                const targetId = messageId || 'streaming';
-                messages.update((msgs) =>
-                  msgs.map((m) => (m.id === targetId ? { ...m, artifacts } : m)),
-                );
-              }
-            } else if (currentEvent === 'tool_executing') {
-              // Add tool block to content blocks (before any subsequent text)
-              contentBlocks = [...contentBlocks, { type: 'tool', executionId: data.id }];
-              const targetId = messageId || 'streaming';
-              messages.update((msgs) =>
-                msgs.map((m) => {
-                  if (m.id !== targetId) return m;
-                  const execs = [...(m.toolExecutions ?? [])];
-                  execs.push({
-                    id: data.id,
-                    name: data.name,
-                    arguments: data.arguments,
-                    status: 'running' as const,
-                  });
-                  return { ...m, toolExecutions: execs, contentBlocks };
-                }),
-              );
-            } else if (currentEvent === 'tool_result') {
-              const targetId = messageId || 'streaming';
-              let parsedResult;
-              try {
-                parsedResult = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-              } catch {
-                parsedResult = { stdout: String(data.result), stderr: '', exit_code: 0, files_created: [] };
-              }
-              const toolStatus = data.status === 'error' ? 'error' as const : 'completed' as const;
-              messages.update((msgs) =>
-                msgs.map((m) => {
-                  if (m.id !== targetId) return m;
-                  const execs = (m.toolExecutions ?? []).map((e) =>
-                    e.id === data.id ? { ...e, status: toolStatus, result: parsedResult } : e,
-                  );
-                  return { ...m, toolExecutions: execs };
-                }),
-              );
-            } else if (currentEvent === 'search_images') {
-              const targetId = messageId || 'streaming';
-              const imgs = (data.images ?? []) as SearchImageInfo[];
-              const append = data.append === true;
-              messages.update((msgs) =>
-                msgs.map((m) => {
-                  if (m.id !== targetId) return m;
-                  if (append && m.searchImages?.length) {
-                    const seen = new Set(m.searchImages.map((i) => i.img_src));
-                    const merged = [
-                      ...m.searchImages,
-                      ...imgs.filter((i) => !seen.has(i.img_src)),
-                    ].slice(0, 10);
-                    return { ...m, searchImages: merged };
-                  }
-                  return { ...m, searchImages: imgs };
-                }),
-              );
-            } else if (currentEvent === 'usage') {
-              const targetId = messageId || 'streaming';
-              messages.update((msgs) =>
-                msgs.map((m) =>
-                  m.id === targetId
-                    ? { ...m, cost: data.cost ?? m.cost, provider: data.provider ?? m.provider }
-                    : m,
-                ),
-              );
-            } else if (currentEvent === 'error') {
-              updateStreamingContent(messageId, `Error: ${data.message}`);
-            } else if (currentEvent === 'title') {
-              const realId = chatId;
-              if (realId && data.title) {
-                chatList.update((list) =>
-                  list.map((c) => (c.id === realId ? { ...c, title: data.title, emoji: data.emoji ?? c.emoji } : c)),
-                );
-                activeChat.update((c) => (c?.id === realId ? { ...c, title: data.title, emoji: data.emoji ?? c.emoji } : c));
-              }
-            }
-          } catch {
-            // ignore parse errors
-          }
-        }
-      }
-    }
-  } catch (e) {
-    if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      throw e;
-    }
-  }
-
-  // If model sent only reasoning with no content, promote reasoning to content
-  if (!fullContent && fullReasoning) {
-    fullContent = fullReasoning;
-    fullReasoning = '';
-    updateStreamingContent(messageId, fullContent, undefined);
-  }
-
-  return { chatId, userMessageId, messageId };
-}
-
-function updateStreamingContent(
-  messageId: string | undefined,
-  content: string,
-  reasoning?: string,
-  contentBlocks?: ContentBlock[],
-) {
-  const targetId = messageId || 'streaming';
-  messages.update((msgs) =>
-    msgs.map((m) => {
-      if (m.id !== targetId) return m;
-      return contentBlocks !== undefined
-        ? { ...m, content, reasoning, contentBlocks }
-        : { ...m, content, reasoning };
-    }),
-  );
+/** Failed/aborted requests still need unique keys before the next send. */
+function finalizeOptimisticMessages(): void {
+  const ids = new Map([
+    ['temp-user', `local-${crypto.randomUUID()}`],
+    ['streaming', `local-${crypto.randomUUID()}`],
+  ]);
+  messages.update((items) => items.map((message) => ({
+    ...message,
+    id: ids.get(message.id) ?? message.id,
+    parent_id: message.parent_id ? ids.get(message.parent_id) ?? message.parent_id : message.parent_id,
+  })));
 }
 
 export async function streamChat(
@@ -359,6 +190,7 @@ export async function streamChat(
   branchFromMessageId?: string,
   workspaceId?: string,
 ): Promise<string | undefined> {
+  if (get(isStreaming)) return;
   const model = get(selectedModel);
   const ctrl = new AbortController();
   abortController.set(ctrl);
@@ -423,7 +255,7 @@ export async function streamChat(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-      updateStreamingContent(undefined, `Error: ${formatError(err, res.status)}`);
+      setStreamError(undefined, formatError(err, res.status));
       return;
     }
 
@@ -431,16 +263,18 @@ export async function streamChat(
     return ids.chatId;
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      updateStreamingContent(undefined, `Error: ${e}`);
+      setStreamError(undefined, e instanceof Error ? e.message : String(e));
     }
   } finally {
+    finalizeOptimisticMessages();
     isStreaming.set(false);
     abortController.set(null);
-    await loadChats();
+    await loadChats().catch(() => {});
   }
 }
 
 export async function regenerateMessage(chatId: string, messageId: string, model?: string): Promise<void> {
+  if (get(isStreaming)) return;
   const selectedMdl = model || get(selectedModel);
   const ctrl = new AbortController();
   abortController.set(ctrl);
@@ -479,16 +313,17 @@ export async function regenerateMessage(chatId: string, messageId: string, model
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Regenerate failed' }));
-      updateStreamingContent(undefined, `Error: ${formatError(err, res.status)}`);
+      setStreamError(undefined, formatError(err, res.status));
       return;
     }
 
     await processSSEStream(res);
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      updateStreamingContent(undefined, `Error: ${e}`);
+      setStreamError(undefined, e instanceof Error ? e.message : String(e));
     }
   } finally {
+    finalizeOptimisticMessages();
     isStreaming.set(false);
     abortController.set(null);
   }

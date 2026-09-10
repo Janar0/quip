@@ -22,29 +22,29 @@
 
 </script>
 
-<div class="flex flex-1 overflow-hidden">
+<div class="flex flex-1 min-h-0 overflow-hidden">
   <div class="relative flex flex-col flex-1 min-w-0">
     {#if loading}
       <div class="flex-1 flex items-center justify-center">
-        <div class="w-6 h-6 border-2 border-slate-800 border-t-slate-300 rounded-full animate-spin"></div>
+        <div class="w-6 h-6 border-2 border-outline border-t-slate-300 rounded-full animate-spin"></div>
       </div>
     {:else}
       <div in:fly={{ y: 10, duration: D2 }} class="flex-1 flex flex-col min-h-0">
         <MessageList {onRegenerate} {onEdit} />
       </div>
     {/if}
-    <div class="absolute left-0 right-0 bottom-0">
+    <div class="relative shrink-0">
       <div class="quip-composer-scrim" aria-hidden="true"></div>
       <ChatInput {onSend} {chatId} {workspaceId} />
     </div>
   </div>
   {#if $activeDrawer === 'artifacts'}
-    <div class="border-l border-slate-800/50 w-[480px] min-w-[320px] max-w-[60vw] flex-col hidden md:flex">
+    <div class="border-l border-outline/50 w-[480px] min-w-[320px] max-w-[60vw] flex-col hidden md:flex">
       <ArtifactPanel />
     </div>
-    <div class="fixed inset-0 z-50 bg-slate-950 flex flex-col md:hidden">
+    <div class="fixed inset-0 z-50 bg-canvas flex flex-col md:hidden">
       <button
-        class="absolute top-3 right-3 z-10 p-2 rounded-lg bg-slate-800/50 hover:bg-slate-800"
+        class="absolute top-3 right-3 z-10 p-2 rounded-lg bg-elevated/50 hover:bg-elevated"
         onclick={closeDrawer}
         aria-label={$t('artifacts.close')}
       >

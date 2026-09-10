@@ -16,6 +16,8 @@ services:
       CORS_ORIGINS: http://localhost:5173
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
       SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
       QUIP_HOST_SANDBOX_DIR: ${QUIP_HOST_SANDBOX_DIR:-${PWD}/data/sandbox}
       SANDBOX_EXECUTOR_URL: http://executor:8765

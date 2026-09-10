@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectableHtml } from '$lib/actions/selectable-html';
   import { t } from 'svelte-i18n';
   import { isStreaming } from '$lib/stores/chat';
 
@@ -49,9 +50,7 @@
     style:transition="grid-template-rows var(--quip-d-2) var(--quip-ease-out)"
   >
     <div class="overflow-hidden">
-      <div class="mt-2 rounded-xl p-3 text-sm break-words prose prose-invert prose-sm max-w-none" style="background: var(--quip-glass-bg); border: 1px solid var(--quip-glass-border); color: var(--quip-text-dim)">
-        {@html html}
-      </div>
+      <div class="mt-2 rounded-xl p-3 text-sm break-words prose prose-invert prose-sm max-w-none" style="background: var(--quip-glass-bg); border: 1px solid var(--quip-glass-border); color: var(--quip-text-dim)" use:selectableHtml={html}></div>
     </div>
   </div>
 </div>

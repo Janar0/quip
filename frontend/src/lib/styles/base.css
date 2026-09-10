@@ -1,0 +1,132 @@
+/* ── Motion tokens ─────────────────────────────────────────────────── */
+:root {
+  --quip-d-1: 120ms;  /* micro: hover, press, colour */
+  --quip-d-2: 220ms;  /* standard: modals, dropdowns, entrances */
+  --quip-d-3: 380ms;  /* expressive: sidebar slide, hero intro */
+  --quip-ease-out: cubic-bezier(0.22, 1, 0.36, 1);       /* easeOutQuart */
+  --quip-ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);  /* soft overshoot */
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --quip-d-1: 0ms; --quip-d-2: 0ms; --quip-d-3: 0ms; }
+}
+
+/* ── Fonts ─────────────────────────────────────────────────────────── */
+.font-headline { font-family: 'Manrope', system-ui, sans-serif; }
+
+/* ── Scrollbars ────────────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--quip-scrollbar) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--quip-scrollbar); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--quip-scrollbar-hover); }
+
+/* ── Icon buttons (theme-aware) ────────────────────────────────────── */
+.quip-icon-btn {
+  color: var(--quip-text-muted);
+  transition: color var(--quip-d-1), background-color var(--quip-d-1);
+}
+.quip-icon-btn:hover {
+  color: var(--quip-text-dim);
+  background: var(--quip-hover);
+}
+
+/* ── Typing indicator dots ─────────────────────────────────────────── */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.7); }
+  30% { opacity: 1; transform: scale(1); }
+}
+.typing-dots span {
+  display: inline-block; width: 7px; height: 7px; margin: 0 2.5px;
+  border-radius: 50%; background: var(--quip-text-muted);
+  animation: typing-dot 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Spinner ring (tool execution, search, etc.) ──────────────────── */
+@keyframes spin-ring {
+  to { transform: rotate(360deg); }
+}
+.spinner-ring {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1.5px solid var(--quip-border-strong);
+  border-top-color: var(--quip-text-muted);
+  border-radius: 50%;
+  animation: spin-ring 0.7s linear infinite;
+}
+
+/* ── Citations ─────────────────────────────────────────────────────── */
+.citation { color: var(--quip-text-dim); cursor: default; font-size: 0.75em; }
+
+/* ── Source badges ─────────────────────────────────────────────────── */
+.source-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; margin: 0 1px;
+  border-radius: 4px; background: var(--quip-hover);
+  text-decoration: none; vertical-align: text-bottom;
+  transform: translateY(0);
+  transition: background var(--quip-d-1), transform var(--quip-d-1);
+}
+.source-badge:hover { background: var(--quip-border); transform: translateY(-1px); text-decoration: none; }
+.source-badge img { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── Source cards ──────────────────────────────────────────────────── */
+.source-card {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.75rem; border-radius: 0.75rem;
+  border: 1px solid var(--quip-border-strong);
+  background: var(--quip-bg-raised);
+  text-decoration: none; color: inherit;
+  transition: background var(--quip-d-1), border-color var(--quip-d-1);
+}
+.source-card:hover { background: var(--quip-bg-elevated); }
+.source-card-icon { opacity: 0.4; transition: opacity var(--quip-d-1); }
+.source-card:hover .source-card-icon { opacity: 0.8; }
+
+/* ── Floating search images (search mode inline layout) ───────────── */
+.prose .search-float-right {
+  float: right;
+  max-width: 280px;
+  margin: 0.25rem 0 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--quip-border);
+  background: var(--quip-bg-raised);
+}
+.prose .search-float-right a { display: block; text-decoration: none; }
+.prose .search-float-right img { width: 100%; height: auto; display: block; }
+.prose h2, .prose h3 { clear: right; }
+@media (max-width: 640px) {
+  .prose .search-float-right {
+    float: none;
+    max-width: 100%;
+    margin: 0.75rem 0;
+  }
+}
+
+/* ── Background gradient ───────────────────────────────────────────── */
+.main-gradient-bg {
+  background: radial-gradient(circle at 50% 50%, var(--quip-gradient-from) 0%, var(--quip-gradient-to) 100%);
+}
+
+/* ── Ambient glow (start screen) ───────────────────────────────────── */
+.ambient-glow { position: relative; overflow: hidden; }
+.ambient-glow::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, var(--quip-glow) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* ── Body bg uses theme token ──────────────────────────────────────── */
+html, body {
+  color: var(--quip-text);
+  color-scheme: dark;
+  background: var(--quip-body-bg, var(--quip-bg));
+}
+
+::selection {
+  background: var(--quip-selection-bg, #c7d2fe);
+  color: var(--quip-selection-text, #111827);
+  -webkit-text-fill-color: var(--quip-selection-text, #111827);
+  text-shadow: none;
+}

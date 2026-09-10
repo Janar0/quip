@@ -8,48 +8,22 @@ Handles all OpenRouter-specific quirks:
 - generation_id from X-Generation-Id header
 - native_finish_reason alongside finish_reason
 """
+
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from copy import deepcopy
 
 import httpx
 
+from quip.providers.http import network_error_message, provider_stream, send_with_connect_retry
+from quip.providers.types import StreamChunk, ToolCallDelta, UsageInfo
+
+logger = logging.getLogger(__name__)
+
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-
-
-@dataclass
-class UsageInfo:
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cached_tokens: int = 0
-    cost: float = 0.0
-    is_byok: bool = False
-    generation_id: str = ""
-    provider: str = ""
-
-
-@dataclass
-class ToolCallDelta:
-    """A partial tool call from streaming."""
-    index: int = 0
-    id: str = ""
-    function_name: str = ""
-    function_arguments: str = ""
-
-
-@dataclass
-class StreamChunk:
-    """A single chunk from the SSE stream."""
-    content: str = ""
-    reasoning: str = ""
-    finish_reason: str | None = None
-    usage: UsageInfo | None = None
-    error: str | None = None
-    model: str = ""
-    provider: str = ""
-    tool_calls: list[ToolCallDelta] | None = None
 
 
 def _build_headers(api_key: str) -> dict:
@@ -81,7 +55,7 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
     We mark the second-to-last message (last context before the new user turn)
     so that conversation history gets cached across turns.
     """
-    msgs = [m.copy() for m in messages]
+    msgs = deepcopy(messages)
 
     # Find the last two user/system messages to mark as cache breakpoints
     # - Mark the system prompt (if any) so it's always cached
@@ -92,9 +66,7 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
     if msgs and msgs[0]["role"] == "system":
         content = msgs[0]["content"]
         if isinstance(content, str):
-            msgs[0]["content"] = [
-                {"type": "text", "text": content, "cache_control": cache_marker}
-            ]
+            msgs[0]["content"] = [{"type": "text", "text": content, "cache_control": cache_marker}]
         elif isinstance(content, list):
             _mark_last_text_part(content, cache_marker)
 
@@ -103,9 +75,7 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
         target = msgs[-2]
         content = target.get("content")
         if isinstance(content, str):
-            target["content"] = [
-                {"type": "text", "text": content, "cache_control": cache_marker}
-            ]
+            target["content"] = [{"type": "text", "text": content, "cache_control": cache_marker}]
         elif isinstance(content, list):
             _mark_last_text_part(content, cache_marker)
 
@@ -113,15 +83,6 @@ def _inject_cache_control(messages: list[dict]) -> list[dict]:
 
 
 DEFAULT_MAX_TOKENS = 4096
-
-
-def _format_request_error(exc: httpx.RequestError) -> str:
-    detail = str(exc).strip()
-    if not detail and exc.__cause__:
-        detail = str(exc.__cause__).strip()
-    if not detail:
-        detail = exc.__class__.__name__
-    return detail[:500]
 
 
 def build_request_body(
@@ -173,7 +134,9 @@ async def stream_completion(
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         try:
-            async with client.stream("POST", f"{OPENROUTER_BASE}/chat/completions", json=body, headers=headers) as response:
+            async with provider_stream(
+                client, "POST", f"{OPENROUTER_BASE}/chat/completions", json=body, headers=headers
+            ) as response:
                 # Capture generation ID from header
                 generation_id = response.headers.get("x-generation-id", "")
 
@@ -193,8 +156,9 @@ async def stream_completion(
                         continue
 
                     # Strip "data: " prefix
-                    if line.startswith("data: "):
-                        line = line[6:]
+                    if not line.startswith("data:"):
+                        continue
+                    line = line[5:].lstrip()
 
                     if line == "[DONE]":
                         return
@@ -205,6 +169,9 @@ async def stream_completion(
                         continue
 
                     # Check for error in chunk (mid-stream errors)
+                    if not isinstance(chunk, dict):
+                        continue
+
                     if "error" in chunk:
                         err = chunk["error"]
                         msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
@@ -213,13 +180,13 @@ async def stream_completion(
 
                     provider = chunk.get("provider", "")
                     model_name = chunk.get("model", model)
-                    choices = chunk.get("choices", [])
+                    choices = chunk.get("choices") or []
 
                     # Check for usage data in any chunk (may come with or without choices)
                     usage_chunk = None
-                    if "usage" in chunk:
+                    if isinstance(chunk.get("usage"), dict):
                         usage_data = chunk["usage"]
-                        prompt_details = usage_data.get("prompt_tokens_details", {})
+                        prompt_details = usage_data.get("prompt_tokens_details") or {}
                         usage_chunk = UsageInfo(
                             prompt_tokens=usage_data.get("prompt_tokens", 0),
                             completion_tokens=usage_data.get("completion_tokens", 0),
@@ -238,7 +205,7 @@ async def stream_completion(
 
                     # Normal content chunk
                     for choice in choices:
-                        delta = choice.get("delta", {})
+                        delta = choice.get("delta") or {}
                         content = delta.get("content", "")
                         reasoning = delta.get("reasoning", "") or delta.get("reasoning_content", "")
                         finish = choice.get("finish_reason")
@@ -271,54 +238,47 @@ async def stream_completion(
                     if usage_chunk:
                         yield StreamChunk(usage=usage_chunk, model=model_name, provider=provider)
 
-        except httpx.ConnectError as e:
-            yield StreamChunk(error=f"Cannot connect to OpenRouter API: {_format_request_error(e)}")
-        except httpx.TimeoutException:
-            yield StreamChunk(error="OpenRouter request timed out.")
-        except httpx.RequestError as e:
-            yield StreamChunk(error=f"OpenRouter network error: {_format_request_error(e)}")
-        except Exception as e:
-            yield StreamChunk(error=f"Unexpected error: {str(e)}")
+        except httpx.RequestError as exc:
+            logger.warning("OpenRouter request failed: %s", type(exc).__name__)
+            yield StreamChunk(error=network_error_message(exc))
+        except Exception:
+            logger.exception("Invalid OpenRouter response")
+            yield StreamChunk(error="OpenRouter returned an invalid response. Please try again.")
+
+
+async def _get_data(path: str, api_key: str, fallback, *, params: dict | None = None):
+    key = api_key or OPENROUTER_API_KEY
+    if not key:
+        return fallback
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            request = client.build_request(
+                "GET",
+                f"{OPENROUTER_BASE}/{path}",
+                headers=_build_headers(key),
+                params=params,
+            )
+            response = await send_with_connect_retry(client, request)
+            response.raise_for_status()
+            payload = response.json()
+            data = payload.get("data") if isinstance(payload, dict) else None
+            return data if isinstance(data, type(fallback)) else fallback
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("OpenRouter %s unavailable: %s", path, type(exc).__name__)
+        return fallback
 
 
 async def get_generation(generation_id: str, api_key: str = "") -> dict:
-    """Fetch generation details (includes cost) from OpenRouter."""
-    key = api_key or OPENROUTER_API_KEY
-    if not key or not generation_id:
+    """Optional billing metadata must not break an otherwise successful answer."""
+    if not generation_id:
         return {}
-
-    headers = _build_headers(key)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{OPENROUTER_BASE}/generation?id={generation_id}", headers=headers)
-        if resp.status_code == 200:
-            return resp.json().get("data", {})
-    return {}
+    return await _get_data("generation", api_key, {}, params={"id": generation_id})
 
 
 async def list_models(api_key: str = "") -> list[dict]:
-    """Fetch available models from OpenRouter."""
-    key = api_key or OPENROUTER_API_KEY
-    if not key:
-        return []
-
-    headers = _build_headers(key)
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(f"{OPENROUTER_BASE}/models", headers=headers)
-        if resp.status_code != 200:
-            return []
-        data = resp.json()
-        return data.get("data", [])
+    return await _get_data("models", api_key, [])
 
 
 async def get_key_info(api_key: str = "") -> dict:
-    """Get API key info (credits, usage, limits)."""
-    key = api_key or OPENROUTER_API_KEY
-    if not key:
-        return {}
-
-    headers = _build_headers(key)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{OPENROUTER_BASE}/key", headers=headers)
-        if resp.status_code != 200:
-            return {}
-        return resp.json().get("data", {})
+    """Settings stay accessible when the provider is offline."""
+    return await _get_data("key", api_key, {})

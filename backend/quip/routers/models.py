@@ -119,7 +119,12 @@ async def get_available_models(
                     "provider": "openrouter",
                     "supports_tools": _model_supports_tools(m),
                 })
-            _set_cached("openrouter", or_models)
+            if or_models:
+                _set_cached("openrouter", or_models)
+            else:
+                # A temporary provider outage must not erase the last known list
+                # or poison the cache with an empty result for five minutes.
+                or_models = _cache.get("openrouter", (0, []))[1]
             models.extend(or_models)
 
     # Ollama models (cached 30s)

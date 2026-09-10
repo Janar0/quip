@@ -6,10 +6,10 @@
   let open = $state(false);
 </script>
 
-<div class="mt-3 pt-2 border-t border-slate-800/50">
+<div class="mt-3 pt-2 border-t border-outline/50">
   <button
     type="button"
-    class="text-xs text-slate-500 hover:text-slate-400 select-none transition-colors flex items-center gap-1"
+    class="text-xs text-muted hover:text-muted select-none transition-colors flex items-center gap-1"
     onclick={() => (open = !open)}
   >
     <span

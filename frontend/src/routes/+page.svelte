@@ -16,7 +16,7 @@
   });
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-screen gap-6 p-8 ambient-glow">
+<div class="flex flex-col items-center justify-center min-h-dvh gap-6 p-8 ambient-glow">
   <div class="text-center">
     <h1 class="text-6xl font-black tracking-widest">{appName}</h1>
     <p class="mt-3 text-xl opacity-60 italic">{backronym}</p>

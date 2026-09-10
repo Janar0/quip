@@ -50,12 +50,12 @@
 {#if artifact}
   <div class="flex flex-col h-full" transition:fly={{ x: 480, duration: D3, easing: easeOut }}>
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-outline">
       <div class="flex items-center gap-2 min-w-0">
         <h3 class="font-medium text-sm truncate">{artifact.title}</h3>
         {#if versions.length > 1}
           <select
-            class="text-xs bg-slate-900/50 border border-slate-800 rounded px-1.5 py-0.5"
+            class="text-xs bg-panel/50 border border-outline rounded px-1.5 py-0.5"
             value={artifact.id}
             onchange={(e) => selectArtifact((e.target as HTMLSelectElement).value)}
           >
@@ -66,7 +66,7 @@
         {/if}
       </div>
       <button
-        class="p-1 rounded hover:bg-slate-800 opacity-50 hover:opacity-100 transition-opacity"
+        class="p-1 rounded hover:bg-elevated opacity-50 hover:opacity-100 transition-opacity"
         onclick={closeArtifactPanel}
         title={$t('artifacts.close')}
       >
@@ -82,15 +82,15 @@
     </div>
 
     <!-- Footer actions -->
-    <div class="flex items-center gap-2 px-4 py-2 border-t border-slate-800">
+    <div class="flex items-center gap-2 px-4 py-2 border-t border-outline">
       <button
-        class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/50 hover:bg-slate-800 transition-colors"
+        class="text-xs px-3 py-1.5 rounded-lg bg-panel/50 hover:bg-elevated transition-colors"
         onclick={copy}
       >
         {$t('artifacts.copy')}
       </button>
       <button
-        class="text-xs px-3 py-1.5 rounded-lg bg-slate-900/50 hover:bg-slate-800 transition-colors"
+        class="text-xs px-3 py-1.5 rounded-lg bg-panel/50 hover:bg-elevated transition-colors"
         onclick={download}
       >
         {$t('artifacts.download')}

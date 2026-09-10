@@ -390,13 +390,6 @@ class CompletionService:
 
         await _check_budget(user, db)
 
-        api_key = get_setting("openrouter_api_key")
-        if not api_key:
-            raise HTTPException(
-                status_code=400,
-                detail="No OpenRouter API key configured. Add one in Admin > Settings.",
-            )
-
         is_new_chat = False
         if req.chat_id:
             result = await db.execute(
@@ -477,15 +470,19 @@ class CompletionService:
         messages_for_history, file_path_map = await HistoryService.build(
             db, chat, req.branch_from_message_id, user_msg
         )
-        history, inlined_doc_file_ids = await _build_history_dicts(
-            messages_for_history, file_path_map, False, db
-        )
-
         search_enabled = get_bool_setting("search_enabled", False)
         search_mode = req.mode_hint == "search" and search_enabled
         effective_model = _resolve_model(
-            req.model, search_mode=search_mode
+            req.model or workspace.default_model or chat.model or "", search_mode=search_mode
         )
+        api_key = get_setting("openrouter_api_key")
+        is_ollama = effective_model.startswith("ollama/")
+        if not is_ollama and not api_key:
+            raise HTTPException(status_code=400, detail="No OpenRouter API key configured. Add one in Admin > Settings.")
+        history, inlined_doc_file_ids = await _build_history_dicts(
+            messages_for_history, file_path_map, is_ollama, db
+        )
+
         # Validate effective model against cache
         model_info = _validate_model(effective_model)
 
@@ -562,7 +559,7 @@ class CompletionService:
             orchestrator = StreamOrchestrator(
                 messages=list(history),
                 model=effective_model,
-                base_url="",
+                base_url=get_setting("ollama_url", "http://localhost:11434"),
                 api_key=api_key,
                 tool_gating_enabled=tool_gating_enabled,
                 search_enabled=search_enabled,
@@ -755,13 +752,13 @@ class CompletionService:
         model_info = _validate_model(effective_model)
 
         api_key = get_setting("openrouter_api_key")
-        if not api_key:
+        if not effective_model.startswith("ollama/") and not api_key:
             raise HTTPException(
                 status_code=400, detail="No OpenRouter API key configured."
             )
 
         chain, file_path_map = await HistoryService.build_for_regenerate(db, chat, orig_msg)
-        history, _ = await _build_history_dicts(chain, file_path_map, False, db)
+        history, _ = await _build_history_dicts(chain, file_path_map, effective_model.startswith("ollama/"), db)
 
         search_enabled = get_bool_setting("search_enabled", False)
         tool_gating_enabled = get_bool_setting("tool_gating_enabled", True)
@@ -830,7 +827,7 @@ class CompletionService:
             orchestrator = StreamOrchestrator(
                 messages=list(history),
                 model=effective_model,
-                base_url="",
+                base_url=get_setting("ollama_url", "http://localhost:11434"),
                 api_key=api_key,
                 tool_gating_enabled=tool_gating_enabled,
                 search_enabled=search_enabled,

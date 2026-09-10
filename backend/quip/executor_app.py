@@ -36,7 +36,18 @@ if len(EXECUTOR_TOKEN) < 16:
 if not HOST_SANDBOX_DIR.startswith("/"):
     raise RuntimeError("QUIP_HOST_SANDBOX_DIR must be an absolute host path")
 
-client = docker.from_env()
+# Connect lazily so importing validation helpers does not require a Docker daemon.
+client = None
+client_lock = threading.Lock()
+
+
+def get_client():
+    global client
+    with client_lock:
+        if client is None:
+            client = docker.from_env()
+    return client
+
 network_enabled: set[str] = set()
 install_locks: dict[str, threading.Lock] = {}
 install_locks_guard = threading.Lock()
@@ -95,7 +106,7 @@ def _validate_workspace_path(path: str) -> str:
 
 def _managed_container(reference: str):
     try:
-        container = client.containers.get(reference)
+        container = get_client().containers.get(reference)
         container.reload()
     except NotFound as exc:
         raise HTTPException(status_code=404, detail="Sandbox not found") from exc
@@ -118,11 +129,11 @@ def _managed_container(reference: str):
 def _restore_offline_network(container_id: str) -> None:
     """Leave a sandbox attached only to Docker's special `none` network."""
     try:
-        client.networks.get(INSTALL_NETWORK).disconnect(container_id, force=True)
+        get_client().networks.get(INSTALL_NETWORK).disconnect(container_id, force=True)
     except (NotFound, APIError):
         pass
     try:
-        client.networks.get("none").connect(container_id)
+        get_client().networks.get("none").connect(container_id)
     except (NotFound, APIError):
         # `already exists` is the normal idempotent case.
         pass
@@ -143,7 +154,7 @@ def _create_container(name: str, user_key: str):
             raise RuntimeError("Executor cannot assign the sandbox workspace to uid 1000") from exc
 
     host_dir = f"{HOST_SANDBOX_DIR.rstrip('/')}/{user_key}"
-    container = client.containers.create(
+    container = get_client().containers.create(
         image=SANDBOX_IMAGE,
         name=name,
         labels={MANAGED_LABEL: "true", "dev.quip.user_key": user_key},
@@ -171,8 +182,8 @@ def _create_container(name: str, user_key: str):
 @app.get("/health")
 def health():
     try:
-        client.ping()
-        client.images.get(SANDBOX_IMAGE)
+        get_client().ping()
+        get_client().images.get(SANDBOX_IMAGE)
         return {"status": "ready"}
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Docker executor unavailable") from exc
@@ -182,7 +193,7 @@ def health():
 def ensure_container(data: ContainerRequest):
     _validate_name(data.name, data.user_key)
     try:
-        container = client.containers.get(data.name)
+        container = get_client().containers.get(data.name)
         container.reload()
         labels = container.attrs.get("Config", {}).get("Labels") or {}
         network_mode = container.attrs.get("HostConfig", {}).get("NetworkMode")
@@ -307,12 +318,12 @@ def install_packages(data: InstallRequest):
     with _install_lock(container.id):
         try:
             try:
-                network = client.networks.get(INSTALL_NETWORK)
+                network = get_client().networks.get(INSTALL_NETWORK)
             except NotFound:
-                network = client.networks.create(INSTALL_NETWORK, driver="bridge")
+                network = get_client().networks.create(INSTALL_NETWORK, driver="bridge")
             network_enabled.add(container.id)
             try:
-                client.networks.get("none").disconnect(container.id, force=True)
+                get_client().networks.get("none").disconnect(container.id, force=True)
             except (NotFound, APIError):
                 pass
             network.connect(container.id)
