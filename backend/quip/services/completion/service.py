@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -412,13 +412,16 @@ class CompletionService:
             )
             title = req.message[:50] + ("..." if len(req.message) > 50 else "")
             chat = Chat(
+                id=uuid4(),
                 user_id=user.id,
                 workspace_id=workspace.id,
                 title=title,
                 model=req.model or workspace.default_model,
             )
-            db.add(chat)
-            await db.flush()
+
+        # Personal-workspace adoption can issue UPDATEs even when it changes no
+        # rows. Finish that short transaction before document extraction.
+        await db.commit()
 
         user_parent_id = await CompletionService.determine_parent(
             db, chat, req.branch_from_message_id
@@ -430,45 +433,16 @@ class CompletionService:
             else []
         )
 
-        if attachments and chat:
-            file_ids_to_link = [UUID(att["file_id"]) for att in attachments]
-            await db.execute(
-                update(File)
-                .where(
-                    File.id.in_(file_ids_to_link),
-                    File.user_id == user.id,
-                    File.chat_id.is_(None),
-                    or_(File.workspace_id == chat.workspace_id, File.workspace_id.is_(None)),
-                )
-                .values(chat_id=chat.id, workspace_id=chat.workspace_id)
-            )
-            # Re-check after the atomic claim. If another completion linked an
-            # unattached file to a different chat first, do not use its data.
-            attachments = await _load_attachments(
-                file_ids_to_link, user.id, chat.id, chat.workspace_id, db
-            )
-            await db.execute(
-                update(DocumentChunk)
-                .where(DocumentChunk.file_id.in_(file_ids_to_link), DocumentChunk.chat_id.is_(None))
-                .values(chat_id=chat.id)
-            )
-
         user_meta = {}
         if attachments:
             user_meta["attachments"] = [
                 {k: v for k, v in a.items() if k != "storage_path"} for a in attachments
             ]
         user_msg = Message(
+            id=uuid4(),
             chat_id=chat.id, role="user", content=req.message,
             parent_id=user_parent_id, meta=user_meta or None,
         )
-        db.add(user_msg)
-        await db.flush()
-        # Inline extraction and sandbox copying can perform slow external work.
-        # Release SQLite's writer lock before either operation starts.
-        await db.commit()
-
-        await _copy_attachments_to_sandbox(user, chat, attachments, db)
 
         messages_for_history, file_path_map = await HistoryService.build(
             db, chat, req.branch_from_message_id, user_msg
@@ -518,6 +492,51 @@ class CompletionService:
         # Truncate history to fit model context window
         history = _truncate_history(history, model_info)
 
+        # Preparation above may run OCR or other external calls. Keep the
+        # user turn private until it can be saved with its assistant and run.
+        # End the read transaction so the leaf check below sees current state.
+        await db.commit()
+        if is_new_chat:
+            db.add(chat)
+            await db.flush()
+        else:
+            # A no-op UPDATE reserves SQLite's writer lock for the leaf check,
+            # attachment claim and complete turn. Competing requests serialize
+            # here, then a stale normal turn is rejected instead of branching.
+            await db.execute(
+                update(Chat).where(Chat.id == chat.id).values(updated_at=Chat.updated_at)
+            )
+            if not req.branch_from_message_id:
+                current_parent_id = await CompletionService.determine_parent(db, chat, None)
+                if current_parent_id != user_parent_id:
+                    raise HTTPException(status_code=409, detail="Chat changed while preparing the message. Retry.")
+
+        if attachments:
+            file_ids_to_link = [UUID(att["file_id"]) for att in attachments]
+            await db.execute(
+                update(File)
+                .where(
+                    File.id.in_(file_ids_to_link),
+                    File.user_id == user.id,
+                    File.chat_id.is_(None),
+                    or_(File.workspace_id == chat.workspace_id, File.workspace_id.is_(None)),
+                )
+                .values(chat_id=chat.id, workspace_id=chat.workspace_id)
+            )
+            # Re-check after the atomic claim. A competing completion may have
+            # linked an unattached file to another chat during preparation.
+            attachments = await _load_attachments(
+                file_ids_to_link, user.id, chat.id, chat.workspace_id, db
+            )
+            await db.execute(
+                update(DocumentChunk)
+                .where(DocumentChunk.file_id.in_(file_ids_to_link), DocumentChunk.chat_id.is_(None))
+                .values(chat_id=chat.id)
+            )
+
+        db.add(user_msg)
+        await db.flush()
+
         assistant_msg = Message(
             chat_id=chat.id, role="assistant", content="",
             model=effective_model, parent_id=user_msg.id,
@@ -535,6 +554,8 @@ class CompletionService:
         db.add(run)
         await db.flush()
         await db.commit()
+
+        await _copy_attachments_to_sandbox(user, chat, attachments, db)
 
         chat_id_str = str(chat.id)
         user_msg_id = str(user_msg.id)

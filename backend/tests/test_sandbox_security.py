@@ -1,10 +1,14 @@
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import quip.services.sandbox as sandbox_module
+from quip.database import Base
+from quip.models.user import User
 from quip.services.sandbox import SandboxManager
 
 
@@ -142,3 +146,36 @@ async def test_file_listing_parses_size_and_quotes_user_path():
 def test_package_options_are_rejected():
     with pytest.raises(ValueError, match="Invalid package"):
         SandboxManager._validated_packages(["--index-url=https://example.invalid"])
+
+
+@pytest.mark.asyncio
+async def test_first_sandbox_startup_does_not_hold_sqlite_writer(tmp_path, monkeypatch):
+    db_path = tmp_path / "sandbox.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    manager = bare_manager()
+    monkeypatch.setattr(sandbox_module, "QUIP_HOST_SANDBOX_DIR", "")
+
+    def create_container(*_args):
+        # External container startup must leave unrelated SQLite writes free.
+        with sqlite3.connect(db_path, timeout=0.1) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.rollback()
+        return "mock-container-id"
+
+    monkeypatch.setattr(manager, "_create_container", create_container)
+    try:
+        async with sessions() as db:
+            user = User(email="sandbox-writer@test.dev", username="sandbox-writer", name="Writer")
+            db.add(user)
+            await db.commit()
+            sandbox = await manager.get_or_create(user.id, db)
+            assert sandbox.status == "running"
+            assert sandbox.container_id == "mock-container-id"
+    finally:
+        await engine.dispose()

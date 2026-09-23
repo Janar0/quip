@@ -2,6 +2,7 @@
 
 Model: google/gemini-2.0-flash-001 (mocked — no real API calls).
 """
+import asyncio
 import json
 import sqlite3
 from io import BytesIO
@@ -9,12 +10,13 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from quip.core.config import set_setting
 from quip.database import Base, get_db
 from quip.main import app
-from quip.models.chat import Message
+from quip.models.chat import Chat, Message
 from quip.models.file import DocumentChunk, File
 from quip.models.user import User
 from quip.providers.openrouter import StreamChunk, UsageInfo
@@ -124,6 +126,11 @@ async def test_document_extraction_does_not_hold_sqlite_writer(client, tmp_path,
         # This succeeds only if the completion has released its write transaction.
         with sqlite3.connect(db_path, timeout=0.1) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            # Incomplete turns must stay invisible until their assistant and run exist.
+            visible = connection.execute(
+                "SELECT count(*) FROM messages WHERE role = 'user' AND content = 'Read note'"
+            ).fetchone()[0]
+            assert visible == 0
             connection.rollback()
         return ExtractionResult(pages=[PageContent(text="Document content is available")])
 
@@ -159,6 +166,111 @@ async def test_document_extraction_does_not_hold_sqlite_writer(client, tmp_path,
 
         assert response.status_code == 200
         assert any("Document content is available" in str(message["content"]) for message in seen_messages)
+    finally:
+        app.dependency_overrides[get_db] = previous_db
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_preflight_failure_does_not_claim_file_or_create_chat(
+    client, auth_headers, db_session, tmp_upload_dir,
+):
+    set_setting("openrouter_api_key", "")
+    set_setting("sandbox_enabled", "false")
+    uploaded = await client.post(
+        "/api/files/upload", headers=auth_headers,
+        files=[("files", ("unclaimed.txt", b"Keep this file reusable", "text/plain"))],
+    )
+    assert uploaded.status_code == 200
+    from uuid import UUID
+    file_id = UUID(uploaded.json()["files"][0]["id"])
+
+    response = await client.post(
+        "/api/chat/completions", headers=auth_headers,
+        json={"model": MODEL, "message": "Preflight fails", "file_ids": [str(file_id)]},
+    )
+
+    assert response.status_code == 400
+    assert (await db_session.get(File, file_id)).chat_id is None
+    assert (await db_session.execute(
+        select(Chat).where(Chat.title == "Preflight fails")
+    )).scalar_one_or_none() is None
+    assert (await db_session.execute(
+        select(Message).where(Message.content == "Preflight fails")
+    )).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_completion_rejects_stale_preparation(client, tmp_path, tmp_upload_dir):
+    db_path = tmp_path / "same-chat.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async def get_file_db():
+        async with sessions() as session:
+            yield session
+
+    previous_db = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = get_file_db
+    set_setting("openrouter_api_key", "test-key")
+    set_setting("rag_enabled", "false")
+    set_setting("sandbox_enabled", "false")
+
+    from quip.services.documents import ExtractionResult, PageContent
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_document(*_args):
+        started.set()
+        await release.wait()
+        return ExtractionResult(pages=[PageContent(text="A slow document")])
+
+    try:
+        registered = await client.post("/api/auth/register", json={
+            "email": "branch@test.dev", "username": "branch", "name": "Branch",
+            "password": "password123", "bootstrap_token": "test-bootstrap-token",
+        })
+        assert registered.status_code == 201
+        headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+        created = await client.post("/api/chats", headers=headers, json={"title": "Shared"})
+        chat_id = created.json()["id"]
+        with patch("quip.routers.files._process_file_background", new_callable=AsyncMock):
+            uploaded = await client.post(
+                "/api/files/upload", headers=headers,
+                files=[("files", ("slow.txt", b"A slow document", "text/plain"))],
+            )
+        file_id = uploaded.json()["files"][0]["id"]
+
+        with patch("quip.services.documents.extract", new=slow_document), \
+             patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream), \
+             patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None):
+            first_task = asyncio.create_task(client.post(
+                "/api/chat/completions", headers=headers,
+                json={"chat_id": chat_id, "model": MODEL, "message": "Slow first", "file_ids": [file_id]},
+            ))
+            try:
+                await asyncio.wait_for(started.wait(), timeout=5)
+                second = await client.post(
+                    "/api/chat/completions", headers=headers,
+                    json={"chat_id": chat_id, "model": MODEL, "message": "Fast second"},
+                )
+                assert second.status_code == 200
+            finally:
+                release.set()
+            first = await first_task
+
+        assert first.status_code == 409
+        async with sessions() as db:
+            assert (await db.execute(
+                select(Message).where(Message.content == "Slow first")
+            )).scalar_one_or_none() is None
+            assert (await db.execute(
+                select(Message).where(Message.content == "Fast second")
+            )).scalar_one_or_none() is not None
     finally:
         app.dependency_overrides[get_db] = previous_db
         await engine.dispose()

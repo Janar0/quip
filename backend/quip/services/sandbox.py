@@ -152,9 +152,19 @@ class SandboxManager:
         )
         db.add(sandbox)
         await db.flush()
+        # Container startup may take seconds. Persist the short reservation so
+        # it cannot hold SQLite's single writer lock during external I/O.
+        await db.commit()
 
         # Create in background thread (Docker SDK is sync)
-        container_id = await asyncio.to_thread(self._create_container, container_name, workspace_host_dir, None)
+        try:
+            container_id = await asyncio.to_thread(
+                self._create_container, container_name, workspace_host_dir, None
+            )
+        except Exception:
+            sandbox.status = "error"
+            await db.commit()
+            raise
         sandbox.container_id = container_id
         sandbox.status = "running"
         sandbox.last_active_at = datetime.now(UTC)
