@@ -3,17 +3,23 @@
 Model: google/gemini-2.0-flash-001 (mocked — no real API calls).
 """
 import json
+import sqlite3
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from quip.core.config import set_setting
+from quip.database import Base, get_db
+from quip.main import app
 from quip.models.chat import Message
 from quip.models.file import DocumentChunk, File
 from quip.models.user import User
 from quip.providers.openrouter import StreamChunk, UsageInfo
 from quip.services.auth import create_access_token
+from quip.services.multimodal import _extract_document_text, clear_b64_cache
 
 MODEL = "google/gemini-2.0-flash-001"
 
@@ -89,6 +95,98 @@ async def test_completion_creates_chat(client, auth_headers):
     run = next(item for item in persisted.json()["runs"] if item["id"] == chat_ev["run_id"])
     assert run["status"] == "completed"
     assert run["finished_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_document_extraction_does_not_hold_sqlite_writer(client, tmp_path, tmp_upload_dir):
+    """A slow document fallback must not block writes for every other user."""
+    db_path = tmp_path / "concurrent.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async def get_file_db():
+        async with session_factory() as session:
+            yield session
+
+    previous_db = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = get_file_db
+    set_setting("openrouter_api_key", "test-key")
+    set_setting("rag_enabled", "false")
+    set_setting("sandbox_enabled", "false")
+
+    from quip.services.documents import ExtractionResult, PageContent
+
+    async def extracting_document(*_args):
+        # This succeeds only if the completion has released its write transaction.
+        with sqlite3.connect(db_path, timeout=0.1) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.rollback()
+        return ExtractionResult(pages=[PageContent(text="Document content is available")])
+
+    seen_messages = []
+
+    async def capturing_stream(**kwargs):
+        seen_messages.extend(kwargs["messages"])
+        yield StreamChunk(content="Read it")
+        yield StreamChunk(finish_reason="stop")
+
+    try:
+        registered = await client.post("/api/auth/register", json={
+            "email": "writer@test.dev", "username": "writer", "name": "Writer",
+            "password": "password123", "bootstrap_token": "test-bootstrap-token",
+        })
+        assert registered.status_code == 201
+        headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+        uploaded = await client.post(
+            "/api/files/upload", headers=headers,
+            files=[("files", ("note.txt", b"Document content is available", "text/plain"))],
+        )
+        assert uploaded.status_code == 200
+        file_id = uploaded.json()["files"][0]["id"]
+
+        with patch("quip.services.documents.extract", new=extracting_document), \
+             patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream), \
+             patch("quip.services.completion.service.save_assistant_message", new_callable=AsyncMock), \
+             patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None):
+            response = await client.post(
+                "/api/chat/completions", headers=headers,
+                json={"model": MODEL, "message": "Read note", "file_ids": [file_id]},
+            )
+
+        assert response.status_code == 200
+        assert any("Document content is available" in str(message["content"]) for message in seen_messages)
+    finally:
+        app.dependency_overrides[get_db] = previous_db
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_document_text_uses_processed_chunks_before_ocr(db_session, tmp_upload_dir):
+    """A processed attachment should not run OCR again during every chat turn."""
+    clear_b64_cache()
+    file_id = uuid4()
+    db_session.add(DocumentChunk(
+        file_id=file_id,
+        chunk_index=0,
+        content="Already processed document text",
+        token_count=4,
+    ))
+    await db_session.commit()
+    storage_path = f"{file_id}.pdf"
+    (tmp_upload_dir / storage_path).write_bytes(b"placeholder")
+
+    with patch("quip.services.documents.extract", new_callable=AsyncMock, return_value=None):
+        text = await _extract_document_text(
+            {"file_id": str(file_id), "storage_path": storage_path, "content_type": "application/pdf"},
+            db_session,
+        )
+
+    assert text == "Already processed document text"
+    clear_b64_cache()
 
 
 @pytest.mark.asyncio

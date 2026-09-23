@@ -111,7 +111,7 @@ class TesseractOCR(BaseOCRProvider):
         try:
             text = await loop.run_in_executor(
                 None,
-                lambda: pytesseract.image_to_string(img, lang=lang, config="--psm 3"),
+                lambda: pytesseract.image_to_string(img, lang=lang, config="--psm 3", timeout=20),
             )
         except pytesseract.TesseractError as e:
             # If the language pack is missing, tesseract errors immediately.
@@ -120,7 +120,7 @@ class TesseractOCR(BaseOCRProvider):
                 try:
                     text = await loop.run_in_executor(
                         None,
-                        lambda: pytesseract.image_to_string(img, lang="eng"),
+                        lambda: pytesseract.image_to_string(img, lang="eng", timeout=20),
                     )
                 except Exception:
                     return OCRResult(error=f"tesseract_error: {e}")

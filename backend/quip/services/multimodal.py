@@ -10,7 +10,8 @@ import base64
 import logging
 import re
 from collections import OrderedDict
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,7 +84,7 @@ async def _extract_document_text(att: dict, db: "AsyncSession | None") -> str:
 
             result = await db.execute(
                 select(DocumentChunk.content)
-                .where(DocumentChunk.file_id == file_id)
+                .where(DocumentChunk.file_id == UUID(str(file_id)))
                 .order_by(DocumentChunk.chunk_index.asc())
             )
             parts = [c for (c,) in result.all() if c]

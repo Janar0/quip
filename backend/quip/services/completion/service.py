@@ -453,8 +453,6 @@ class CompletionService:
                 .values(chat_id=chat.id)
             )
 
-        await _copy_attachments_to_sandbox(user, chat, attachments, db)
-
         user_meta = {}
         if attachments:
             user_meta["attachments"] = [
@@ -466,6 +464,11 @@ class CompletionService:
         )
         db.add(user_msg)
         await db.flush()
+        # Inline extraction and sandbox copying can perform slow external work.
+        # Release SQLite's writer lock before either operation starts.
+        await db.commit()
+
+        await _copy_attachments_to_sandbox(user, chat, attachments, db)
 
         messages_for_history, file_path_map = await HistoryService.build(
             db, chat, req.branch_from_message_id, user_msg
