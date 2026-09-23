@@ -9,7 +9,7 @@ import shlex
 import shutil
 import tarfile
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -25,7 +25,7 @@ except ImportError:
     NotFound = Exception  # type: ignore
     APIError = Exception  # type: ignore
     _DOCKER_AVAILABLE = False
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.core.config import get_setting
@@ -124,6 +124,21 @@ class SandboxManager:
         sandbox = result.scalar_one_or_none()
 
         if sandbox:
+            if sandbox.status == "creating":
+                return await self._wait_for_creation(sandbox, db)
+            if sandbox.status == "error":
+                # Only one worker may retry a failed creation. Others observe
+                # its 'creating' reservation and wait for the result.
+                claimed = await db.execute(
+                    update(Sandbox)
+                    .where(Sandbox.id == sandbox.id, Sandbox.status == "error")
+                    .values(status="creating", last_active_at=datetime.now(UTC))
+                )
+                await db.commit()
+                if claimed.rowcount:
+                    return await self._finish_creation(sandbox, db)
+                await db.refresh(sandbox)
+                return await self._wait_for_creation(sandbox, db)
             await self._ensure_running(sandbox, db)
             return sandbox
 
@@ -156,10 +171,44 @@ class SandboxManager:
         # it cannot hold SQLite's single writer lock during external I/O.
         await db.commit()
 
+        return await self._finish_creation(sandbox, db)
+
+    async def _wait_for_creation(self, sandbox: Sandbox, db: AsyncSession) -> Sandbox:
+        """Wait for the worker that reserved startup, without holding a DB lock."""
+        deadline = asyncio.get_running_loop().time() + 60
+        while sandbox.status == "creating":
+            # A crashed worker leaves a stale lease. A conditional UPDATE makes
+            # exactly one waiter the replacement creator after five minutes.
+            cutoff = datetime.now(UTC) - timedelta(minutes=5)
+            if sandbox.last_active_at and sandbox.last_active_at.replace(tzinfo=UTC) < cutoff:
+                claimed = await db.execute(
+                    update(Sandbox)
+                    .where(
+                        Sandbox.id == sandbox.id,
+                        Sandbox.status == "creating",
+                        Sandbox.last_active_at < cutoff,
+                    )
+                    .values(last_active_at=datetime.now(UTC))
+                )
+                await db.commit()
+                if claimed.rowcount:
+                    return await self._finish_creation(sandbox, db)
+            else:
+                await db.commit()
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("Sandbox startup is still in progress")
+            await asyncio.sleep(0.2)
+            await db.refresh(sandbox)
+        if sandbox.status != "running" or not sandbox.container_id:
+            raise RuntimeError("Sandbox startup failed")
+        return sandbox
+
+    async def _finish_creation(self, sandbox: Sandbox, db: AsyncSession) -> Sandbox:
+        """Finish a startup already reserved by this worker."""
         # Create in background thread (Docker SDK is sync)
         try:
             container_id = await asyncio.to_thread(
-                self._create_container, container_name, workspace_host_dir, None
+                self._create_container, sandbox.container_name, sandbox.volume_name, sandbox.image_tag
             )
         except Exception:
             sandbox.status = "error"

@@ -1,4 +1,7 @@
+import asyncio
 import sqlite3
+import threading
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -8,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import quip.services.sandbox as sandbox_module
 from quip.database import Base
+from quip.models.sandbox import Sandbox
 from quip.models.user import User
 from quip.services.sandbox import SandboxManager
 
@@ -179,3 +183,78 @@ async def test_first_sandbox_startup_does_not_hold_sqlite_writer(tmp_path, monke
             assert sandbox.container_id == "mock-container-id"
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_parallel_sandbox_requests_share_one_startup(tmp_path, monkeypatch):
+    db_path = tmp_path / "parallel-sandbox.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with sessions() as db:
+        user = User(email="parallel@test.dev", username="parallel", name="Parallel")
+        db.add(user)
+        await db.commit()
+        user_id = user.id
+
+    manager = bare_manager()
+    monkeypatch.setattr(sandbox_module, "QUIP_HOST_SANDBOX_DIR", "")
+    started = threading.Event()
+    release = threading.Event()
+    startup_count = 0
+
+    def create_container(*_args):
+        nonlocal startup_count
+        startup_count += 1
+        started.set()
+        assert release.wait(timeout=5)
+        return "shared-container-id"
+
+    def get_container(sandbox):
+        if sandbox.container_id is None:
+            create_container()
+        return SimpleNamespace(status="running")
+
+    monkeypatch.setattr(manager, "_create_container", create_container)
+    monkeypatch.setattr(manager, "_get_container", get_container)
+
+    async def get_sandbox():
+        async with sessions() as db:
+            return await manager.get_or_create(user_id, db)
+
+    try:
+        first = asyncio.create_task(get_sandbox())
+        assert await asyncio.to_thread(started.wait, 5)
+        second = asyncio.create_task(get_sandbox())
+        await asyncio.sleep(0.2)
+        assert startup_count == 1
+        release.set()
+        first_result, second_result = await asyncio.gather(first, second)
+        assert first_result.container_id == second_result.container_id == "shared-container-id"
+    finally:
+        release.set()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stale_sandbox_creation_is_recovered(db_session, monkeypatch):
+    user = User(email="stale@test.dev", username="stale", name="Stale")
+    db_session.add(user)
+    await db_session.flush()
+    sandbox = Sandbox(
+        user_id=user.id,
+        container_name=f"quip-sandbox-{user.id.hex}",
+        volume_name=f"quip-sandbox-vol-{user.id.hex}",
+        status="creating",
+        last_active_at=datetime.now(UTC) - timedelta(minutes=10),
+    )
+    db_session.add(sandbox)
+    await db_session.commit()
+
+    manager = bare_manager()
+    monkeypatch.setattr(manager, "_create_container", lambda *_args: "recovered-container")
+    recovered = await manager.get_or_create(user.id, db_session)
+
+    assert recovered.status == "running"
+    assert recovered.container_id == "recovered-container"
