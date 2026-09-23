@@ -26,6 +26,7 @@ except ImportError:
     APIError = Exception  # type: ignore
     _DOCKER_AVAILABLE = False
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.core.config import get_setting
@@ -166,10 +167,26 @@ class SandboxManager:
             status="creating",
         )
         db.add(sandbox)
-        await db.flush()
-        # Container startup may take seconds. Persist the short reservation so
-        # it cannot hold SQLite's single writer lock during external I/O.
-        await db.commit()
+        try:
+            await db.flush()
+            # Container startup may take seconds. Persist the short reservation
+            # so it cannot hold SQLite's writer lock during external I/O.
+            await db.commit()
+        except (IntegrityError, OperationalError) as exc:
+            await db.rollback()
+            if isinstance(exc, OperationalError) and "locked" not in str(exc.orig).lower():
+                raise
+            # Two workers can both read "no sandbox" before either inserts.
+            # The unique user_id constraint chooses the creator; reload its
+            # reservation after rollback and wait for its result.
+            for _ in range(20):
+                winner = await db.execute(select(Sandbox.id).where(Sandbox.user_id == user_id))
+                if winner.scalar_one_or_none() is not None:
+                    await db.commit()
+                    return await self.get_or_create(user_id, db)
+                await db.commit()
+                await asyncio.sleep(0.1)
+            raise
 
         return await self._finish_creation(sandbox, db)
 

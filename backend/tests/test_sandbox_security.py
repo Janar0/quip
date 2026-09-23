@@ -258,3 +258,59 @@ async def test_stale_sandbox_creation_is_recovered(db_session, monkeypatch):
 
     assert recovered.status == "running"
     assert recovered.container_id == "recovered-container"
+
+
+@pytest.mark.asyncio
+async def test_simultaneous_first_sandbox_requests_share_reservation(tmp_path, monkeypatch):
+    db_path = tmp_path / "first-sandbox.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with sessions() as db:
+        user = User(email="first@test.dev", username="first", name="First")
+        db.add(user)
+        await db.commit()
+        user_id = user.id
+
+    manager = bare_manager()
+    monkeypatch.setattr(sandbox_module, "QUIP_HOST_SANDBOX_DIR", "")
+    starts = 0
+
+    def create_container(*_args):
+        nonlocal starts
+        starts += 1
+        return "first-container"
+
+    monkeypatch.setattr(manager, "_create_container", create_container)
+    monkeypatch.setattr(manager, "_get_container", lambda _sandbox: SimpleNamespace(status="running"))
+    original_execute = AsyncSession.execute
+    reads = 0
+    both_read = asyncio.Event()
+
+    async def synchronized_execute(self, statement, *args, **kwargs):
+        nonlocal reads
+        result = await original_execute(self, statement, *args, **kwargs)
+        if "FROM sandboxes" in str(statement) and "sandboxes.user_id" in str(statement) and reads < 2:
+            reads += 1
+            if reads == 2:
+                both_read.set()
+            await asyncio.wait_for(both_read.wait(), timeout=5)
+        return result
+
+    monkeypatch.setattr(AsyncSession, "execute", synchronized_execute)
+
+    async def get_sandbox():
+        async with sessions() as db:
+            return await manager.get_or_create(user_id, db)
+
+    try:
+        first, second = await asyncio.wait_for(
+            asyncio.gather(get_sandbox(), get_sandbox()), timeout=10
+        )
+        assert first.id == second.id
+        assert starts == 1
+    finally:
+        await engine.dispose()
