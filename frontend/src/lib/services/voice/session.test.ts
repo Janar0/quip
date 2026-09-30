@@ -37,7 +37,14 @@ class FakeChannel {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   sent: unknown[] = [];
-  send = vi.fn((raw: string) => this.sent.push(JSON.parse(raw)));
+  autoAcknowledgeSessionUpdates = true;
+  send = vi.fn((raw: string) => {
+    const event = JSON.parse(raw);
+    this.sent.push(event);
+    if (event.type === 'session.update' && this.autoAcknowledgeSessionUpdates) {
+      queueMicrotask(() => this.emit({ type: 'session.updated', session: {} }));
+    }
+  });
   close = vi.fn(() => { this.readyState = 'closed'; });
   emit(event: object) { this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent); }
 }
@@ -260,7 +267,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'function_call_arguments.done',
+      type: 'response.function_call_arguments.done',
       call_id: 'function-1', name: 'web_search', arguments: '{"query":"музей сегодня"}',
     });
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
@@ -285,7 +292,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-pending' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'function_call_arguments.done',
+      type: 'response.function_call_arguments.done',
       call_id: 'function-pending', name: 'web_search', arguments: '{"query":"test"}',
     });
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
@@ -314,7 +321,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'function_call_arguments.done', call_id: 'delegate-1', name: 'delegate_to_text_model',
+      type: 'response.function_call_arguments.done', call_id: 'delegate-1', name: 'delegate_to_text_model',
       arguments: '{"goal":"Найди свежие источники"}',
     });
     await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalledWith('call-1', 'delegate-1', 'Найди свежие источники'));
@@ -357,7 +364,7 @@ describe('VoiceSession WebRTC controller', () => {
 
     const delegate = async (callId: string, goal: string) => {
       s.pc.channel.emit({
-        type: 'function_call_arguments.done', call_id: callId, name: 'delegate_to_text_model',
+        type: 'response.function_call_arguments.done', call_id: callId, name: 'delegate_to_text_model',
         arguments: JSON.stringify({ goal }),
       });
       await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalledTimes(callId === 'delegate-1' ? 1 : 2));
@@ -384,7 +391,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.connect();
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'function_call_arguments.done', call_id: 'delegate-after-call',
+      type: 'response.function_call_arguments.done', call_id: 'delegate-after-call',
       name: 'delegate_to_text_model', arguments: '{"goal":"Сверь источники"}',
     });
     await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalled());

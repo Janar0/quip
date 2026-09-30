@@ -69,7 +69,7 @@ const INITIAL_STATE: VoiceSessionState = {
 };
 
 const ALLOWED_TOOLS = new Set(['web_search', 'read_url']);
-const FUNCTION_CALL_EVENT = 'function_call_arguments.done';
+const FUNCTION_CALL_EVENT = 'response.function_call_arguments.done';
 const VOICE_TOOLS = [
   {
     type: 'function',
@@ -173,6 +173,7 @@ export class VoiceSession {
   private providerSessionCreated = false;
   private peerConnected = false;
   private configured = false;
+  private initialConfigurationAcknowledged = false;
   private speechRevision = 0;
   private eventQueue: Promise<void> = Promise.resolve();
   private pendingProviderHandlers = new Set<Promise<void>>();
@@ -237,10 +238,14 @@ export class VoiceSession {
 
   /** Wait for already received provider events; useful for deterministic UI synchronization/tests. */
   async whenProviderEventsIdle(): Promise<void> {
-    await this.eventQueue;
-    while (this.pendingProviderHandlers.size) {
-      await Promise.all([...this.pendingProviderHandlers]);
-      await this.eventQueue;
+    while (true) {
+      const queuedEvents = this.eventQueue;
+      await queuedEvents;
+      if (this.pendingProviderHandlers.size) {
+        await Promise.all([...this.pendingProviderHandlers]);
+        continue;
+      }
+      if (queuedEvents === this.eventQueue) return;
     }
   }
 
@@ -256,6 +261,7 @@ export class VoiceSession {
     this.providerSessionCreated = false;
     this.peerConnected = false;
     this.configured = false;
+    this.initialConfigurationAcknowledged = false;
     this.context = null;
     this.callId = null;
     this.eventQueue = Promise.resolve();
@@ -523,11 +529,18 @@ export class VoiceSession {
     if (channel.readyState === 'open') this.configureProviderSession();
   }
 
-  private async openMediaGate(): Promise<void> {
+  private async openMediaGate(generation: number, callId: string | null): Promise<void> {
+    if (!this.isCurrentCall(generation, callId)) return;
     for (const item of this.mediaSenders) {
+      if (!this.isCurrentCall(generation, callId)) return;
       if (item.track.kind === 'audio') item.track.enabled = !this.current.muted;
       else item.track.enabled = true;
       await item.sender.replaceTrack(item.track);
+      if (!this.isCurrentCall(generation, callId)) {
+        item.track.enabled = false;
+        try { await item.sender.replaceTrack(null); } catch { /* stale generation stays muted */ }
+        return;
+      }
     }
   }
 
@@ -626,9 +639,18 @@ export class VoiceSession {
       this.providerSessionCreated = true;
       this.stopRingback();
       if (this.callId) await this.api.event(this.callId, event);
-      await this.openMediaGate();
-      this.maybeMarkActive();
       this.configureProviderSession();
+      return;
+    }
+
+    if (event.type === 'session.updated') {
+      if (this.configured && !this.initialConfigurationAcknowledged) {
+        const generation = this.lifecycleGeneration;
+        const callId = this.callId;
+        this.initialConfigurationAcknowledged = true;
+        await this.openMediaGate(generation, callId);
+        this.maybeMarkActive();
+      }
       return;
     }
 
@@ -926,7 +948,8 @@ export class VoiceSession {
   }
 
   private maybeMarkActive(): void {
-    if (this.providerSessionCreated && this.peerConnected && this.current.status === 'connecting') {
+    if (this.providerSessionCreated && this.initialConfigurationAcknowledged
+      && this.peerConnected && this.current.status === 'connecting') {
       this.clearSessionTimer();
       this.setState({ status: 'active', error: null });
     }

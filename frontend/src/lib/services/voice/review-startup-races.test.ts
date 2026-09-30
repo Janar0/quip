@@ -37,7 +37,14 @@ class FakeChannel {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   sent: unknown[] = [];
-  send = vi.fn((raw: string) => this.sent.push(JSON.parse(raw)));
+  autoAcknowledgeSessionUpdates = true;
+  send = vi.fn((raw: string) => {
+    const event = JSON.parse(raw);
+    this.sent.push(event);
+    if (event.type === 'session.update' && this.autoAcknowledgeSessionUpdates) {
+      queueMicrotask(() => this.emit({ type: 'session.updated', session: {} }));
+    }
+  });
   close = vi.fn(() => { this.readyState = 'closed'; });
   emit(event: object) { this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent); }
 }
@@ -198,7 +205,7 @@ it('a delayed old-call delegation response cannot attach an old task to a replac
   s.pc.connect();
   s.pc.channel.emit({type:'session.created',session:{}});
   await s.session.whenProviderEventsIdle();
-  s.pc.channel.emit({type:'function_call_arguments.done',call_id:'old-delegation',name:'delegate_to_text_model',arguments:JSON.stringify({goal:'old goal'})});
+  s.pc.channel.emit({type:'response.function_call_arguments.done',call_id:'old-delegation',name:'delegate_to_text_model',arguments:JSON.stringify({goal:'old goal'})});
   await vi.waitFor(()=>expect(s.api.startTask).toHaveBeenCalled());
   await s.session.end();
   await s.session.start();

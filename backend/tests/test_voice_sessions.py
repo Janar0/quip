@@ -31,6 +31,9 @@ async def test_voice_capabilities_are_authenticated_and_disable_camera_for_qwen_
     monkeypatch.setitem(config._settings, "qwen_realtime_model", "qwen-audio-3.1-realtime-plus")
     monkeypatch.setitem(config._settings, "qwen_realtime_video_enabled", "true")
 
+    # The shared test client may retain the login cookie set while building
+    # auth_headers. Clear it so this request actually exercises anonymous auth.
+    client.cookies.clear()
     anonymous = await client.get("/api/voice/config")
     assert anonymous.status_code == 401
 

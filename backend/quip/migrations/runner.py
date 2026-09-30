@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-SCHEMA_REVISION = "0009"
+SCHEMA_REVISION = "0010"
 
 
 def _alembic_config(database_url: str) -> Config:

@@ -143,6 +143,11 @@ async def _save_result_message(
     return message.id
 
 
+async def _commit_voice_tool_reservation(db: AsyncSession) -> None:
+    """Persist admission before exposing the tool call to cancellation."""
+    await db.commit()
+
+
 async def execute_voice_tool(
     db: AsyncSession,
     user: User,
@@ -248,6 +253,11 @@ async def execute_voice_tool(
             raise HTTPException(status_code=409, detail="Another voice tool is already running")
         raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
 
+    # Make the reservation visible to cancellation requests before registering
+    # or claiming execution. A cancel that commits first can then prevent the
+    # conditional execution claim below, including on another app worker.
+    await _commit_voice_tool_reservation(db)
+
     task_key = (voice_call_id, provider_call_id)
     active_task = asyncio.current_task()
     if active_task is not None:
@@ -256,9 +266,10 @@ async def execute_voice_tool(
         tool_call = await db.get(VoiceToolCall, reserved_id)
         if tool_call is None:
             raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
-        # End the reservation read transaction before the conditional claim so
-        # SQLite cannot reuse a stale read snapshot after a concurrent cancel.
-        await db.rollback()
+        # The admission row is already committed above. Commit the lookup's
+        # read transaction without undoing that reservation so SQLite cannot
+        # reuse a stale snapshot after a concurrent cancel.
+        await db.commit()
 
         # Cancellation and the execution claim serialize in the database.
         # If cancellation commits first, this conditional update changes no
