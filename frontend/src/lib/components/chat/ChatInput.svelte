@@ -234,9 +234,11 @@
 {/if}
 
 {#if voicePanelOpen && chatId}
-  <div class="mx-auto max-w-4xl px-4 pt-2">
-    <VoiceCallPanel {chatId} onClose={() => { voicePanelOpen = false; }} />
-  </div>
+  {#key chatId}
+    <div class="mx-auto max-w-4xl px-4 pt-2">
+      <VoiceCallPanel {chatId} onClose={() => { voicePanelOpen = false; }} />
+    </div>
+  {/key}
 {/if}
 
 <form
