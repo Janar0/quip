@@ -2,7 +2,7 @@
 
 **Status:** revised design proposal for written review
 **Branch:** `codex/qwen-omni-voice-20260930`
-**Scope:** a user-started call in an existing Quip chat, Quip-mediated web tools, and an explicit handoff to a selected text model
+**Scope:** a user-started call in an existing Quip chat, Quip-mediated web tools, and an explicit handoff through Quip's provider-agnostic text model/completion seam
 
 ## Goal
 
@@ -43,7 +43,8 @@ On interruption, the browser sends `response.cancel` if a Qwen response remains 
 - Reuse `HistoryService` for a bounded recent-message window; add an explicit limit instead of using its current default 100-message batch for voice/handoff. Reuse `Chat.meta` only as the pointer to the latest versioned context state (`version`, compact summary, task state, source-message IDs, and `covers_through` watermark). Keep each handoff snapshot/version in `VoiceCall` metadata and the existing `ChatRun.run_metadata`; never rewrite old messages.
 - On handoff or compaction, update the summary incrementally from the prior version plus only newly persisted messages. Structure task state as goal, constraints, decisions, completed work, and open work. Treat summaries and retrieved history as untrusted conversation context, never as new system instructions or permissions. For older facts, use Quip's existing message-search pattern scoped strictly to the current owned chat; retrieve only relevant matches on demand. Reuse document RAG only for files in the current chat/authorized workspace, with cross-chat retrieval disabled for this path.
 - Cap carried context at **6,000 estimated tokens per model request**: at most 1,200 for summary/task state, 3,200 for recent turns, and 1,600 for retrieved older turns/document snippets. Use a model-compatible token counter or a conservative estimator; also enforce the selected model's context limit. Never send the entire chat history on each turn. If a legacy chat has no summary, start with bounded recent turns and fetch older facts only when requested; do not backfill by sending all history to a model.
-- The user selects a text model from Quip's existing model choices and explicitly starts **Continue with text model**. End/cancel the voice response, persist the last transcript and pending tool states, build one shared context/handoff packet, and start the ordinary completion path for the same chat. Reuse `ChatRun` for its actual queued/running/completed/failed lifecycle and store the handoff/context version in `run_metadata`. Do not grant the text model new voice-specific tools or permissions; existing text-path gates still apply.
+- The user selects a supported text provider/model through Quip's existing provider-agnostic model-selection seam and explicitly starts **Continue with text model**. Voice must call the common completion interface, not a provider-specific endpoint or hard-coded OpenRouter path. End/cancel the voice response, persist the last transcript and pending tool states, build one shared context/handoff packet, and start the ordinary completion path for the same chat. Reuse `ChatRun` for its actual queued/running/completed/failed lifecycle and store the handoff/context version in `run_metadata`. Do not grant the text model new voice-specific tools or permissions; existing text-path gates still apply.
+- A future ChatGPT sign-in/subscription-quota provider using the Responses API is outside this voice change. Do not implement its OAuth, account setup, entitlement checks, or live calls here; hosted Quip eligibility is not verified. The shared completion seam must allow that provider to be added later without rewriting voice.
 - Persisted context/task state is not durable execution. The handoff uses the existing text completion lifecycle; do not claim work will continue after a page/process disconnect unless a real background executor is added separately.
 
 ## Authorization, storage, and cost limits
@@ -56,8 +57,8 @@ On interruption, the browser sends `response.cancel` if a Qwen response remains 
 
 ## Smallest integration and verification plan
 
-- Backend: isolated voice provider/router/services and migrations for `VoiceCall` and idempotent tool ledger; reuse auth, `Chat`, `Message`, `HistoryService`, existing `read_url`/`web_search` implementations, RAG with stricter scope, and `ChatRun` for text handoff. Frontend: isolated call controller/panel and a small ChatInput/ChatPane entry point; parent coordinates shared UI/completion changes before implementation.
-- Fixture-only tests: SDP forwarding/key secrecy/errors; chat ownership and search gate; URL/schema/tool-name rejection; tool ID idempotency/conflict, timeout, cancellation races and sanitized errors; voice interruption while speaking/tool pending; transcript/tool source attribution; voice-to-text handoff into the selected model/ChatRun; incremental summary preservation of constraints/decisions; message retrieval scope, token caps, and cross-user/workspace isolation; interruption/end and actual completion lifecycle.
+- Backend: isolated voice provider/router/services and migrations for `VoiceCall` and idempotent tool ledger; reuse auth, `Chat`, `Message`, `HistoryService`, existing `read_url`/`web_search` implementations, RAG with stricter scope, and `ChatRun` for text handoff. Handoff depends on the common provider-agnostic completion seam. Frontend: isolated call controller/panel and a small ChatInput/ChatPane entry point; parent coordinates shared UI/completion changes before implementation.
+- Fixture-only tests: SDP forwarding/key secrecy/errors; chat ownership and search gate; URL/schema/tool-name rejection; tool ID idempotency/conflict, timeout, cancellation races and sanitized errors; voice interruption while speaking/tool pending; transcript/tool source attribution; voice-to-text handoff through a mocked provider-agnostic completion interface into the selected model/ChatRun; incremental summary preservation of constraints/decisions; message retrieval scope, token caps, and cross-user/workspace isolation; interruption/end and actual completion lifecycle.
 - Verify UI permission, call state, mute/end, DataChannel/ICE errors, transcript and ChatRun notifications with browser mocks. No paid calls, live keys, deployment, or live acoustic claim. Acoustic quality/latency and real provider interruption remain unverified until separately authorized.
 
 ## Acceptance criteria
@@ -65,6 +66,6 @@ On interruption, the browser sends `response.cancel` if a Qwen response remains 
 - Direct browser-to-Qwen WebRTC audio; server-only provider credentials; no hidden WS audio path.
 - Russian voice conversation with mute/interruption, recent+versioned context, and saved typed/voice/tool history in the same Quip chat.
 - Quip-backed `web_search`/`read_url` work through the authenticated allowlisted bridge and respect existing gates; no additional tools or permissions.
-- Explicit handoff to the selected existing text model uses the same bounded context/task state and `ChatRun` lifecycle, with source attribution and tenant isolation.
+- Explicit handoff to the selected text provider/model uses Quip's common completion seam, the same bounded context/task state, and `ChatRun` lifecycle, with source attribution and tenant isolation.
 - Cost notices and status distinguish authoritative server checks from unverified provider usage and cooperative browser stops.
 - All tests use protocol fixtures/mocks; no live key, paid API call, deployment, merge, or main-branch edit.
