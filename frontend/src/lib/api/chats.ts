@@ -10,6 +10,7 @@ import { cancelChatRun, ChatRunRequestError, getChatRun } from '$lib/api/chat-ru
 
 let researchPollTimer: ReturnType<typeof setInterval> | null = null;
 let researchPollChatId: string | null = null;
+let researchReportRequestSequence = 0;
 let activeStreamMessageId: string | null = null;
 type PendingResearchRequest = {
   chatId?: string;
@@ -23,26 +24,59 @@ function isActiveResearch(status: ResearchRunStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'cancelling';
 }
 
-function applyResearchRun(runId: string, run: ResearchRunInfo): void {
+type ResearchReportFreshness = {
+  requestId: number;
+  streamedContentAtRequest: string | null;
+};
+
+function newResearchReportFreshness(streamedContentAtRequest: string | null): ResearchReportFreshness {
+  return { requestId: ++researchReportRequestSequence, streamedContentAtRequest };
+}
+
+function applyResearchRun(runId: string, run: ResearchRunInfo, freshness: ResearchReportFreshness): void {
   messages.update((items) => items.map((message) => {
-    if (message.research?.runId !== runId || message.research.revision > run.revision) return message;
-    return projectResearchRun(message, run, activeStreamMessageId);
+    if (
+      message.research?.runId !== runId
+      || message.research.revision > run.revision
+      || (message.research.reportSyncRequestId ?? 0) > freshness.requestId
+    ) return message;
+    return projectResearchRun(message, run, activeStreamMessageId, freshness);
   }));
 }
 
-function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streamingMessageId: string | null): MessageInfo {
+function projectResearchRun(
+  message: MessageInfo,
+  run: ResearchRunInfo,
+  streamingMessageId: string | null,
+  freshness: ResearchReportFreshness,
+): MessageInfo {
+  if (
+    message.research?.runId === run.runId
+    && (
+      message.research.revision > run.revision
+      || (message.research.reportSyncRequestId ?? 0) > freshness.requestId
+    )
+  ) return message;
   const saved = run.message;
   const previousSaved = message.research?.message;
   const localTextCameFromStream = message.research?.streamedContent === message.content;
   const sameMessageStreaming = streamingMessageId === message.id;
-  const canSyncReport = (!sameMessageStreaming || !isActiveResearch(run.status))
+  const streamUnchangedSinceRequest = freshness.streamedContentAtRequest === (message.research?.streamedContent ?? null);
+  const responseIsCurrent = freshness.requestId >= (message.research?.reportSyncRequestId ?? 0);
+  const canSyncReport = streamUnchangedSinceRequest
+    && responseIsCurrent
+    && (!sameMessageStreaming || !isActiveResearch(run.status))
     && message.role === 'assistant'
     && saved?.id === message.id
     && (!previousSaved || message.content === previousSaved.content || localTextCameFromStream);
-  const projectedResearch = { ...run };
-  if (!canSyncReport && message.research?.streamedContent !== undefined) {
-    projectedResearch.streamedContent = message.research.streamedContent;
-  }
+  const projectedResearch: ResearchRunInfo = {
+    ...run,
+    reportSyncStreamedContent: freshness.streamedContentAtRequest,
+    reportSyncRequestId: freshness.requestId,
+    ...(message.research?.streamedContent !== undefined
+      ? { streamedContent: message.research.streamedContent }
+      : {}),
+  };
   return canSyncReport
     ? { ...message, content: saved.content, artifacts: saved.artifacts ?? message.artifacts, research: projectedResearch }
     : { ...message, research: projectedResearch };
@@ -51,7 +85,13 @@ function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streamin
 function syncPendingResearchReports(): void {
   messages.update((items) => items.map((message) => {
     if (!message.research) return message;
-    return projectResearchRun(message, message.research, null);
+    const freshness = {
+      requestId: message.research.reportSyncRequestId ?? 0,
+      streamedContentAtRequest: Object.prototype.hasOwnProperty.call(message.research, 'reportSyncStreamedContent')
+        ? message.research.reportSyncStreamedContent ?? null
+        : message.research.streamedContent ?? null,
+    };
+    return projectResearchRun(message, message.research, null, freshness);
   }));
 }
 
@@ -87,8 +127,9 @@ async function refreshResearchRunStates(chatId: string): Promise<void> {
   await Promise.all(running.map(async (message) => {
     const run = message.research;
     if (!run) return;
+    const freshness = newResearchReportFreshness(run.streamedContent ?? null);
     const fresh = await getChatRun(chatId, run.runId).catch(() => null);
-    if (fresh && get(activeChat)?.id === chatId) applyResearchRun(run.runId, fresh);
+    if (fresh && get(activeChat)?.id === chatId) applyResearchRun(run.runId, fresh, freshness);
   }));
   syncResearchPolling(chatId);
 }
@@ -184,16 +225,21 @@ export async function loadChat(chatId: string, options: { background?: boolean }
       const researchRuns = (data.runs ?? []).filter((run: { task_kind?: string; assistant_message_id?: string }) =>
         run.task_kind === 'research' && msgs.some((message: { id: string }) => message.id === run.assistant_message_id),
       );
-      const runStates = await Promise.all(researchRuns.map(async (run: { id: string }) => ({
-        runId: run.id,
-        state: await getChatRun(chatId, run.id).catch(() => null),
-      })));
+      const runStates = await Promise.all(researchRuns.map(async (run: { id: string; assistant_message_id: string }) => {
+        const localMessage = get(messages).find((message) => message.id === run.assistant_message_id);
+        const freshness = newResearchReportFreshness(localMessage?.research?.streamedContent ?? null);
+        return {
+          runId: run.id,
+          freshness,
+          state: await getChatRun(chatId, run.id).catch(() => null),
+        };
+      }));
       if (version !== chatVersion) return;
-      for (const { runId, state } of runStates) {
+      for (const { runId, state, freshness } of runStates) {
         if (!state) continue;
         const message = msgs.find((item: { research?: ResearchRunInfo }) => item.research?.runId === runId)
           ?? msgs.find((item: { id: string }) => researchRuns.find((run: { id: string; assistant_message_id: string }) => run.id === runId)?.assistant_message_id === item.id);
-        if (message) Object.assign(message, projectResearchRun(message as MessageInfo, state, activeStreamMessageId));
+        if (message) Object.assign(message, projectResearchRun(message as MessageInfo, state, activeStreamMessageId, freshness));
       }
       if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
       syncResearchPolling(chatId);
@@ -272,12 +318,17 @@ function formatError(err: { detail: unknown }, status: number): string {
 
 /** Stop the current generation */
 export async function stopResearchRun(chatId: string, runId: string): Promise<void> {
+  const initialMessage = get(messages).find((message) => message.research?.runId === runId);
+  const freshness = newResearchReportFreshness(initialMessage?.research?.streamedContent ?? null);
   try {
     const state = await cancelChatRun(chatId, runId);
-    applyResearchRun(runId, state);
+    applyResearchRun(runId, state, freshness);
   } catch (error) {
     const actualState = await getChatRun(chatId, runId).catch(() => null);
-    if (actualState) applyResearchRun(runId, actualState);
+    if (actualState) {
+      const latestMessage = get(messages).find((message) => message.research?.runId === runId);
+      applyResearchRun(runId, actualState, newResearchReportFreshness(latestMessage?.research?.streamedContent ?? null));
+    }
     const status = error instanceof ChatRunRequestError ? ` (HTTP ${error.status})` : '';
     const detail = error instanceof Error ? error.message : String(error);
     messages.update((items) => items.map((message) => message.research?.runId === runId

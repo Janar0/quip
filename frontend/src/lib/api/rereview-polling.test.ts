@@ -38,7 +38,10 @@ it('polling advances known streamed text after disconnect while Research continu
   } finally { stopResearchPolling(); vi.useRealTimers(); }
 });
 
-it('terminal Research result eventually appears when an unrelated ordinary stream finishes', async () => {
+it.each([
+  ['running', 'New durable running draft'],
+  ['completed', 'Final durable report'],
+] as const)('%s poll projects its report during an unrelated ordinary stream', async (status, report) => {
   vi.useFakeTimers();
   let streamController!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
@@ -52,8 +55,8 @@ it('terminal Research result eventually appears when an unrelated ordinary strea
       }
       if (path.endsWith('/runs/run')) {
         return Response.json({
-          run_id: 'run', status: 'completed', revision: 2, context_version: 1, cancel_requested: false,
-          snapshot: {}, message: { id: 'answer', content: 'Final durable report', artifacts: [] },
+          run_id: 'run', status, revision: 2, context_version: 1, cancel_requested: false,
+          snapshot: {}, message: { id: 'answer', content: report, artifacts: [] },
         });
       }
       return Response.json([]);
@@ -66,12 +69,46 @@ it('terminal Research result eventually appears when an unrelated ordinary strea
     expect(get(isStreaming)).toBe(true);
 
     await vi.advanceTimersByTimeAsync(2500);
-    expect(get(messages)[0].content).toBe('Final durable report');
+    expect(get(messages)[0].content).toBe(report);
     expect(get(isStreaming)).toBe(true);
 
     streamController.close();
     await ordinaryStream;
   } finally { stopResearchPolling(); vi.useRealTimers(); }
+});
+
+it('terminal poll for the same live Research message applies when its stream has not advanced', async () => {
+  vi.useFakeTimers();
+  let streamController!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller; } });
+  try {
+    request.mockResolvedValueOnce(Response.json({ id: 'chat', messages: [], runs: [] }));
+    await loadChat('chat');
+    request.mockImplementation(async (path) => {
+      if (path === '/api/chat/completions') return new Response(body);
+      if (path.endsWith('/runs/run')) return Response.json({
+        run_id: 'run', status: 'completed', revision: 2, context_version: 1, cancel_requested: false,
+        snapshot: {}, message: { id: 'answer', content: 'Complete terminal report', artifacts: [] },
+      });
+      return Response.json([]);
+    });
+    const researchStream = streamChat('Research this', 'chat', undefined, undefined, undefined, undefined, 'research');
+    streamController.enqueue(new TextEncoder().encode([
+      'event: chat\ndata: {"chat_id":"chat","user_message_id":"user","message_id":"answer","run_id":"run","task_kind":"research"}\n\n',
+      'event: content\ndata: {"text":"Live prefix"}\n\n',
+    ].join('')));
+    await vi.waitFor(() => expect(get(messages).find((message) => message.id === 'answer')?.content).toBe('Live prefix'));
+
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(get(messages).find((message) => message.id === 'answer')?.content).toBe('Complete terminal report');
+    streamController.close();
+    await researchStream;
+    expect(get(messages).find((message) => message.id === 'answer')?.content).toBe('Complete terminal report');
+  } finally {
+    stopResearchPolling();
+    vi.useRealTimers();
+  }
 });
 
 it('applies the latest persisted report after its own Research stream disconnects', async () => {

@@ -61,6 +61,16 @@ class RunOutcome:
     subagent_generations: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class RunFinishDecision:
+    """Atomic worker/manager handshake for closing steering before persistence."""
+
+    accepted: bool
+    status: str
+    context_version: int
+    steering: list[dict[str, Any]]
+
+
 class RunSubscription:
     def __init__(self, manager: ChatRunManager, run_id: UUID, queue: asyncio.Queue):
         self._manager = manager
@@ -129,6 +139,32 @@ class RunExecutionContext:
             run_id=self.spec.run_id,
             chat_id=self.spec.chat_id,
             user_id=self.spec.user_id,
+        )
+
+    async def try_finish(
+        self,
+        *,
+        expected_context_version: int,
+        status: str,
+        error: str | None,
+    ) -> RunFinishDecision:
+        """Close steering admission if no newer accepted instruction is pending.
+
+        On a stale version, pending instructions are drained atomically and
+        returned to the worker, which must process them and retry. An accepted
+        Stop wins the same compare-and-retry boundary and records cancellation.
+        The manager persists the final assistant message before writing the
+        terminal ChatRun state.
+        """
+        return await _try_finish_run(
+            self.manager.session_factory,
+            run_id=self.spec.run_id,
+            chat_id=self.spec.chat_id,
+            user_id=self.spec.user_id,
+            runner_owner_id=self.manager._owner_id,
+            expected_context_version=expected_context_version,
+            status=status,
+            error=error,
         )
 
 
@@ -549,6 +585,7 @@ async def request_run_cancel(session_factory, *, run_id: UUID, chat_id: UUID, us
             run.chat_id != chat_id
             or run.user_id != user_id
             or run.status not in CANCELLABLE_STATUSES
+            or metadata.get("finish_intent")
         ):
             return None, {}, False
         if metadata.get("cancel_requested"):
@@ -577,6 +614,7 @@ async def enqueue_run_steering(
             run.chat_id != chat_id
             or run.user_id != user_id
             or run.status not in ACTIVE_STATUSES
+            or metadata.get("finish_intent")
         ):
             return None, {}, {"accepted": False}
         if metadata.get("cancel_requested"):
@@ -601,6 +639,7 @@ async def consume_run_steering(session_factory, *, run_id: UUID, chat_id: UUID, 
             run.chat_id != chat_id
             or run.user_id != user_id
             or run.status not in ACTIVE_STATUSES
+            or metadata.get("finish_intent")
         ):
             return None, {}, []
         steering = list(metadata.get("steering") or [])
@@ -625,6 +664,73 @@ async def _mark_run_running(session_factory, run_id: UUID) -> bool:
         return updated.rowcount == 1
 
 
+async def _try_finish_run(
+    session_factory,
+    *,
+    run_id: UUID,
+    chat_id: UUID,
+    user_id: UUID,
+    runner_owner_id: str,
+    expected_context_version: int,
+    status: str,
+    error: str | None,
+) -> RunFinishDecision:
+    requested_status = status if status in TERMINAL_STATUSES else "failed"
+    saved_error = error[:4000] if error else None
+
+    def prepare_finish(run: ChatRun, metadata: dict[str, Any]):
+        context_version = metadata.get("context_version", 1)
+        if not isinstance(context_version, int) or isinstance(context_version, bool) or context_version < 1:
+            context_version = 1
+        finish_intent = metadata.get("finish_intent")
+        if (
+            run.chat_id != chat_id
+            or run.user_id != user_id
+            or metadata.get("runner_owner_id") != runner_owner_id
+        ):
+            return None, {}, RunFinishDecision(False, run.status, context_version, [])
+        if run.status not in ACTIVE_STATUSES:
+            return None, {}, RunFinishDecision(False, run.status, context_version, [])
+        if isinstance(finish_intent, dict) and finish_intent.get("runner_owner_id") == runner_owner_id:
+            return None, {}, RunFinishDecision(
+                True,
+                str(finish_intent.get("status") or requested_status),
+                context_version,
+                [],
+            )
+
+        if metadata.get("cancel_requested"):
+            metadata["steering"] = []
+            metadata["finish_intent"] = {
+                "status": "cancelled",
+                "error": None,
+                "context_version": context_version,
+                "runner_owner_id": runner_owner_id,
+            }
+            metadata["revision"] = int(metadata.get("revision", 0)) + 1
+            return metadata, {}, RunFinishDecision(True, "cancelled", context_version, [])
+
+        steering = list(metadata.get("steering") or [])
+        if context_version != expected_context_version or steering:
+            if steering:
+                metadata["steering"] = []
+                metadata["revision"] = int(metadata.get("revision", 0)) + 1
+                return metadata, {}, RunFinishDecision(False, run.status, context_version, steering)
+            return None, {}, RunFinishDecision(False, run.status, context_version, [])
+
+        metadata["finish_intent"] = {
+            "status": requested_status,
+            "error": saved_error,
+            "context_version": context_version,
+            "runner_owner_id": runner_owner_id,
+        }
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        return metadata, {}, RunFinishDecision(True, requested_status, context_version, [])
+
+    _, result = await _mutate_run_metadata(session_factory, run_id=run_id, mutate=prepare_finish)
+    return result or RunFinishDecision(False, "interrupted", 1, [])
+
+
 async def _finish_run(
     session_factory,
     *,
@@ -640,13 +746,24 @@ async def _finish_run(
             return None, {}, run.status
         if runner_owner_id and metadata.get("runner_owner_id") != runner_owner_id:
             return None, {}, run.status
-        terminal_status = requested_status
+        finish_intent = metadata.get("finish_intent")
+        has_finish_intent = (
+            isinstance(finish_intent, dict)
+            and finish_intent.get("runner_owner_id") == metadata.get("runner_owner_id")
+        )
+        terminal_status = finish_intent.get("status") if has_finish_intent else requested_status
+        if terminal_status not in TERMINAL_STATUSES:
+            terminal_status = requested_status
         if metadata.get("cancel_requested") and terminal_status != "interrupted":
             terminal_status = "cancelled"
         metadata["revision"] = int(metadata.get("revision", 0)) + 1
         return metadata, {
             "status": terminal_status,
-            "error": error[:4000] if error else None,
+            "error": (
+                finish_intent.get("error")
+                if has_finish_intent
+                else error[:4000] if error else None
+            ),
             "finished_at": datetime.now(UTC),
         }, terminal_status
 

@@ -87,6 +87,9 @@ export interface ResearchRunInfo {
   message?: { id: string; content: string; artifacts?: Artifact[] } | null;
   /** Current text received from the live Research SSE stream, kept client-side. */
   streamedContent?: string;
+  /** Stream text and request order when the current persisted report was fetched. */
+  reportSyncStreamedContent?: string | null;
+  reportSyncRequestId?: number;
 }
 
 export type ContentBlock =

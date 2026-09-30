@@ -9,7 +9,16 @@ from test_chat_runs import make_run
 
 from quip.database import Base
 from quip.models.chat import ChatRun
-from quip.services.chat_runs import ChatRunManager, RunOutcome, _finish_run, interrupt_active_runs, read_run
+from quip.services.chat_runs import (
+    ChatRunManager,
+    RunExecutionContext,
+    RunOutcome,
+    _finish_run,
+    enqueue_run_steering,
+    interrupt_active_runs,
+    read_run,
+    request_run_cancel,
+)
 
 
 @pytest.fixture
@@ -130,6 +139,138 @@ async def test_concurrent_same_manager_starts_claim_one_queued_execution(file_fa
         for subscription in subscriptions:
             await subscription.aclose()
         await occupant_subscription.aclose()
+
+
+@pytest.mark.asyncio
+async def test_finish_handshake_returns_steering_accepted_after_workers_last_check(file_factory):
+    async with file_factory() as db:
+        spec = await make_run(db)
+    manager = ChatRunManager(file_factory, runner_mode='single_process')
+    checked, continue_to_finish = asyncio.Event(), asyncio.Event()
+    finish_accepted, allow_return = asyncio.Event(), asyncio.Event()
+
+    async def worker(context):
+        assert await context.take_steering() == []
+        context.report = 'Report before last-minute steering.'
+        checked.set()
+        await continue_to_finish.wait()
+
+        decision = await context.try_finish(
+            expected_context_version=spec.context_version,
+            status='completed',
+            error=None,
+        )
+        assert decision.accepted is False
+        assert len(decision.steering) == 1
+        assert decision.steering[0]['instruction'] == 'Include a short limitations section.'
+        context.report += ' Limitations: this is a mocked result.'
+        await context.flush_result()
+
+        final_decision = await context.try_finish(
+            expected_context_version=decision.context_version,
+            status='completed',
+            error=None,
+        )
+        assert final_decision.accepted is True
+        assert final_decision.status == 'completed'
+        assert final_decision.steering == []
+        finish_accepted.set()
+        await allow_return.wait()
+        return RunOutcome(status='completed')
+
+    subscription = await manager.start(spec, worker)
+    try:
+        await asyncio.wait_for(checked.wait(), 3)
+        accepted = await enqueue_run_steering(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+            instruction='Include a short limitations section.',
+        )
+        assert accepted['accepted'] is True
+        assert accepted['context_version'] == 2
+        continue_to_finish.set()
+        await asyncio.wait_for(finish_accepted.wait(), 3)
+        rejected = await enqueue_run_steering(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+            instruction='This arrives after finish admission closed.',
+        )
+        assert rejected['accepted'] is False
+        assert await request_run_cancel(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        ) is False
+        allow_return.set()
+        async for _ in subscription:
+            pass
+
+        result = await read_run(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        )
+        assert result['status'] == 'completed'
+        assert result['context_version'] == 2
+        assert result['message']['content'] == 'Report before last-minute steering. Limitations: this is a mocked result.'
+        assert result['steering'] == []
+    finally:
+        continue_to_finish.set()
+        allow_return.set()
+        await manager.close()
+        await subscription.aclose()
+
+
+@pytest.mark.asyncio
+async def test_finish_handshake_preserves_an_accepted_stop(file_factory):
+    async with file_factory() as db:
+        spec = await make_run(db)
+    manager = ChatRunManager(file_factory, runner_mode='single_process')
+    try:
+        async with file_factory() as db:
+            run = await db.get(ChatRun, spec.run_id)
+            run.run_metadata = {**run.run_metadata, 'runner_owner_id': manager._owner_id}
+            await db.commit()
+        assert await request_run_cancel(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        ) is True
+
+        context = RunExecutionContext(manager, spec, asyncio.Event())
+        context.report = 'Keep this partial report after Stop.'
+        await context.flush_result()
+        decision = await context.try_finish(
+            expected_context_version=spec.context_version,
+            status='completed',
+            error=None,
+        )
+        assert decision.accepted is True
+        assert decision.status == 'cancelled'
+        assert (await _finish_run(
+            file_factory,
+            run_id=spec.run_id,
+            status='completed',
+            error=None,
+            runner_owner_id=manager._owner_id,
+        )) == 'cancelled'
+        result = await read_run(
+            file_factory,
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        )
+        assert result['status'] == 'cancelled'
+        assert result['message']['content'] == 'Keep this partial report after Stop.'
+    finally:
+        await manager.close()
 
 
 @pytest.mark.parametrize('regression_name', [
