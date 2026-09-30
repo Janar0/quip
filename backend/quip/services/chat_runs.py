@@ -123,15 +123,17 @@ class RunExecutionContext:
         if len(self.report) - self._last_draft_chars >= 1024 or now - self._last_draft_at >= 1.0:
             await self.flush_result()
 
-    async def flush_result(self) -> None:
-        await update_assistant_message_draft(
+    async def flush_result(self, *, require_persisted: bool = False) -> bool | None:
+        persisted = await update_assistant_message_draft(
             str(self.spec.assistant_message_id),
             str(self.spec.chat_id),
             content=self.report,
             session_factory=self.manager.session_factory,
+            require_persisted=require_persisted,
         )
         self._last_draft_chars = len(self.report)
         self._last_draft_at = asyncio.get_running_loop().time()
+        return persisted
 
     async def take_steering(self) -> list[dict[str, Any]]:
         return await consume_run_steering(
@@ -239,6 +241,7 @@ class ChatRunManager:
         self._subscribers: dict[UUID, set[asyncio.Queue]] = {}
         self._start_locks: weakref.WeakValueDictionary[UUID, asyncio.Lock] = weakref.WeakValueDictionary()
         self._transition_locks: dict[UUID, asyncio.Lock] = {}
+        self._finalization_failures: dict[UUID, str] = {}
         self._owner_id = uuid4().hex
         self._closing = False
 
@@ -330,38 +333,124 @@ class ChatRunManager:
             outcome.error = str(exc)[:4000]
             await context.emit({"type": "error", "data": {"message": "Research task failed"}})
         finally:
+            terminal_status: str | None = None
+            persistence_error: str | None = None
             try:
-                await context.flush_result()
-                async with self.session_factory() as db:
-                    run = await db.get(ChatRun, spec.run_id)
-                    model = run.model if run else None
-                if model and (context.report or outcome.usage):
-                    await save_assistant_message(
-                        str(spec.assistant_message_id),
-                        str(spec.chat_id),
-                        spec.user_id,
-                        context.report,
-                        model,
-                        outcome.usage,
-                        reasoning=outcome.reasoning,
-                        subagent_generations=outcome.subagent_generations,
-                        session_factory=self.session_factory,
-                    )
-                lock = self._transition_locks.setdefault(spec.run_id, asyncio.Lock())
-                async with lock:
-                    terminal_status = await _finish_run(
-                        self.session_factory,
-                        run_id=spec.run_id,
-                        status=outcome.status,
-                        error=outcome.error,
-                        runner_owner_id=self._owner_id,
-                    )
-                await self._broadcast(spec.run_id, {
-                    "type": "run_status",
-                    "data": {"status": terminal_status or outcome.status, "error": outcome.error},
-                })
-            except Exception:  # noqa: BLE001
+                draft_persisted = False
+                try:
+                    draft_persisted = bool(await context.flush_result(require_persisted=True))
+                except Exception:  # noqa: BLE001
+                    logger.exception("Could not persist final draft for ChatRun %s", spec.run_id)
+
+                model = None
+                model_read_error: Exception | None = None
+                try:
+                    async with self.session_factory() as db:
+                        run = await db.get(ChatRun, spec.run_id)
+                        model = run.model if run else None
+                except Exception as exc:  # noqa: BLE001
+                    model_read_error = exc
+                    logger.exception("Could not read model for ChatRun %s", spec.run_id)
+
+                save_attempted = bool(model and (context.report or outcome.usage))
+                final_message_saved = False
+                if save_attempted:
+                    try:
+                        final_message_saved = bool(await save_assistant_message(
+                            str(spec.assistant_message_id),
+                            str(spec.chat_id),
+                            spec.user_id,
+                            context.report,
+                            model,
+                            outcome.usage,
+                            reasoning=outcome.reasoning,
+                            subagent_generations=outcome.subagent_generations,
+                            session_factory=self.session_factory,
+                            require_persisted=True,
+                        ))
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Could not persist final message for ChatRun %s", spec.run_id)
+
+                if save_attempted and not final_message_saved:
+                    persistence_error = "Could not save the final assistant message."
+                    if outcome.status not in {"cancelled", "interrupted"}:
+                        outcome.status = "partial" if draft_persisted and context.report.strip() else "failed"
+                elif not save_attempted and not draft_persisted:
+                    persistence_error = "Could not save the final assistant report."
+                    if outcome.status not in {"cancelled", "interrupted"}:
+                        outcome.status = "failed"
+                elif model_read_error is not None:
+                    persistence_error = "Could not confirm final assistant message metadata."
+                    if outcome.status not in {"cancelled", "interrupted"}:
+                        outcome.status = "partial" if draft_persisted and context.report.strip() else "failed"
+
+                if persistence_error:
+                    outcome.error = "; ".join(filter(None, (outcome.error, persistence_error)))[:4000]
+                    await context.emit({"type": "error", "data": {"message": persistence_error}})
+
+                try:
+                    if persistence_error:
+                        terminal_status = await _recover_failed_run_finalization(
+                            self.session_factory,
+                            run_id=spec.run_id,
+                            status=outcome.status,
+                            error=outcome.error,
+                            runner_owner_id=self._owner_id,
+                        )
+                    else:
+                        lock = self._transition_locks.setdefault(spec.run_id, asyncio.Lock())
+                        async with lock:
+                            terminal_status = await _finish_run(
+                                self.session_factory,
+                                run_id=spec.run_id,
+                                status=outcome.status,
+                                error=outcome.error,
+                                runner_owner_id=self._owner_id,
+                            )
+                    if terminal_status not in TERMINAL_STATUSES:
+                        raise RuntimeError(f"ChatRun terminal status was not confirmed: {terminal_status}")
+                except Exception:  # noqa: BLE001
+                    logger.exception("Could not finalize ChatRun %s", spec.run_id)
+                    finalization_error = "Could not persist the final task status."
+                    outcome.error = "; ".join(filter(None, (outcome.error, finalization_error)))[:4000]
+                    recovery_status = outcome.status
+                    if recovery_status == "completed":
+                        recovery_status = "partial" if (final_message_saved or draft_persisted) and context.report.strip() else "failed"
+                    try:
+                        terminal_status = await _recover_failed_run_finalization(
+                            self.session_factory,
+                            run_id=spec.run_id,
+                            status=recovery_status,
+                            error=outcome.error,
+                            runner_owner_id=self._owner_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Could not recover failed finalization for ChatRun %s", spec.run_id)
+                        terminal_status = None
+                    if terminal_status not in TERMINAL_STATUSES:
+                        terminal_status = None
+                        self._finalization_failures[spec.run_id] = outcome.error
+                        await context.emit({
+                            "type": "error",
+                            "data": {"message": "Task finalization is pending; Stop can retry after storage recovers."},
+                        })
+                    else:
+                        outcome.status = terminal_status
+                        await context.emit({"type": "error", "data": {"message": finalization_error}})
+
+                if terminal_status in TERMINAL_STATUSES:
+                    await self._broadcast(spec.run_id, {
+                        "type": "run_status",
+                        "data": {"status": terminal_status, "error": outcome.error},
+                    })
+            except Exception as exc:  # noqa: BLE001
                 logger.exception("Could not finalize ChatRun %s", spec.run_id)
+                failure = f"Could not complete task finalization: {exc}"
+                self._finalization_failures[spec.run_id] = failure
+                try:
+                    await context.emit({"type": "error", "data": {"message": failure}})
+                except Exception:  # noqa: BLE001
+                    logger.exception("Could not broadcast finalization error for ChatRun %s", spec.run_id)
             finally:
                 self._signal_subscribers(spec.run_id, _SENTINEL)
                 self._contexts.pop(spec.run_id, None)
@@ -473,6 +562,7 @@ class ChatRunManager:
             await asyncio.gather(task, return_exceptions=True)
 
     async def request_cancel(self, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> bool:
+        finalization_failure = self._finalization_failures.get(run_id)
         lock = self._transition_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
             accepted = await request_run_cancel(
@@ -480,14 +570,40 @@ class ChatRunManager:
                 run_id=run_id,
                 chat_id=chat_id,
                 user_id=user_id,
+                allow_finalization_retry_owner_id=self._owner_id if finalization_failure else None,
             )
         if accepted:
             event = self._cancel_events.get(run_id)
             if event:
                 event.set()
             task = self._tasks.get(run_id)
-            if task and not task.done():
+            if task and not task.done() and not finalization_failure:
                 task.cancel()
+            if finalization_failure:
+                try:
+                    try:
+                        terminal_status = await _finish_run(
+                            self.session_factory,
+                            run_id=run_id,
+                            status="cancelled",
+                            error=finalization_failure,
+                            runner_owner_id=self._owner_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Could not apply Stop through normal finalization for ChatRun %s", run_id)
+                        terminal_status = None
+                    if terminal_status not in TERMINAL_STATUSES:
+                        terminal_status = await _recover_failed_run_finalization(
+                            self.session_factory,
+                            run_id=run_id,
+                            status="cancelled",
+                            error=finalization_failure,
+                            runner_owner_id=self._owner_id,
+                        )
+                    if terminal_status in TERMINAL_STATUSES:
+                        self._finalization_failures.pop(run_id, None)
+                except Exception:  # noqa: BLE001
+                    logger.exception("Could not complete Stop recovery for ChatRun %s", run_id)
         return accepted
 
     async def close(self) -> None:
@@ -579,17 +695,33 @@ async def update_run_snapshot(session_factory, *, run_id: UUID, patch: dict[str,
     return changed
 
 
-async def request_run_cancel(session_factory, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> bool:
+async def request_run_cancel(
+    session_factory,
+    *,
+    run_id: UUID,
+    chat_id: UUID,
+    user_id: UUID,
+    allow_finalization_retry_owner_id: str | None = None,
+) -> bool:
     def cancel(run: ChatRun, metadata: dict[str, Any]):
+        finish_intent = metadata.get("finish_intent")
+        retrying_failed_finalization = (
+            isinstance(finish_intent, dict)
+            and allow_finalization_retry_owner_id is not None
+            and metadata.get("runner_owner_id") == allow_finalization_retry_owner_id
+            and finish_intent.get("runner_owner_id") == allow_finalization_retry_owner_id
+        )
         if (
             run.chat_id != chat_id
             or run.user_id != user_id
             or run.status not in CANCELLABLE_STATUSES
-            or metadata.get("finish_intent")
+            or (finish_intent and not retrying_failed_finalization)
         ):
             return None, {}, False
         if metadata.get("cancel_requested"):
             return None, {}, False
+        if retrying_failed_finalization:
+            metadata.pop("finish_intent", None)
         metadata["cancel_requested"] = True
         metadata["revision"] = int(metadata.get("revision", 0)) + 1
         return metadata, {"status": "cancelling"}, True
@@ -768,6 +900,43 @@ async def _finish_run(
         }, terminal_status
 
     _, result = await _mutate_run_metadata(session_factory, run_id=run_id, mutate=finish)
+    return result
+
+
+async def _recover_failed_run_finalization(
+    session_factory,
+    *,
+    run_id: UUID,
+    status: str,
+    error: str | None,
+    runner_owner_id: str,
+) -> str | None:
+    """Commit an observable terminal error if the normal terminal writer fails."""
+    requested_status = status if status in TERMINAL_STATUSES else "failed"
+    saved_error = error[:4000] if error else "Task finalization failed"
+
+    def recover(run: ChatRun, metadata: dict[str, Any]):
+        if run.status not in ACTIVE_STATUSES:
+            return None, {}, run.status
+        if metadata.get("runner_owner_id") != runner_owner_id:
+            return None, {}, run.status
+        terminal_status = requested_status
+        if metadata.get("cancel_requested") and terminal_status != "interrupted":
+            terminal_status = "cancelled"
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        metadata["finish_intent"] = {
+            "status": terminal_status,
+            "error": saved_error,
+            "context_version": int(metadata.get("context_version", 1)),
+            "runner_owner_id": runner_owner_id,
+        }
+        return metadata, {
+            "status": terminal_status,
+            "error": saved_error,
+            "finished_at": datetime.now(UTC),
+        }, terminal_status
+
+    _, result = await _mutate_run_metadata(session_factory, run_id=run_id, mutate=recover)
     return result
 
 

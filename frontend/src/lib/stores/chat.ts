@@ -89,6 +89,7 @@ export interface ResearchRunInfo {
   streamedContent?: string;
   /** Stream text and request order when the current persisted report was fetched. */
   reportSyncStreamedContent?: string | null;
+  reportSyncStatusAtRequest?: ResearchRunStatus | null;
   reportSyncRequestId?: number;
 }
 

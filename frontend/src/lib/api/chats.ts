@@ -27,10 +27,20 @@ function isActiveResearch(status: ResearchRunStatus): boolean {
 type ResearchReportFreshness = {
   requestId: number;
   streamedContentAtRequest: string | null;
+  statusAtRequest: ResearchRunStatus | null;
+  contentAtRequest: string | null;
 };
 
-function newResearchReportFreshness(streamedContentAtRequest: string | null): ResearchReportFreshness {
-  return { requestId: ++researchReportRequestSequence, streamedContentAtRequest };
+function newResearchReportFreshness(
+  message: Pick<MessageInfo, 'content' | 'research'> | undefined,
+  fallbackStatus: ResearchRunStatus | null = null,
+): ResearchReportFreshness {
+  return {
+    requestId: ++researchReportRequestSequence,
+    streamedContentAtRequest: message?.research?.streamedContent ?? null,
+    statusAtRequest: message?.research?.status ?? fallbackStatus,
+    contentAtRequest: message?.content ?? null,
+  };
 }
 
 function applyResearchRun(runId: string, run: ResearchRunInfo, freshness: ResearchReportFreshness): void {
@@ -61,9 +71,12 @@ function projectResearchRun(
   const previousSaved = message.research?.message;
   const localTextCameFromStream = message.research?.streamedContent === message.content;
   const sameMessageStreaming = streamingMessageId === message.id;
+  const currentStatus = message.research?.status ?? freshness.statusAtRequest;
   const streamUnchangedSinceRequest = freshness.streamedContentAtRequest === (message.research?.streamedContent ?? null);
+  const statusUnchangedSinceRequest = freshness.statusAtRequest === currentStatus;
   const responseIsCurrent = freshness.requestId >= (message.research?.reportSyncRequestId ?? 0);
   const canSyncReport = streamUnchangedSinceRequest
+    && statusUnchangedSinceRequest
     && responseIsCurrent
     && (!sameMessageStreaming || !isActiveResearch(run.status))
     && message.role === 'assistant'
@@ -71,7 +84,9 @@ function projectResearchRun(
     && (!previousSaved || message.content === previousSaved.content || localTextCameFromStream);
   const projectedResearch: ResearchRunInfo = {
     ...run,
+    status: statusUnchangedSinceRequest ? run.status : currentStatus ?? run.status,
     reportSyncStreamedContent: freshness.streamedContentAtRequest,
+    reportSyncStatusAtRequest: freshness.statusAtRequest,
     reportSyncRequestId: freshness.requestId,
     ...(message.research?.streamedContent !== undefined
       ? { streamedContent: message.research.streamedContent }
@@ -90,6 +105,10 @@ function syncPendingResearchReports(): void {
       streamedContentAtRequest: Object.prototype.hasOwnProperty.call(message.research, 'reportSyncStreamedContent')
         ? message.research.reportSyncStreamedContent ?? null
         : message.research.streamedContent ?? null,
+      statusAtRequest: Object.prototype.hasOwnProperty.call(message.research, 'reportSyncStatusAtRequest')
+        ? message.research.reportSyncStatusAtRequest ?? null
+        : message.research.status,
+      contentAtRequest: message.content,
     };
     return projectResearchRun(message, message.research, null, freshness);
   }));
@@ -127,7 +146,7 @@ async function refreshResearchRunStates(chatId: string): Promise<void> {
   await Promise.all(running.map(async (message) => {
     const run = message.research;
     if (!run) return;
-    const freshness = newResearchReportFreshness(run.streamedContent ?? null);
+    const freshness = newResearchReportFreshness(message);
     const fresh = await getChatRun(chatId, run.runId).catch(() => null);
     if (fresh && get(activeChat)?.id === chatId) applyResearchRun(run.runId, fresh, freshness);
   }));
@@ -222,12 +241,14 @@ export async function loadChat(chatId: string, options: { background?: boolean }
           if (local?.role === 'assistant') msgs[i] = { ...msgs[i], ...local };
         }
       }
-      const researchRuns = (data.runs ?? []).filter((run: { task_kind?: string; assistant_message_id?: string }) =>
+      const researchRuns = (data.runs ?? []).filter((run: { task_kind?: string; assistant_message_id?: string; status?: ResearchRunStatus }) =>
         run.task_kind === 'research' && msgs.some((message: { id: string }) => message.id === run.assistant_message_id),
       );
-      const runStates = await Promise.all(researchRuns.map(async (run: { id: string; assistant_message_id: string }) => {
-        const localMessage = get(messages).find((message) => message.id === run.assistant_message_id);
-        const freshness = newResearchReportFreshness(localMessage?.research?.streamedContent ?? null);
+      const runStates = await Promise.all(researchRuns.map(async (run: { id: string; assistant_message_id: string; status: ResearchRunStatus }) => {
+        const storedMessage = get(messages).find((message) => message.id === run.assistant_message_id);
+        const localMessage = storedMessage?.chat_id === chatId ? storedMessage : undefined;
+        const loadedMessage = msgs.find((message: { id: string }) => message.id === run.assistant_message_id) as MessageInfo | undefined;
+        const freshness = newResearchReportFreshness(localMessage ?? loadedMessage, localMessage?.research?.status ?? run.status);
         return {
           runId: run.id,
           freshness,
@@ -237,9 +258,22 @@ export async function loadChat(chatId: string, options: { background?: boolean }
       if (version !== chatVersion) return;
       for (const { runId, state, freshness } of runStates) {
         if (!state) continue;
+        const assistantMessageId = researchRuns.find((run: { id: string; assistant_message_id: string }) => run.id === runId)?.assistant_message_id;
         const message = msgs.find((item: { research?: ResearchRunInfo }) => item.research?.runId === runId)
-          ?? msgs.find((item: { id: string }) => researchRuns.find((run: { id: string; assistant_message_id: string }) => run.id === runId)?.assistant_message_id === item.id);
-        if (message) Object.assign(message, projectResearchRun(message as MessageInfo, state, activeStreamMessageId, freshness));
+          ?? msgs.find((item: { id: string }) => item.id === assistantMessageId);
+        if (!message) continue;
+        const latestLocal = get(messages).find((item) => item.id === assistantMessageId && item.chat_id === chatId);
+        let projectionBase = message as MessageInfo;
+        if (latestLocal && latestLocal.research && latestLocal.research.runId === runId) {
+          const latestResearch = latestLocal.research;
+          const localChangedWhileLoading = (
+            latestLocal.content !== freshness.contentAtRequest
+            || (latestResearch.streamedContent ?? null) !== freshness.streamedContentAtRequest
+            || latestResearch.status !== freshness.statusAtRequest
+          );
+          if (localChangedWhileLoading) projectionBase = latestLocal;
+        }
+        Object.assign(message, projectResearchRun(projectionBase, state, activeStreamMessageId, freshness));
       }
       if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
       syncResearchPolling(chatId);
@@ -319,7 +353,7 @@ function formatError(err: { detail: unknown }, status: number): string {
 /** Stop the current generation */
 export async function stopResearchRun(chatId: string, runId: string): Promise<void> {
   const initialMessage = get(messages).find((message) => message.research?.runId === runId);
-  const freshness = newResearchReportFreshness(initialMessage?.research?.streamedContent ?? null);
+  const freshness = newResearchReportFreshness(initialMessage);
   try {
     const state = await cancelChatRun(chatId, runId);
     applyResearchRun(runId, state, freshness);
@@ -327,7 +361,7 @@ export async function stopResearchRun(chatId: string, runId: string): Promise<vo
     const actualState = await getChatRun(chatId, runId).catch(() => null);
     if (actualState) {
       const latestMessage = get(messages).find((message) => message.research?.runId === runId);
-      applyResearchRun(runId, actualState, newResearchReportFreshness(latestMessage?.research?.streamedContent ?? null));
+      applyResearchRun(runId, actualState, newResearchReportFreshness(latestMessage));
     }
     const status = error instanceof ChatRunRequestError ? ` (HTTP ${error.status})` : '';
     const detail = error instanceof Error ? error.message : String(error);
