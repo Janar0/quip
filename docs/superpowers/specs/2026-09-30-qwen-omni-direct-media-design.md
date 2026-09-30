@@ -1,87 +1,70 @@
-# Quip website voice calls with Qwen Omni Realtime
+# Quip voice calls and text-model handoff
 
-**Status:** design proposal for review  
-**Branch:** `codex/qwen-omni-voice-20260930`  
-**Scope:** one user-started voice call inside an existing Quip web chat
+**Status:** revised design proposal for written review
+**Branch:** `codex/qwen-omni-voice-20260930`
+**Scope:** a user-started call in an existing Quip chat, Quip-mediated web tools, and an explicit handoff to a selected text model
 
 ## Goal
 
-Let a signed-in user start, mute, interrupt, and end a spoken Russian conversation from a Quip chat. The call uses Qwen Omni Realtime over browser WebRTC, receives the chat's recent context, routes any enabled tools through Quip's authenticated backend, and saves recognized user/assistant text in that chat. The UI reports real call states and failures.
+Let a signed-in user speak Russian with Qwen Omni Realtime in Quip, interrupt/mute/end the call, search the web or read a page through Quip, and hand work to a user-selected existing text model in the same chat. Preserve complete text/tool history in Quip. Both modalities use server-owned, bounded context so they share task state without resending the entire transcript.
 
-## Protocol findings that constrain the design
+## Verified protocol facts
 
-- Alibaba documents WebRTC for browser voice. The browser exchanges an SDP offer for an answer, then audio travels on RTP and model events/text travel on a DataChannel. WebRTC supports server VAD modes, not manual mode. [Realtime API](https://www.alibabacloud.com/help/en/model-studio/realtime)
-- For WebRTC, the provider API key is used in the SDP HTTP request's `Authorization` header. The request can be sent by the client or server. Quip will send it from its backend and return only the SDP answer. The docs do not describe an ephemeral WebRTC key; the temporary client token belongs to the separate AOQ protocol. [Token authentication](https://www.alibabacloud.com/help/en/model-studio/realtime-token-authentication)
-- Qwen sends input speech VAD and transcription events, assistant audio transcript events, `response.done` usage, and function-call events over the provider event channel. `response.cancel` cancels an ongoing response. Qwen3.8 supports custom function calling and remote MCP; in the documented custom-function flow the client runs the tool. No Qwen sideband/control connection for a backend observer was found in the reviewed docs. [Client events](https://www.alibabacloud.com/help/en/model-studio/client-events), [server events](https://www.alibabacloud.com/help/en/model-studio/server-events)
-- The input transcript option names `qwen3-asr-flash-realtime`; Alibaba's pricing page lists a separate duration-based rate for that realtime ASR model, but the reviewed pages do not say whether enabling it inside an Omni session is included or billed separately. Treat it as potentially additional metered usage and confirm the workspace's accounting before enabling paid calls. [Realtime events](https://www.alibabacloud.com/help/en/model-studio/server-events), [model pricing](https://www.alibabacloud.com/help/en/model-studio/model-pricing)
-- Provider usage arrives in `response.done` on the browser DataChannel. The billing docs describe cost views and bill generation after a call, typically with minute-level delay; they do not document a per-call live usage API that Quip can use to stop this WebRTC session. [Billing and cost management](https://www.alibabacloud.com/help/en/model-studio/bill-query-and-cost-management)
-- The selected model and configured endpoint remain server configuration. Model names and rates may change; read the current [Realtime model/pricing documentation](https://www.alibabacloud.com/help/en/model-studio/model-pricing) before enabling provider billing.
+- Alibaba documents browser WebRTC: SDP offer/answer setup, direct RTP audio, and model events/text on a DataChannel. It supports server VAD, and documents `response.cancel` for stopping an active response. [Realtime API](https://www.alibabacloud.com/help/en/model-studio/realtime), [client events](https://www.alibabacloud.com/help/en/model-studio/client-events)
+- WebRTC SDP signaling uses `Authorization: Bearer <API_KEY>`; Quip can make that request on the backend and keep the key out of the browser. The temporary token described by Alibaba is for AOQ, not WebRTC. [Token authentication](https://www.alibabacloud.com/help/en/model-studio/realtime-token-authentication)
+- Qwen function-call arguments, transcript events, and `response.done` usage are sent to the browser over the event DataChannel. Alibaba's custom-function flow has the client run the function and send `function_call_output`. The reviewed docs show no provider sideband for backend event observation or remote session termination. Browser-relayed calls/usage must therefore be treated as untrusted. [Server events](https://www.alibabacloud.com/help/en/model-studio/server-events)
+- Input transcription names `qwen3-asr-flash-realtime`; pricing lists that realtime ASR model separately, but the reviewed docs do not clarify whether it is billed separately inside an Omni session. Treat it as potentially additional metered use and disclose that uncertainty before enabling paid calls. Provider billing reports are delayed and are not a per-call real-time stop mechanism. [Pricing](https://www.alibabacloud.com/help/en/model-studio/model-pricing), [billing](https://www.alibabacloud.com/help/en/model-studio/bill-query-and-cost-management)
 
-## User experience
+## Call flow and user experience
 
-1. Add a **Start voice call** action to the existing chat composer. Starting is an explicit user gesture; only then request microphone access.
-2. Show in-app states: `idle`, `requesting microphone`, `connecting`, `listening`, `assistant speaking`, `muted`, `ending`, `ended`, and actionable errors. Keep mute and end controls visible while connected.
-3. Use full-duplex audio with server VAD. When the provider reports speech onset while Quip is speaking, send the documented `response.cancel` event so the user can interrupt. The browser also immediately stops local playback if needed. Exact barge-in behavior must be verified in mocked browser flows and then manually during an explicitly enabled real call; it must not be claimed as tested by fixtures.
-4. Show live transcript text in the call UI. Save completed user transcription and assistant audio transcript as ordinary `Message` rows in the same chat, tagged as voice-originated. Do not record or persist raw audio. Qwen documents the input transcript as a reference transcription that can differ from what the Omni model understood.
-5. On mute, disable the local microphone track. On end, stop all media tracks, send `response.cancel` if a response is active, close the peer connection, and record the final call state. If the tab disappears, the provider connection eventually closes on its own; Quip cannot promise immediate server termination.
-6. Errors (microphone denied, configuration unavailable, SDP rejection, upstream failure, DataChannel/ICE failure, transcript failure, disconnect) appear in the call panel and an in-app toast where the app's existing notification surface supports it. No OS/browser notifications, background delivery, incoming calls, or task notifications without a real task event source.
+1. The user clicks **Start voice call** in the existing chat. Only then does the page request microphone access and create an `RTCPeerConnection`, local audio track, and Qwen event DataChannel.
+2. The page POSTs the chat ID and SDP offer to an authenticated Quip endpoint. Quip verifies the active user owns the chat, checks voice/model settings and preflight policy, creates a durable call record, and POSTs the offer to the configured Qwen endpoint with the server-only key. It returns the answer SDP, call ID, and a server-built, secret-free session configuration. The page sends that configuration on the DataChannel.
+3. Audio flows directly between browser and Qwen over RTP. Quip does not proxy audio. The session uses full-duplex audio, server VAD, Russian instructions, bounded chat context, and only the approved function definitions. Disable Qwen's built-in web search and MCP; all web access must go through Quip.
+4. The page shows real states: idle, requesting microphone, connecting, listening, assistant speaking, muted, handing off, ending, ended, and actionable errors. Mute disables the local track. On speech onset while Qwen is responding, send `response.cancel`; if a tool call is pending, cancel that Quip request too. If the tool already finished, keep its result in history but do not resume the canceled response. A read-only network request cannot be rolled back.
+5. End stops local tracks, cancels any active response/tool where possible, closes the peer connection, and records the call end. If the page disappears, Quip cannot promise immediate termination of the provider session.
+6. Show in-app call and text-run status only for real events. No OS/browser notifications, push delivery, incoming/spontaneous calls, or background task guarantees.
 
-## Request and trust boundaries
+## Initial tools: Quip web search and page reading
 
-```text
-User clicks Start
-  Browser asks for microphone permission
-  Browser creates RTCPeerConnection + audio track + Qwen event DataChannel
-  Browser POSTs {chat_id, offer_sdp} to authenticated Quip voice endpoint
-    Quip verifies the signed-in user owns the chat and preflight policy allows start
-    Quip sends SDP offer to configured Qwen endpoint with server-only API key
-    Quip returns {call_id, answer_sdp} (never the key or provider credentials)
-  Browser sets answer; RTP audio then flows directly between browser and Qwen
-  Browser receives Qwen events/transcripts and reports allowed events to Quip
-  Quip independently authenticates/authorizes transcript writes and tool requests
-```
+Voice may expose only these functions:
 
-The backend owns provider/model configuration, the Qwen secret, call records, chat ownership checks, transcript persistence, and tool execution. The browser owns microphone capture, the peer connection, rendering provider events, and closing the direct media connection.
+- `read_url(url)`: reuse `quip.services.scraper.read_url` and its existing safe direct-fetch checks, fallback, timeouts, and 15,000-character output cap. Keep it available wherever Quip's existing base tool is available.
+- `web_search(query)`: reuse `quip.services.search.web_search` and its configured Tavily/SearXNG provider, server credentials, caching, and five-result cap. Expose and execute it only when Quip's existing `search_enabled` setting and enabled `web_search` skill permit it.
 
-Every browser-submitted event is untrusted. In particular, a relayed function-call payload is not proof that Qwen emitted it: a client can fabricate DataChannel events. The backend must treat it as a user-originated request and independently check active call ownership, the current server-computed tool allowlist, argument schema, existing Quip permissions, rate limits, and any existing confirmation requirement before execution. Do not expose backend credentials or use provider MCP headers from the browser session configuration. The first implementation must exclude shell/sandbox tools, account/security administration, persistent credentials, arbitrary code execution, and newly granted permissions. If existing safe tools cannot be isolated and authorized, expose no tools in voice until they can.
+Do not call Qwen's own web search or duplicate provider-search logic. The browser submits `response.function_call_arguments.done` data (`call_id`, name, arguments) to an authenticated Quip tool endpoint. The endpoint ignores client-supplied user, chat, workspace, model, URL-base, and permission fields; it resolves the active call and owner from the database and accepts only the exact allowlisted function names. It independently validates JSON/schema, limits, search gate, URL safety, and chat ownership. A provider event is not proof of authorization: a modified client can fabricate one, so every request is treated as a user-originated read request under existing Quip gates.
 
-Use the existing cookie-authenticated API pattern (`get_current_user`) and verify `Chat.user_id` for every endpoint. Add same-origin/CSRF checks consistent with the app's current write endpoints. The offer endpoint accepts only SDP for the configured model/provider; it does not accept arbitrary upstream URLs, models, headers, or credentials from the browser.
+Use a `VoiceToolCall` ledger with a unique `(voice_call_id, provider_call_id)`, canonical request hash, status, timestamps, and linked result message. Repeating the same ID and same request returns the stored status/result without repeating the network call; reusing an ID with different arguments is rejected. Allow one in-flight tool per call and cap each call at ten tool requests, including at most five searches. Apply a 30-second overall tool timeout and existing result-size limits. Store successful results as attributed `tool` messages in the same chat, including source URLs for search results. Send a sanitized structured error to the model for denied, invalid, timed-out, canceled, or failed requests; never include credentials, stack traces, or upstream secrets. Return the result to the browser, which sends the documented `function_call_output` and `response.create` only if the response was not interrupted.
 
-## Context, transcript, and call records
+On interruption, the browser sends `response.cancel` if a Qwen response remains active and calls Quip's cancel endpoint for the matching pending tool ID. Quip marks it canceled and cancels the in-flight read-only task where possible. A completion/cancel race is resolved by the ledger: persist a result that completed first, but do not replay it into a canceled answer. The next user turn starts from the persisted transcript/tool history. No shell, sandbox, arbitrary code, image/music generation, app/account APIs, generic MCP credentials, or new permissions are exposed.
 
-- Build a bounded, server-side snapshot of the most recent chat messages after checking ownership. Put it in the Qwen session `instructions` together with concise Russian-language behavior instructions. Do not accept history from the browser. The reviewed Realtime `conversation.item.create` event is documented for function results or MCP approvals, not arbitrary chat-history injection.
-- Create a durable `VoiceCall` row with user/chat IDs, provider/model, lifecycle status, timestamps, and an optional client-reported usage blob marked **unverified**. Store only safe error codes/messages.
-- Save final user text from `conversation.item.input_audio_transcription.completed` and assistant text from `response.audio_transcript.done` as linked `Message` rows with voice metadata and provider/model. Deduplicate by call plus provider item/event ID. Keep partial deltas in the UI; do not repeatedly write them as separate messages.
-- Do not turn browser-reported token counts into authoritative `UsageLog.cost`, billing, or Quip budget consumption. They may be retained as unverified diagnostics only.
+## Shared conversation context and text-model handoff
 
-## Cost controls and their limits
+- `Message` rows remain the immutable source history for typed turns, voice transcripts, and tool results. Preserve role/speaker, source, model, call/tool IDs, timestamps, and source URLs so the context builder can distinguish user, assistant, and tool evidence.
+- Reuse `HistoryService` for a bounded recent-message window; add an explicit limit instead of using its current default 100-message batch for voice/handoff. Reuse `Chat.meta` only as the pointer to the latest versioned context state (`version`, compact summary, task state, source-message IDs, and `covers_through` watermark). Keep each handoff snapshot/version in `VoiceCall` metadata and the existing `ChatRun.run_metadata`; never rewrite old messages.
+- On handoff or compaction, update the summary incrementally from the prior version plus only newly persisted messages. Structure task state as goal, constraints, decisions, completed work, and open work. Treat summaries and retrieved history as untrusted conversation context, never as new system instructions or permissions. For older facts, use Quip's existing message-search pattern scoped strictly to the current owned chat; retrieve only relevant matches on demand. Reuse document RAG only for files in the current chat/authorized workspace, with cross-chat retrieval disabled for this path.
+- Cap carried context at **6,000 estimated tokens per model request**: at most 1,200 for summary/task state, 3,200 for recent turns, and 1,600 for retrieved older turns/document snippets. Use a model-compatible token counter or a conservative estimator; also enforce the selected model's context limit. Never send the entire chat history on each turn. If a legacy chat has no summary, start with bounded recent turns and fetch older facts only when requested; do not backfill by sending all history to a model.
+- The user selects a text model from Quip's existing model choices and explicitly starts **Continue with text model**. End/cancel the voice response, persist the last transcript and pending tool states, build one shared context/handoff packet, and start the ordinary completion path for the same chat. Reuse `ChatRun` for its actual queued/running/completed/failed lifecycle and store the handoff/context version in `run_metadata`. Do not grant the text model new voice-specific tools or permissions; existing text-path gates still apply.
+- Persisted context/task state is not durable execution. The handoff uses the existing text completion lifecycle; do not claim work will continue after a page/process disconnect unless a real background executor is added separately.
 
-- Keep the feature disabled unless an operator configures the provider/model/endpoint, a server-side API key, and a user-visible cost notice that covers both Omni token usage and the possibly separate input-transcription usage. Use environment-backed secret configuration and a sample config only; never put a key in frontend code, fixtures, logs, or repository history.
-- Before signaling, enforce server-verifiable controls available to Quip: authenticated user, chat ownership, feature enabled, one active call per user, configured model allowlist, and any existing budget gate that can be evaluated from authoritative Quip data.
-- A browser timer/usage warning can ask the user to end the call, and an in-app threshold can send a cooperative stop request. Neither is a hard cost cap: the browser can be modified or disconnected, and Quip has no documented provider control channel to close the active Qwen session. Do not represent client-reported usage as a server-enforced budget.
-- Provider billing has account-level budget controls, but the docs describe billing reports after calls and delayed aggregation. That account setting is external to this feature and is not a per-call real-time kill switch. Until trusted per-call metering/control exists, communicate the direct-call cost limitation before start and keep any configured call-duration cap explicitly labeled as client-enforced/soft.
-- No live provider key, paid inference, production configuration, deployment, or automatic WebSocket audio-proxy fallback is part of this work.
+## Authorization, storage, and cost limits
 
-## Configuration and module boundaries
+- Use Quip's cookie-authenticated `get_current_user` pattern and verify `Chat.user_id` for every call, transcript, context, and tool endpoint. Apply same-origin/CSRF checks consistent with existing writes. Never accept arbitrary provider endpoints/models/headers from the browser.
+- Add a `VoiceCall` record for owner/chat, provider/model, lifecycle, timestamps, safe error code, context version, and client-reported usage marked **unverified**. Persist completed user text from Qwen input-transcription events and assistant text from `response.audio_transcript.done` as linked `Message` rows. The input transcription is reference text and may differ from what Omni understood. Do not store raw audio.
+- Keep voice disabled until an operator configures the provider/model/endpoint, server-only API key, and user-visible cost notice, including possible separate ASR usage. No real keys or live inference in this branch.
+- Enforce server-verifiable start checks (auth, ownership, feature/model allowlist, concurrency, existing authoritative budget gate). `response.done` usage is browser-reported, not authoritative Quip billing. A browser timer/usage warning and cooperative stop are soft only; neither is a hard per-call ceiling or server-side termination. Alibaba account-level budget controls are external and delayed, not a real-time session kill switch. Make no stronger claim.
+- No WebSocket audio-proxy fallback, Telegram user-account calling, permanent/autonomous assistant, sandbox/account permission expansion, or deployment.
 
-- Keep the provider interface narrow: configured model, SDP offer-to-answer exchange, provider event/schema helpers, and sanitized errors. Implement Qwen WebRTC only; keep provider/model values configurable so another supported direct-media adapter can be added later.
-- Backend: isolated voice router/service/provider adapter plus migration/model for call lifecycle and transcript metadata. Reuse existing auth, `Chat`, `Message`, and current safe server-side tool facilities rather than changing general chat completion behavior.
-- Frontend: isolated voice-call controller/component plus a small entry point in `ChatInput`/`ChatPane`. Keep the normal text-send path untouched.
-- No full-audio WebSocket proxy, Telegram user-account calling, browser Notification API, push service worker, autonomous assistant, sandbox/account permission expansion, or unrelated chat tools.
+## Smallest integration and verification plan
 
-## Verification plan after design approval
-
-1. Backend protocol fixtures: verify configured Qwen endpoint/model, SDP `Content-Type`, server-only Bearer header, exact SDP forwarding/answer, and sanitized upstream failures using mocked HTTP; never call Qwen.
-2. Backend authorization/persistence fixtures: reject missing auth, wrong chat owner, arbitrary provider/model/URL, disabled feature, duplicate active calls, forged/disallowed tools, invalid arguments, and duplicate transcript event IDs; verify legitimate transcript messages and voice-call states persist.
-3. Frontend mocks: permission grant/denial, connecting/connected/error transitions, mute/unmute, end cleanup, ICE/DataChannel failure, VAD speech onset and `response.cancel`, transcript rendering, and a forged client function event being rejected by backend policy.
-4. Run existing relevant frontend/backend tests and type/lint checks as requested by the implementation task. No live microphone or paid provider test is required for this branch; actual acoustic quality/latency and real provider behavior remain unverified until a separately authorized manual call.
+- Backend: isolated voice provider/router/services and migrations for `VoiceCall` and idempotent tool ledger; reuse auth, `Chat`, `Message`, `HistoryService`, existing `read_url`/`web_search` implementations, RAG with stricter scope, and `ChatRun` for text handoff. Frontend: isolated call controller/panel and a small ChatInput/ChatPane entry point; parent coordinates shared UI/completion changes before implementation.
+- Fixture-only tests: SDP forwarding/key secrecy/errors; chat ownership and search gate; URL/schema/tool-name rejection; tool ID idempotency/conflict, timeout, cancellation races and sanitized errors; voice interruption while speaking/tool pending; transcript/tool source attribution; voice-to-text handoff into the selected model/ChatRun; incremental summary preservation of constraints/decisions; message retrieval scope, token caps, and cross-user/workspace isolation; interruption/end and actual completion lifecycle.
+- Verify UI permission, call state, mute/end, DataChannel/ICE errors, transcript and ChatRun notifications with browser mocks. No paid calls, live keys, deployment, or live acoustic claim. Acoustic quality/latency and real provider interruption remain unverified until separately authorized.
 
 ## Acceptance criteria
 
-- A signed-in user can start and end a call from an existing Quip website chat; provider API keys never reach the browser.
-- Audio uses direct browser-to-Qwen WebRTC RTP; transcripts and text/control events use the documented DataChannel. There is no hidden WebSocket media fallback.
-- User can mute and interrupt assistant speech; Russian instructions and existing chat context are applied.
-- Completed transcript turns and call lifecycle/error status are saved to the owning chat and visible after reload.
-- Tool execution, if enabled, is performed by Quip under the authenticated user's existing permissions and server allowlist; browser/model output never authorizes itself.
-- Cost/UI claims distinguish server-enforced preflight controls from unverified usage reports and cooperative client stops.
-- Tests run entirely against fixtures/mocks; no paid API call, live key, deployment, or main-branch change.
+- Direct browser-to-Qwen WebRTC audio; server-only provider credentials; no hidden WS audio path.
+- Russian voice conversation with mute/interruption, recent+versioned context, and saved typed/voice/tool history in the same Quip chat.
+- Quip-backed `web_search`/`read_url` work through the authenticated allowlisted bridge and respect existing gates; no additional tools or permissions.
+- Explicit handoff to the selected existing text model uses the same bounded context/task state and `ChatRun` lifecycle, with source attribution and tenant isolation.
+- Cost notices and status distinguish authoritative server checks from unverified provider usage and cooperative browser stops.
+- All tests use protocol fixtures/mocks; no live key, paid API call, deployment, merge, or main-branch edit.
