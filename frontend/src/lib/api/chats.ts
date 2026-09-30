@@ -360,8 +360,7 @@ export async function stopResearchRun(chatId: string, runId: string): Promise<vo
   } catch (error) {
     const actualState = await getChatRun(chatId, runId).catch(() => null);
     if (actualState) {
-      const latestMessage = get(messages).find((message) => message.research?.runId === runId);
-      applyResearchRun(runId, actualState, newResearchReportFreshness(latestMessage));
+      applyResearchRun(runId, actualState, freshness);
     }
     const status = error instanceof ChatRunRequestError ? ` (HTTP ${error.status})` : '';
     const detail = error instanceof Error ? error.message : String(error);

@@ -705,20 +705,31 @@ async def request_run_cancel(
 ) -> bool:
     def cancel(run: ChatRun, metadata: dict[str, Any]):
         finish_intent = metadata.get("finish_intent")
+        owns_finalization_retry = (
+            allow_finalization_retry_owner_id is not None
+            and metadata.get("runner_owner_id") == allow_finalization_retry_owner_id
+        )
         retrying_failed_finalization = (
             isinstance(finish_intent, dict)
-            and allow_finalization_retry_owner_id is not None
-            and metadata.get("runner_owner_id") == allow_finalization_retry_owner_id
+            and owns_finalization_retry
             and finish_intent.get("runner_owner_id") == allow_finalization_retry_owner_id
+        )
+        retrying_accepted_cancel = (
+            owns_finalization_retry
+            and run.status == "cancelling"
+            and bool(metadata.get("cancel_requested"))
+            and not finish_intent
         )
         if (
             run.chat_id != chat_id
             or run.user_id != user_id
-            or run.status not in CANCELLABLE_STATUSES
+            or (run.status not in CANCELLABLE_STATUSES and not retrying_accepted_cancel)
             or (finish_intent and not retrying_failed_finalization)
         ):
             return None, {}, False
         if metadata.get("cancel_requested"):
+            if retrying_accepted_cancel:
+                return None, {}, True
             return None, {}, False
         if retrying_failed_finalization:
             metadata.pop("finish_intent", None)
@@ -726,8 +737,8 @@ async def request_run_cancel(
         metadata["revision"] = int(metadata.get("revision", 0)) + 1
         return metadata, {"status": "cancelling"}, True
 
-    changed, _ = await _mutate_run_metadata(session_factory, run_id=run_id, mutate=cancel)
-    return changed
+    changed, result = await _mutate_run_metadata(session_factory, run_id=run_id, mutate=cancel)
+    return changed or result is True
 
 
 async def enqueue_run_steering(

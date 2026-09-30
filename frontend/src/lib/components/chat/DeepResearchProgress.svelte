@@ -76,7 +76,7 @@
   </button>
 
   {#if isRunning && onStop}
-    <button type="button" class="ml-5 text-[11px] underline underline-offset-2 opacity-70 hover:opacity-100" onclick={onStop} disabled={status === 'cancelling'}>
+    <button type="button" class="ml-5 text-[11px] underline underline-offset-2 opacity-70 hover:opacity-100" onclick={onStop}>
       {$t(status === 'cancelling' ? 'research.stopRequested' : 'chat.stopGeneration')}
     </button>
   {/if}
