@@ -156,6 +156,7 @@
   "voice.chooseCamera": "Use camera",
   "voice.cameraSelected": "Camera selected",
   "voice.cameraChoiceHint": "Camera is optional. Choose it before starting; permission is requested only when the call starts.",
+  "voice.cameraModelUnsupported": "The selected call model accepts audio only; video is disabled.",
   "voice.cameraRestartHint": "To turn the camera on after connecting, end the call and reconnect with camera selected.",
   "voice.camera_permission_denied": "Camera permission was denied. Audio calling is still available.",
   "voice.camera_unavailable": "Camera is unavailable. Audio calling is still available.",

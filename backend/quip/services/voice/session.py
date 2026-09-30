@@ -5,6 +5,9 @@ import httpx
 
 from quip.core.config import get_bool_setting, get_setting
 
+DEFAULT_QWEN_REALTIME_ENDPOINT = "https://maas.qwencloudapi.com/api/v1/webrtc/realtime"
+DEFAULT_QWEN_REALTIME_MODEL = "qwen-audio-3.1-realtime-plus"
+
 
 class VoiceProviderError(Exception):
     """Sanitized provider signaling error; never carries provider response text."""
@@ -21,12 +24,28 @@ def get_qwen_realtime_config() -> QwenRealtimeConfig | None:
     if not get_bool_setting("qwen_voice_enabled", False):
         return None
 
-    endpoint = get_setting("qwen_realtime_endpoint").strip()
+    endpoint = get_setting("qwen_realtime_endpoint").strip() or DEFAULT_QWEN_REALTIME_ENDPOINT
     api_key = get_setting("qwen_realtime_api_key").strip()
-    model = get_setting("qwen_realtime_model").strip()
+    model = get_setting("qwen_realtime_model").strip() or DEFAULT_QWEN_REALTIME_MODEL
     if not endpoint.startswith("https://") or not api_key or not model:
         return None
     return QwenRealtimeConfig(endpoint=endpoint, api_key=api_key, model=model)
+
+
+def qwen_realtime_camera_supported(model: str) -> bool:
+    """Require explicit capability enablement; Qwen Audio 3.1 is audio-only."""
+    if model.startswith("qwen-audio-3.1-realtime"):
+        return False
+    return get_bool_setting("qwen_realtime_video_enabled", False)
+
+
+def get_qwen_realtime_public_config() -> dict[str, str | bool]:
+    model = get_setting("qwen_realtime_model").strip() or DEFAULT_QWEN_REALTIME_MODEL
+    return {
+        "enabled": get_qwen_realtime_config() is not None,
+        "model": model,
+        "camera_supported": qwen_realtime_camera_supported(model),
+    }
 
 
 async def exchange_sdp(config: QwenRealtimeConfig, offer_sdp: str) -> str:

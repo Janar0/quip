@@ -6,6 +6,12 @@ export interface VoiceSessionAnswer {
   type: 'answer';
 }
 
+export interface VoicePublicConfig {
+  enabled: boolean;
+  model: string;
+  camera_supported: boolean;
+}
+
 export interface VoiceContextItem {
   source_id: string;
   source_type: 'chat_message' | 'document_chunk';
@@ -94,6 +100,9 @@ async function jsonRequest<T>(path: string, method: string, body?: unknown, sign
 
 /** Authenticated Quip endpoints; the Qwen credential never enters this module. */
 export const voiceApi = {
+  config(): Promise<VoicePublicConfig> {
+    return jsonRequest('/api/voice/config', 'GET');
+  },
   start(chatId: string, sdp: string, cameraEnabled: boolean): Promise<VoiceSessionAnswer> {
     return jsonRequest('/api/voice/calls', 'POST', {
       chat_id: chatId, sdp, type: 'offer', camera_enabled: cameraEnabled,

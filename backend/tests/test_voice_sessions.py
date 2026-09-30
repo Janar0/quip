@@ -9,7 +9,6 @@ from quip.models.user import User
 from quip.models.voice import VoiceCall
 
 
-
 async def _create_chat(client, headers: dict[str, str]) -> UUID:
     response = await client.post("/api/chats", headers=headers, json={"title": "Voice test"})
     assert response.status_code == 201
@@ -25,6 +24,52 @@ async def test_voice_session_requires_authentication(client):
 
     assert response.status_code == 401, response.text
     assert response.json()["detail"] == "Authentication required"
+
+
+@pytest.mark.asyncio
+async def test_voice_capabilities_are_authenticated_and_disable_camera_for_qwen_audio_31(client, auth_headers, monkeypatch):
+    monkeypatch.setitem(config._settings, "qwen_realtime_model", "qwen-audio-3.1-realtime-plus")
+    monkeypatch.setitem(config._settings, "qwen_realtime_video_enabled", "true")
+
+    anonymous = await client.get("/api/voice/config")
+    assert anonymous.status_code == 401
+
+    response = await client.get("/api/voice/config", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "enabled": False,
+        "model": "qwen-audio-3.1-realtime-plus",
+        "camera_supported": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_qwen_audio_31_rejects_camera_before_provider_signaling(client, auth_headers, monkeypatch):
+    from quip.services.voice import session
+
+    chat_id = await _create_chat(client, auth_headers)
+    for key, value in {
+        "qwen_voice_enabled": "true",
+        "qwen_realtime_endpoint": "https://maas.qwencloudapi.com/api/v1/webrtc/realtime",
+        "qwen_realtime_api_key": "test-only-placeholder",
+        "qwen_realtime_model": "qwen-audio-3.1-realtime-plus",
+        "qwen_realtime_video_enabled": "true",
+    }.items():
+        monkeypatch.setitem(config._settings, key, value)
+
+    class NeverCalledClient:
+        def __init__(self, **_kwargs):
+            raise AssertionError("Qwen Audio 3.1 does not document video input")
+
+    monkeypatch.setattr(session.httpx, "AsyncClient", NeverCalledClient)
+    response = await client.post(
+        "/api/voice/calls",
+        headers=auth_headers,
+        json={"chat_id": str(chat_id), "sdp": "v=0", "type": "offer", "camera_enabled": True},
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "Camera input is not supported by the configured realtime model"
 
 
 @pytest.mark.asyncio
@@ -74,12 +119,12 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
 
     chat_id = await _create_chat(client, auth_headers)
     secret = "server-only-qwen-test-key"
-    endpoint = "https://realtime.example.test/v1/realtime"
+    endpoint = "https://maas.qwencloudapi.com/api/v1/webrtc/realtime"
     for key, value in {
         "qwen_voice_enabled": "true",
         "qwen_realtime_endpoint": endpoint,
         "qwen_realtime_api_key": secret,
-        "qwen_realtime_model": "catalog-model-fixture",
+        "qwen_realtime_model": "qwen-audio-3.1-realtime-plus",
     }.items():
         monkeypatch.setitem(config._settings, key, value)
 
@@ -115,7 +160,7 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
             "chat_id": str(chat_id),
             "sdp": "v=0\r\no=browser 1 1 IN IP4 127.0.0.1\r\n",
             "type": "offer",
-            "camera_enabled": True,
+            "camera_enabled": False,
             "endpoint": "https://attacker.invalid/",
             "api_key": "client-forgery",
         },
@@ -123,6 +168,7 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
 
     assert response.status_code == 200, response.text
     assert captured["url"] == endpoint
+    assert captured["params"] == {"model": "qwen-audio-3.1-realtime-plus"}
     assert captured["headers"]["Authorization"] == f"Bearer {secret}"
     assert captured["content"].startswith(b"v=0")
     assert secret not in response.text
@@ -131,7 +177,7 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
         select(VoiceCall).where(VoiceCall.id == UUID(response.json()["call_id"]))
     )
     assert persisted_call is not None
-    assert persisted_call.camera_enabled is True
+    assert persisted_call.camera_enabled is False
 
 
 @pytest.mark.asyncio
@@ -169,6 +215,7 @@ async def test_voice_session_cannot_target_another_users_chat(client, auth_heade
 @pytest.mark.asyncio
 async def test_voice_provider_error_is_sanitized_and_session_is_failed(client, auth_headers, db_session, monkeypatch):
     import httpx
+
     from quip.services.voice import session
 
     chat_id = await _create_chat(client, auth_headers)

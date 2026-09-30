@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { voiceApi } from '$lib/api/voice';
   import { VoiceSession, type VoiceSessionState, type VoiceTranscriptEntry } from '$lib/services/voice/session';
 
   type Props = { chatId: string; onClose: () => void };
@@ -15,9 +16,17 @@
   let videoStream: MediaStream | null = $state(null);
   let localPreview: HTMLVideoElement | undefined = $state();
   let remoteAudio: HTMLAudioElement | undefined = $state();
+  let cameraSupported = $state(false);
   let session: VoiceSession | null = null;
 
   onMount(() => {
+    void voiceApi.config().then((configuration) => {
+      cameraSupported = configuration.camera_supported;
+      session?.setCameraSupported(cameraSupported);
+    }).catch(() => {
+      cameraSupported = false;
+      session?.setCameraSupported(false);
+    });
     session = new VoiceSession(chatId, {
       onState: (next) => { callState = next; },
       onTranscript: (entry) => { transcript = [...transcript, entry].slice(-8); },
@@ -106,13 +115,15 @@
           onclick={startCall}
           aria-label={$t('voice.start')}
         >{$t('voice.start')}</button>
-        <button
-          type="button"
-          class="rounded-lg border border-outline/50 px-3 py-2 text-sm"
-          onclick={toggleCameraSelection}
-          aria-pressed={callState.cameraSelected}
-          aria-label={$t(callState.cameraSelected ? 'voice.cameraSelected' : 'voice.chooseCamera')}
-        >{callState.cameraSelected ? $t('voice.cameraSelected') : $t('voice.chooseCamera')}</button>
+        {#if cameraSupported}
+          <button
+            type="button"
+            class="rounded-lg border border-outline/50 px-3 py-2 text-sm"
+            onclick={toggleCameraSelection}
+            aria-pressed={callState.cameraSelected}
+            aria-label={$t(callState.cameraSelected ? 'voice.cameraSelected' : 'voice.chooseCamera')}
+          >{callState.cameraSelected ? $t('voice.cameraSelected') : $t('voice.chooseCamera')}</button>
+        {/if}
       {:else if callState.status === 'connecting'}
         <button type="button" class="rounded-lg border border-outline/50 px-3 py-2 text-sm" onclick={endCall} aria-label={$t('voice.cancel')}>
           {$t('voice.cancel')}
@@ -141,7 +152,11 @@
 
   <p class="mt-2 text-xs text-muted" role="note">{$t('voice.costNotice')}</p>
   {#if callState.status === 'idle' || callState.status === 'ended' || callState.status === 'error'}
-    <p class="mt-2 text-xs text-muted">{$t('voice.cameraChoiceHint')}</p>
+    {#if cameraSupported}
+      <p class="mt-2 text-xs text-muted">{$t('voice.cameraChoiceHint')}</p>
+    {:else}
+      <p class="mt-2 text-xs text-muted">{$t('voice.cameraModelUnsupported')}</p>
+    {/if}
   {/if}
   {#if callState.status === 'active' && !callState.cameraEnabled}
     <p class="mt-2 text-xs text-muted">{$t('voice.cameraRestartHint')}</p>

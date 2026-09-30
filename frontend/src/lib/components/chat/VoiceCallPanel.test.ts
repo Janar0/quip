@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import VoiceCallPanel from './VoiceCallPanel.svelte';
 import ChatInput from './ChatInput.svelte';
+import { voiceApi } from '$lib/api/voice';
 import { VoiceSession, type VoiceSessionState } from '$lib/services/voice/session';
 
 afterEach(() => {
@@ -27,6 +28,9 @@ describe('VoiceCallPanel', () => {
   });
 
   it('does not request microphone or camera before the explicit call action', async () => {
+    vi.spyOn(voiceApi, 'config').mockResolvedValue({
+      enabled: true, model: 'qwen-audio-3.1-realtime-plus', camera_supported: true,
+    });
     const getUserMedia = vi.fn();
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
@@ -35,9 +39,27 @@ describe('VoiceCallPanel', () => {
     render(VoiceCallPanel, { props: { chatId: 'chat-1', onClose: vi.fn() } });
 
     expect(screen.getByText('voice.costNotice')).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'voice.chooseCamera' })).toBeTruthy());
     await fireEvent.click(screen.getByRole('button', { name: 'voice.chooseCamera' }));
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'voice.cameraSelected' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('hides camera selection when the configured Qwen Audio model is audio-only', async () => {
+    vi.spyOn(voiceApi, 'config').mockResolvedValue({
+      enabled: false, model: 'qwen-audio-3.1-realtime-plus', camera_supported: false,
+    });
+    const getUserMedia = vi.fn();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    render(VoiceCallPanel, { props: { chatId: 'chat-1', onClose: vi.fn() } });
+
+    await waitFor(() => expect(screen.getByText('voice.cameraModelUnsupported')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'voice.chooseCamera' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'voice.cameraSelected' })).toBeNull();
+    expect(getUserMedia).not.toHaveBeenCalled();
   });
 
   it('requests microphone only after Start and shows a recoverable permission error', async () => {

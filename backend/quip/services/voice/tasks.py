@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 TASK_KIND = "voice_delegation"
 MAX_TASK_SECONDS = 300
 MAX_COMPLETION_ROUNDS = 5
+MAX_LATE_STEERING_RETRIES = 4
 MAX_TASK_TOOLS = 10
 MAX_TASK_SEARCHES = 5
 MAX_TASK_DELEGATIONS = 5
@@ -570,173 +571,238 @@ def _usage_dict(usage) -> dict:
 
 
 async def run_luna_task(execution, *, spec: ChatRunSpec, model_id: str, goal: str) -> RunOutcome:
-    messages, current_context_version = await _build_task_messages(execution, spec, goal, {}, [])
+    messages, chat_context_version = await _build_task_messages(execution, spec, goal, {}, [])
+    # Chat summary version and ChatRun steering version are independent clocks.
+    current_context_version = spec.context_version
     task_state: dict = {"completed_web_actions": [], "goal": goal[:800]}
     clarification_history: list[str] = []
     completed_calls: dict[str, tuple[str, str, dict]] = {}
     total_tools = 0
     searches = 0
     usage = None
-    final_text = ""
-    result_persisted = False
     late_steering_retries = 0
-    late_steering_limit_reached = False
+    completion_budget_exhausted = False
 
-    async def incorporate_steering() -> bool:
-        nonlocal messages, current_context_version
-        steering = await execution.take_steering()
+    async def incorporate_steering(steering=None, *, context_version: int | None = None) -> bool:
+        nonlocal messages, chat_context_version, current_context_version
+        if steering is None:
+            steering = await execution.take_steering()
+            if not steering:
+                return False
+            current_context_version += len(steering)
+        elif context_version is not None:
+            current_context_version = context_version
         if not steering:
             return False
-        clarification_history.extend(
+        accepted_instructions = [
             str(item.get("instruction", ""))[:2_000] for item in steering
             if isinstance(item, dict) and isinstance(item.get("instruction"), str)
-        )
+        ]
+        if not accepted_instructions:
+            return False
+        clarification_history.extend(accepted_instructions)
         clarification_history[:] = clarification_history[-4:]
         task_state["clarifications"] = clarification_history
-        messages, current_context_version = await _build_task_messages(
+        messages, chat_context_version = await _build_task_messages(
             execution, spec, goal, task_state, clarification_history
         )
         return True
 
-    round_index = 0
-    while round_index < MAX_COMPLETION_ROUNDS + late_steering_retries:
-        round_index += 1
-        if execution.cancel_event.is_set():
-            return RunOutcome(status="cancelled", usage=usage)
-        await incorporate_steering()
-
+    async def persist_candidate(text: str, status: str, error: str | None) -> None:
+        execution.report = ""
+        execution._last_draft_chars = 0
+        if text:
+            await execution.append_result(text)
+        await execution.flush_result()
         await execution.update_snapshot(
-            phase="working",
+            phase=status,
             context_version=current_context_version,
-            progress=f"Round {round_index} of {MAX_COMPLETION_ROUNDS + late_steering_retries}",
+            chat_context_version=chat_context_version,
             tool_count=total_tools,
             task_state=task_state,
+            error=error,
         )
-        await execution.emit({"type": "task_progress", "data": {"phase": "working", "round": round_index}})
-        accumulated_calls = []
-        response_text = ""
-        async for item in CompletionService.stream_selected_model(
-            messages,
-            model_id,
-            tools=TASK_TOOL_DEFINITIONS,
-            max_tokens=1_200,
-        ):
-            if execution.cancel_event.is_set():
-                return RunOutcome(status="cancelled", usage=usage)
-            if isinstance(item, str):
-                ev_type, data = _parse_sse_frame(item)
-                if ev_type == "content":
-                    response_text += str(data.get("text", ""))
-                elif ev_type == "error":
-                    logger.error("Luna delegated completion failed for run %s", spec.run_id)
-                    return RunOutcome(status="partial" if final_text else "failed", error="Selected model completion failed", usage=usage)
+
+    async def try_finish_candidate(status: str, error: str | None):
+        nonlocal messages, chat_context_version, current_context_version
+        decision = await execution.try_finish(
+            expected_context_version=current_context_version,
+            status=status,
+            error=error,
+        )
+        if decision.accepted or decision.status not in ACTIVE_STATUSES:
+            return decision, False
+        if decision.steering:
+            incorporated = await incorporate_steering(
+                decision.steering,
+                context_version=decision.context_version,
+            )
+            return decision, incorporated
+        if decision.context_version != current_context_version:
+            current_context_version = decision.context_version
+            messages, chat_context_version = await _build_task_messages(
+                execution, spec, goal, task_state, clarification_history
+            )
+            return decision, True
+        raise RuntimeError("ChatRun refused atomic completion without a version change or steering")
+
+    round_index = 0
+    while True:
+        model_rounds_allowed = (
+            not completion_budget_exhausted
+            and round_index < MAX_COMPLETION_ROUNDS + late_steering_retries
+            and not execution.cancel_event.is_set()
+        )
+        if model_rounds_allowed:
+            round_index += 1
+            if await incorporate_steering():
                 continue
-            ev_type, data = item
-            if ev_type == "tool_calls":
-                from quip.services.tools import accumulate_tool_calls
-
-                accumulate_tool_calls(accumulated_calls, data)
-            elif ev_type == "usage":
-                usage = _accumulate_usage(usage, _usage_dict(data))
-            elif ev_type == "error":
-                logger.error("Luna delegated completion failed for run %s", spec.run_id)
-                return RunOutcome(status="partial" if final_text else "failed", error="Selected model completion failed", usage=usage)
-        # A user clarification arriving during the provider stream supersedes
-        # this not-yet-executed response; the background task itself continues.
-        if await incorporate_steering():
-            continue
-
-        if not accumulated_calls:
-            final_text = response_text[:MAX_RESULT_CHARS]
-            if final_text.strip():
-                # Persist before the final steering check. If an accepted
-                # clarification races this write, clear the stale draft and
-                # spend one bounded retry on the updated context.
-                execution.report = ""
-                execution._last_draft_chars = 0
-                await execution.append_result(final_text)
-                await execution.flush_result()
-                result_persisted = True
-                if await incorporate_steering():
-                    if late_steering_retries >= 4:
-                        final_text = "Luna received a final clarification but could not finish within the bounded retry limit."
-                        execution.report = ""
-                        execution._last_draft_chars = 0
-                        await execution.append_result(final_text)
-                        await execution.flush_result()
-                        late_steering_limit_reached = True
-                        break
-                    late_steering_retries += 1
-                    execution.report = ""
-                    execution._last_draft_chars = 0
-                    await execution.flush_result()
-                    final_text = ""
-                    result_persisted = False
-                    continue
-            break
-
-        for tool_call in accumulated_calls:
-            if total_tools >= MAX_TASK_TOOLS:
-                result = {"error": "task_tool_limit_reached"}
-            else:
-                try:
-                    args = json.loads(tool_call.function_arguments or "{}")
-                    if not isinstance(args, dict):
-                        args = {}
-                except json.JSONDecodeError:
-                    args = {}
-                name = tool_call.function_name
-                arg_hash = hashlib.sha256(json.dumps(args, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-                prior = completed_calls.get(tool_call.id)
-                if prior:
-                    if prior[0] != name or prior[1] != arg_hash:
-                        result = {"error": "tool_call_id_conflict"}
-                    else:
-                        result = prior[2]
-                elif name == "web_search" and searches >= MAX_TASK_SEARCHES:
-                    result = {"error": "task_search_limit_reached"}
-                else:
-                    total_tools += 1
-                    searches += int(name == "web_search")
-                    outcome = await run_voice_web_tool(name, args)
-                    result = outcome["result"]
-                    completed_calls[tool_call.id] = (name, arg_hash, result)
-                    actions = list(task_state.get("completed_web_actions", []))
-                    actions.append({
-                        "name": name,
-                        "status": outcome["status"],
-                        "summary": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_TEXT_CHARS],
-                    })
-                    task_state["completed_web_actions"] = actions[-8:]
             await execution.update_snapshot(
                 phase="working",
                 context_version=current_context_version,
+                chat_context_version=chat_context_version,
+                progress=f"Round {round_index} of {MAX_COMPLETION_ROUNDS + late_steering_retries}",
                 tool_count=total_tools,
                 task_state=task_state,
             )
-            await execution.emit({
-                "type": "task_tool_result",
-                "data": {"name": tool_call.function_name, "status": "completed" if not result.get("error") else "failed"},
-            })
-        messages, current_context_version = await _build_task_messages(
-            execution, spec, goal, task_state, clarification_history
-        )
-    if late_steering_limit_reached:
-        status = "partial"
-    elif not final_text.strip():
-        final_text = "Luna остановилась на лимите шагов; частичный результат доступен в истории задачи." if task_state.get("completed_web_actions") else "Задача не вернула текстовый результат."
-        status = "partial" if task_state.get("completed_web_actions") else "failed"
-    else:
-        status = "completed"
-    if not result_persisted:
-        execution.report = ""
-        execution._last_draft_chars = 0
-        await execution.append_result(final_text)
-        await execution.flush_result()
-    await execution.update_snapshot(
-        phase=status,
-        context_version=current_context_version,
-        tool_count=total_tools,
-        task_state=task_state,
-    )
-    return RunOutcome(status=status, usage=usage)
+            await execution.emit({"type": "task_progress", "data": {"phase": "working", "round": round_index}})
+            accumulated_calls = []
+            response_text = ""
+            model_error = None
+            cancelled = False
+            async for item in CompletionService.stream_selected_model(
+                messages,
+                model_id,
+                tools=TASK_TOOL_DEFINITIONS,
+                max_tokens=1_200,
+            ):
+                if execution.cancel_event.is_set():
+                    cancelled = True
+                    break
+                if isinstance(item, str):
+                    ev_type, data = _parse_sse_frame(item)
+                    if ev_type == "content":
+                        response_text += str(data.get("text", ""))
+                    elif ev_type == "error":
+                        logger.error("Luna delegated completion failed for run %s", spec.run_id)
+                        model_error = "Selected model completion failed"
+                        break
+                    continue
+                ev_type, data = item
+                if ev_type == "tool_calls":
+                    from quip.services.tools import accumulate_tool_calls
+
+                    accumulate_tool_calls(accumulated_calls, data)
+                elif ev_type == "usage":
+                    usage = _accumulate_usage(usage, _usage_dict(data))
+                elif ev_type == "error":
+                    logger.error("Luna delegated completion failed for run %s", spec.run_id)
+                    model_error = "Selected model completion failed"
+                    break
+
+            if cancelled or execution.cancel_event.is_set():
+                status = "cancelled"
+                error = None
+                final_text = execution.report or "Luna task was stopped; completed work is preserved in task state."
+            elif await incorporate_steering():
+                # A clarification received while the model was responding makes
+                # its not-yet-executed answer stale, but leaves this run active.
+                continue
+            elif model_error:
+                status = "partial" if task_state.get("completed_web_actions") else "failed"
+                error = model_error
+                final_text = response_text[:MAX_RESULT_CHARS] or "Luna could not complete this task."
+            elif accumulated_calls:
+                error = None
+                for tool_call in accumulated_calls:
+                    if total_tools >= MAX_TASK_TOOLS:
+                        result = {"error": "task_tool_limit_reached"}
+                    else:
+                        try:
+                            args = json.loads(tool_call.function_arguments or "{}")
+                            if not isinstance(args, dict):
+                                args = {}
+                        except json.JSONDecodeError:
+                            args = {}
+                        name = tool_call.function_name
+                        arg_hash = hashlib.sha256(json.dumps(args, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+                        prior = completed_calls.get(tool_call.id)
+                        if prior:
+                            if prior[0] != name or prior[1] != arg_hash:
+                                result = {"error": "tool_call_id_conflict"}
+                            else:
+                                result = prior[2]
+                        elif name == "web_search" and searches >= MAX_TASK_SEARCHES:
+                            result = {"error": "task_search_limit_reached"}
+                        else:
+                            total_tools += 1
+                            searches += int(name == "web_search")
+                            outcome = await run_voice_web_tool(name, args)
+                            result = outcome["result"]
+                            completed_calls[tool_call.id] = (name, arg_hash, result)
+                            actions = list(task_state.get("completed_web_actions", []))
+                            actions.append({
+                                "name": name,
+                                "status": outcome["status"],
+                                "summary": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_TEXT_CHARS],
+                            })
+                            task_state["completed_web_actions"] = actions[-8:]
+                    await execution.update_snapshot(
+                        phase="working",
+                        context_version=current_context_version,
+                        chat_context_version=chat_context_version,
+                        tool_count=total_tools,
+                        task_state=task_state,
+                    )
+                    await execution.emit({
+                        "type": "task_tool_result",
+                        "data": {"name": tool_call.function_name, "status": "completed" if not result.get("error") else "failed"},
+                    })
+                messages, chat_context_version = await _build_task_messages(
+                    execution, spec, goal, task_state, clarification_history
+                )
+                continue
+            else:
+                error = None
+                final_text = response_text[:MAX_RESULT_CHARS]
+                if final_text.strip():
+                    status = "completed"
+                else:
+                    status = "partial" if task_state.get("completed_web_actions") else "failed"
+                    final_text = (
+                        "Luna stopped at the completion-round limit; partial work is preserved."
+                        if task_state.get("completed_web_actions")
+                        else "The selected model returned no task result."
+                    )
+        else:
+            error = None
+            if execution.cancel_event.is_set():
+                status = "cancelled"
+                final_text = execution.report or "Luna task was stopped; completed work is preserved in task state."
+            else:
+                status = "partial" if task_state.get("completed_web_actions") else "failed"
+                final_text = (
+                    "Luna received a final clarification but reached the bounded retry limit."
+                    if completion_budget_exhausted
+                    else (
+                        "Luna stopped at the completion-round limit; partial work is preserved."
+                        if task_state.get("completed_web_actions")
+                        else "The selected model returned no task result."
+                    )
+                )
+
+        await persist_candidate(final_text, status, error)
+        decision, should_retry = await try_finish_candidate(status, error)
+        if decision.accepted:
+            return RunOutcome(status=decision.status, error=error, usage=usage)
+        if decision.status not in ACTIVE_STATUSES:
+            return RunOutcome(status=decision.status, error=error, usage=usage)
+        if should_retry:
+            if late_steering_retries < MAX_LATE_STEERING_RETRIES and not execution.cancel_event.is_set():
+                late_steering_retries += 1
+            else:
+                completion_budget_exhausted = True
+            execution.report = ""
+            execution._last_draft_chars = 0
+            await execution.flush_result()
+            continue

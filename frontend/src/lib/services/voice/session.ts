@@ -60,6 +60,7 @@ type VoiceSessionOptions = {
   ringbackIntervalMs?: number;
   iceGatheringTimeoutMs?: number;
   sessionTimeoutMs?: number;
+  cameraSupported?: boolean;
 };
 
 const INITIAL_STATE: VoiceSessionState = {
@@ -68,6 +69,7 @@ const INITIAL_STATE: VoiceSessionState = {
 };
 
 const ALLOWED_TOOLS = new Set(['web_search', 'read_url']);
+const FUNCTION_CALL_EVENT = 'function_call_arguments.done';
 const VOICE_TOOLS = [
   {
     type: 'function',
@@ -155,6 +157,7 @@ function safeContextText(context: VoiceContextPacket, latestResult = ''): string
 export class VoiceSession {
   readonly chatId: string;
   private readonly options: VoiceSessionOptions;
+  private cameraSupported: boolean;
   private readonly api: VoiceSessionApi;
   private current: VoiceSessionState = { ...INITIAL_STATE };
   private peer: RTCPeerConnection | null = null;
@@ -185,7 +188,7 @@ export class VoiceSession {
   private qwenResponding = false;
   private userSpeaking = false;
   private pendingFunctionCalls = new Set<string>();
-  private pendingWebTools = new Map<string, AbortController>();
+  private pendingWebTools = new Map<string, { controller: AbortController; callId: string; providerCallId: string }>();
   private baseSessionInstructions = '';
   private sessionInstructions = '';
   private deliveredTaskIds = new Set<string>();
@@ -195,6 +198,7 @@ export class VoiceSession {
   constructor(chatId: string, options: VoiceSessionOptions = {}) {
     this.chatId = chatId;
     this.options = options;
+    this.cameraSupported = options.cameraSupported ?? false;
     this.api = options.api ?? voiceApi;
   }
 
@@ -207,10 +211,15 @@ export class VoiceSession {
   }
 
   chooseCamera(enabled: boolean): void {
+    if (enabled && !this.cameraSupported) throw new Error('camera_not_supported_by_model');
     if (!['idle', 'ended', 'error'].includes(this.current.status)) {
       throw new Error('camera_selection_requires_call_restart');
     }
     this.setState({ cameraSelected: enabled, cameraError: null });
+  }
+
+  setCameraSupported(supported: boolean): void {
+    this.cameraSupported = supported;
   }
 
   mute(muted: boolean): void {
@@ -305,18 +314,24 @@ export class VoiceSession {
         this.localVideo = media;
         this.options.onLocalVideoStream?.(media);
         try {
-          this.videoPipeline = await this.createVideoPipeline(media);
+          const videoPipeline = await this.createVideoPipeline(media);
           if (!this.isCurrentStart(generation)) {
-            this.videoPipeline.dispose();
-            this.videoPipeline = null;
+            videoPipeline.dispose();
             this.stopStream(media);
             return;
           }
+          this.videoPipeline = videoPipeline;
           this.setState({ cameraSelected: true, cameraEnabled: true, cameraError: null });
         } catch (error) {
+          if (!this.isCurrentStart(generation)) {
+            this.stopStream(media);
+            return;
+          }
           for (const track of media.getVideoTracks()) track.stop();
-          this.localVideo = null;
-          this.options.onLocalVideoStream?.(null);
+          if (this.localVideo === media) {
+            this.localVideo = null;
+            this.options.onLocalVideoStream?.(null);
+          }
           this.setState({ cameraSelected: false, cameraEnabled: false, cameraError: this.cameraErrorCode(error) });
         }
       } else if (wantsCamera) {
@@ -346,7 +361,7 @@ export class VoiceSession {
       this.peer.ontrack = (event) => this.receiveRemoteTrack(event);
       this.peer.onconnectionstatechange = () => this.onPeerConnectionChange();
       this.peer.ondatachannel = (event) => this.bindDataChannel(event.channel);
-      this.bindDataChannel(this.peer.createDataChannel('oai-events'));
+      this.bindDataChannel(this.peer.createDataChannel('qwen-events'));
 
       const offer = await this.peer.createOffer();
       if (!this.isCurrentStart(generation)) return;
@@ -407,6 +422,7 @@ export class VoiceSession {
     this.ending = true;
     if (this.current.status !== 'ended') this.setState({ status: 'ending' });
     this.speechRevision += 1;
+    this.cancelPendingWebTools();
     this.stopRingback();
     this.clearTaskPolling();
     this.clearTimers();
@@ -489,7 +505,7 @@ export class VoiceSession {
         if (candidate && typeof candidate === 'object' && typeof candidate.type === 'string') parsed = candidate;
       } catch { /* malformed provider event is ignored by the queued parser too */ }
       if (parsed) this.observeUrgentProviderEvent(parsed);
-      if (parsed?.type === 'response.function_call_arguments.done') {
+      if (parsed?.type === FUNCTION_CALL_EVENT) {
         let handler: Promise<void>;
         handler = this.handleFunctionCall(parsed)
           .catch((error) => this.handleAsyncError(error))
@@ -650,7 +666,7 @@ export class VoiceSession {
       return;
     }
 
-    if (event.type === 'response.function_call_arguments.done') {
+    if (event.type === FUNCTION_CALL_EVENT) {
       await this.handleFunctionCall(event);
       return;
     }
@@ -681,9 +697,9 @@ export class VoiceSession {
   }
 
   private cancelPendingWebTools(): void {
-    for (const [callId, controller] of this.pendingWebTools) {
+    for (const { controller, callId, providerCallId } of this.pendingWebTools.values()) {
       controller.abort();
-      if (this.callId && this.api.cancelTool) void this.api.cancelTool(this.callId, callId).catch(() => {});
+      if (this.api.cancelTool) void this.api.cancelTool(callId, providerCallId).catch(() => {});
     }
   }
 
@@ -692,76 +708,86 @@ export class VoiceSession {
     const name = typeof event.name === 'string' ? event.name : '';
     const args = typeof event.arguments === 'string' ? event.arguments : '';
     if (!callId || !name) return;
-    this.pendingFunctionCalls.add(callId);
+    const generation = this.lifecycleGeneration;
+    const originCallId = this.callId;
+    if (!this.isCurrentCall(generation, originCallId)) return;
+    const invocationKey = `${generation}:${callId}`;
+    const isOriginCurrent = () => this.isCurrentCall(generation, originCallId);
+    this.pendingFunctionCalls.add(invocationKey);
     const speechRevision = this.speechRevision;
-    let output: string;
-    if (name === 'delegate_to_text_model') {
-      if (!this.callId) {
+    try {
+      let output: string;
+      if (name === 'delegate_to_text_model') {
+        if (!originCallId) {
+          output = JSON.stringify({ error: 'voice_call_unavailable' });
+        } else {
+          try {
+            const parsed = JSON.parse(args);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+                || Object.keys(parsed).length !== 1 || typeof parsed.goal !== 'string'
+                || !parsed.goal.trim() || parsed.goal.length > 2_000) {
+              throw new Error('invalid_task_goal');
+            }
+            const started = await this.api.startTask(originCallId, callId, parsed.goal.trim());
+            if (!isOriginCurrent()) return;
+            this.activeTaskId = started.task_id;
+            this.taskPollCallId = originCallId;
+            this.setTask({
+              taskId: started.task_id,
+              status: started.status,
+              revision: 0,
+              contextVersion: 1,
+              content: '',
+              progress: started.steered ? 'steered' : 'queued',
+              error: null,
+            });
+            this.scheduleTaskPoll(originCallId, started.task_id, 0);
+            output = JSON.stringify({
+              task_id: started.task_id,
+              status: started.status,
+              model: started.model,
+              steered: started.steered,
+              message: started.steered
+                ? 'Luna is continuing the same task with this clarification. Keep talking to the user.'
+                : 'Luna is working in the background. Keep talking to the user; the result will be returned when ready.',
+            });
+          } catch {
+            if (!isOriginCurrent()) return;
+            output = JSON.stringify({ error: 'quip_task_failed' });
+          }
+        }
+      } else if (!ALLOWED_TOOLS.has(name)) {
+        output = JSON.stringify({ error: 'unsupported_tool' });
+      } else if (!originCallId) {
         output = JSON.stringify({ error: 'voice_call_unavailable' });
       } else {
+        const controller = new AbortController();
+        this.pendingWebTools.set(invocationKey, { controller, callId: originCallId, providerCallId: callId });
         try {
-          const parsed = JSON.parse(args);
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-              || Object.keys(parsed).length !== 1 || typeof parsed.goal !== 'string'
-              || !parsed.goal.trim() || parsed.goal.length > 2_000) {
-            throw new Error('invalid_task_goal');
-          }
-          const started = await this.api.startTask(this.callId, callId, parsed.goal.trim());
-          this.activeTaskId = started.task_id;
-          this.taskPollCallId = this.callId;
-          this.setTask({
-            taskId: started.task_id,
-            status: started.status,
-            revision: 0,
-            contextVersion: 1,
-            content: '',
-            progress: started.steered ? 'steered' : 'queued',
-            error: null,
-          });
-          this.scheduleTaskPoll(this.callId, started.task_id, 0);
-          output = JSON.stringify({
-            task_id: started.task_id,
-            status: started.status,
-            model: started.model,
-            steered: started.steered,
-            message: started.steered
-              ? 'Luna is continuing the same task with this clarification. Keep talking to the user.'
-              : 'Luna is working in the background. Keep talking to the user; the result will be returned when ready.',
-          });
+          const result = await this.api.tool(originCallId, callId, name, args, controller.signal);
+          if (!isOriginCurrent()) return;
+          output = JSON.stringify(result.result);
         } catch {
-          output = JSON.stringify({ error: 'quip_task_failed' });
+          if (!isOriginCurrent()) return;
+          output = JSON.stringify({ error: 'quip_tool_failed' });
+        } finally {
+          const pending = this.pendingWebTools.get(invocationKey);
+          if (pending?.controller === controller) this.pendingWebTools.delete(invocationKey);
         }
       }
-    } else if (!ALLOWED_TOOLS.has(name)) {
-      output = JSON.stringify({ error: 'unsupported_tool' });
-    } else if (!this.callId) {
-      output = JSON.stringify({ error: 'voice_call_unavailable' });
-    } else {
-      const controller = new AbortController();
-      this.pendingWebTools.set(callId, controller);
-      try {
-        const result = await this.api.tool(this.callId, callId, name, args, controller.signal);
-        output = JSON.stringify(result.result);
-      } catch {
-        output = JSON.stringify({ error: 'quip_tool_failed' });
-      } finally {
-        this.pendingWebTools.delete(callId);
+      if (!isOriginCurrent() || speechRevision !== this.speechRevision) return;
+      this.sendData({
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: callId, output },
+      });
+      if (speechRevision === this.speechRevision && this.current.status === 'active') {
+        this.qwenResponding = true;
+        this.sendData({ type: 'response.create' });
       }
+      await this.deliverPendingTaskResult();
+    } finally {
+      this.pendingFunctionCalls.delete(invocationKey);
     }
-    if (speechRevision !== this.speechRevision) {
-      this.pendingFunctionCalls.delete(callId);
-      return;
-    }
-    this.sendData({
-      type: 'conversation.item.create',
-      item: { type: 'function_call_output', call_id: callId, output },
-    });
-    if (speechRevision === this.speechRevision && this.current.status === 'active') {
-      this.qwenResponding = true;
-      this.sendData({ type: 'response.create' });
-    }
-    this.pendingFunctionCalls.delete(callId);
-    await this.deliverPendingTaskResult();
   }
 
   private setTask(task: VoiceTaskView | null): void {
@@ -882,14 +908,15 @@ export class VoiceSession {
     this.baseSessionInstructions = safeContextText(this.context);
     this.sessionInstructions = this.baseSessionInstructions;
     const session: Record<string, unknown> = {
-      modalities: ['text', 'audio'],
+      modalities: ['audio', 'text'],
       instructions: this.sessionInstructions,
-      input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-      turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 },
+      voice: 'longanqian_v3.1',
+      input_audio_transcription: { language: 'ru' },
+      output_audio: { language: 'ru' },
+      turn_detection: { type: 'server_vad' },
       tools: VOICE_TOOLS,
-      tool_choice: 'auto',
     };
-    if (this.current.cameraEnabled) {
+    if (this.current.cameraEnabled && this.cameraSupported) {
       session.video = { input: { representation_compact: 'normal' } };
     }
     this.sendData({
@@ -938,6 +965,7 @@ export class VoiceSession {
     this.ending = true;
     this.lifecycleGeneration += 1;
     this.speechRevision += 1;
+    this.cancelPendingWebTools();
     this.stopRingback();
     this.clearTimers();
     this.setState({ status: 'error', error: code });
@@ -986,7 +1014,13 @@ export class VoiceSession {
   }
 
   private isCurrentStart(generation: number): boolean {
-    return generation === this.lifecycleGeneration && !this.ending && this.current.status === 'connecting';
+    return generation === this.lifecycleGeneration && !this.ending
+      && (this.current.status === 'connecting' || this.current.status === 'active');
+  }
+
+  private isCurrentCall(generation: number, callId: string | null): boolean {
+    return Boolean(callId) && generation === this.lifecycleGeneration && !this.ending
+      && callId === this.callId && (this.current.status === 'connecting' || this.current.status === 'active');
   }
 
   private stopStream(stream: MediaStream): void {

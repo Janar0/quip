@@ -65,6 +65,7 @@ class VoiceToolCall(Base):
     arguments_hash = Column(String(64), nullable=False)
     status = Column(String(20), nullable=False, default="pending", index=True)
     cancel_requested = Column(Boolean, nullable=False, default=False)
+    execution_started = Column(Boolean, nullable=False, default=False)
     result = Column(JSON)
     result_message_id = Column(Uuid, ForeignKey("messages.id", ondelete="SET NULL"))
     error_code = Column(String(80))

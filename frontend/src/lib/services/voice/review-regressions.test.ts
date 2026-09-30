@@ -110,6 +110,7 @@ function setup(options: { cameraDenied?: boolean; defaultVideoPipeline?: boolean
   const localStreams: Array<MediaStream | null> = [];
   const session = new VoiceSession('chat-1', {
     api,
+    cameraSupported: true,
     getUserMedia: getUserMedia as any,
     createPeerConnection: () => pc as any,
     createAudioContext: () => tones.context as any,
@@ -183,7 +184,7 @@ it('user speech interruption is processed while a web tool is still pending', as
   await s.session.start(); s.pc.channel.emit({type:'session.created',session:{}});s.pc.connect();await s.session.whenProviderEventsIdle();
   s.pc.channel.emit({type:'response.created'});
   await s.session.whenProviderEventsIdle();
-  s.pc.channel.emit({type:'response.function_call_arguments.done',call_id:'web-1',name:'read_url',arguments:'{"url":"https://example.org"}'});
+  s.pc.channel.emit({type:'function_call_arguments.done',call_id:'web-1',name:'read_url',arguments:'{"url":"https://example.org"}'});
   await vi.waitFor(()=>expect(s.api.tool).toHaveBeenCalled());
   s.pc.channel.emit({type:'input_audio_buffer.speech_started'});
   await Promise.resolve();await Promise.resolve();
@@ -212,7 +213,7 @@ it('late task polls cannot roll back a successful clarification revision', async
   let finishPoll!: (value:VoiceTaskStatus)=>void;
   vi.mocked(s.api.task).mockReturnValueOnce(new Promise(resolve=>{finishPoll=resolve;}));
   await s.session.start();s.pc.channel.emit({type:'session.created',session:{}});s.pc.connect();await s.session.whenProviderEventsIdle();
-  s.pc.channel.emit({type:'response.function_call_arguments.done',call_id:'delegate-1',name:'delegate_to_text_model',arguments:'{"goal":"Research"}'});
+  s.pc.channel.emit({type:'function_call_arguments.done',call_id:'delegate-1',name:'delegate_to_text_model',arguments:'{"goal":"Research"}'});
   await s.session.whenProviderEventsIdle();await vi.waitFor(()=>expect(s.api.task).toHaveBeenCalled());
   await s.session.steerTask('Use newer sources');
   const newRevision=s.session.state.task!.revision;
@@ -233,7 +234,7 @@ it('Qwen instructions stay within the shared cap after receiving the latest task
   });
   vi.mocked(s.api.task).mockResolvedValueOnce({task_id:'task-1',chat_id:'chat-1',status:'completed',revision:2,context_version:1,task_kind:'voice_delegation',cancel_requested:false,snapshot:{},error:null,message:{id:'result-1',content:'x'.repeat(6000)} as any});
   await s.session.start();s.pc.channel.emit({type:'session.created',session:{}});s.pc.connect();await s.session.whenProviderEventsIdle();
-  s.pc.channel.emit({type:'response.function_call_arguments.done',call_id:'delegate-cap',name:'delegate_to_text_model',arguments:'{"goal":"Research"}'});
+  s.pc.channel.emit({type:'function_call_arguments.done',call_id:'delegate-cap',name:'delegate_to_text_model',arguments:'{"goal":"Research"}'});
   await s.session.whenProviderEventsIdle();await vi.waitFor(()=>expect(s.session.state.task?.status).toBe('completed'));
   s.pc.channel.emit({type:'response.done',response:{id:'response-1',usage:{input_tokens:1,output_tokens:1,total_tokens:2}}});
   await s.session.whenProviderEventsIdle();

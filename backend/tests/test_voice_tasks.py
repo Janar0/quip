@@ -278,6 +278,14 @@ async def test_luna_worker_uses_only_bounded_web_tools_and_saves_same_run_result
         async def flush_result(self):
             return None
 
+        async def try_finish(self, *, expected_context_version, status, error):
+            return SimpleNamespace(
+                accepted=True,
+                status=status,
+                context_version=expected_context_version,
+                steering=[],
+            )
+
     execution = Execution()
     seen_rounds = []
     tool_results = []

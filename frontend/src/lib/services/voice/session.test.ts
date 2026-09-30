@@ -111,6 +111,7 @@ function setup(options: { cameraDenied?: boolean; defaultVideoPipeline?: boolean
   const localStreams: Array<MediaStream | null> = [];
   const session = new VoiceSession('chat-1', {
     api,
+    cameraSupported: true,
     getUserMedia: getUserMedia as any,
     createPeerConnection: () => pc as any,
     createAudioContext: () => tones.context as any,
@@ -151,8 +152,12 @@ describe('VoiceSession WebRTC controller', () => {
     expect(s.session.state.status).toBe('active');
     const update = s.pc.channel.sent.find((event: any) => event.type === 'session.update') as any;
     expect(update.session.tools.map((tool: any) => tool.function.name)).toEqual(['web_search', 'read_url', 'delegate_to_text_model']);
-    expect(update.session.input_audio_transcription).toEqual({ model: 'qwen3-asr-flash-realtime' });
-    expect(update.session.turn_detection.type).toBe('server_vad');
+    expect(update.session.modalities).toEqual(['audio', 'text']);
+    expect(update.session.voice).toBe('longanqian_v3.1');
+    expect(update.session.input_audio_transcription).toEqual({ language: 'ru' });
+    expect(update.session.output_audio).toEqual({ language: 'ru' });
+    expect(update.session.turn_detection).toEqual({ type: 'server_vad' });
+    expect(update.session).not.toHaveProperty('video');
     expect(update.session.instructions).toContain('Remember the project context');
     expect(s.tones.oscillator.stop).toHaveBeenCalled();
   });
@@ -255,7 +260,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'response.function_call_arguments.done',
+      type: 'function_call_arguments.done',
       call_id: 'function-1', name: 'web_search', arguments: '{"query":"музей сегодня"}',
     });
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
@@ -280,7 +285,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-pending' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'response.function_call_arguments.done',
+      type: 'function_call_arguments.done',
       call_id: 'function-pending', name: 'web_search', arguments: '{"query":"test"}',
     });
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
@@ -309,7 +314,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'response.function_call_arguments.done', call_id: 'delegate-1', name: 'delegate_to_text_model',
+      type: 'function_call_arguments.done', call_id: 'delegate-1', name: 'delegate_to_text_model',
       arguments: '{"goal":"Найди свежие источники"}',
     });
     await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalledWith('call-1', 'delegate-1', 'Найди свежие источники'));
@@ -352,7 +357,7 @@ describe('VoiceSession WebRTC controller', () => {
 
     const delegate = async (callId: string, goal: string) => {
       s.pc.channel.emit({
-        type: 'response.function_call_arguments.done', call_id: callId, name: 'delegate_to_text_model',
+        type: 'function_call_arguments.done', call_id: callId, name: 'delegate_to_text_model',
         arguments: JSON.stringify({ goal }),
       });
       await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalledTimes(callId === 'delegate-1' ? 1 : 2));
@@ -379,7 +384,7 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.connect();
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
-      type: 'response.function_call_arguments.done', call_id: 'delegate-after-call',
+      type: 'function_call_arguments.done', call_id: 'delegate-after-call',
       name: 'delegate_to_text_model', arguments: '{"goal":"Сверь источники"}',
     });
     await vi.waitFor(() => expect(s.api.startTask).toHaveBeenCalled());

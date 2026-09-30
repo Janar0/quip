@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.core.config import get_bool_setting
@@ -207,6 +207,7 @@ async def execute_voice_tool(
                 arguments_hash=arguments_hash,
                 status="pending",
                 cancel_requested=False,
+                execution_started=False,
                 admission_slot=admission_slot,
                 search_slot=search_slot,
                 pending_slot=1,
@@ -247,23 +248,54 @@ async def execute_voice_tool(
             raise HTTPException(status_code=409, detail="Another voice tool is already running")
         raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
 
-    await db.commit()
-    tool_call = await db.get(VoiceToolCall, reserved_id)
-    if tool_call is None:
-        raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
-
     task_key = (voice_call_id, provider_call_id)
     active_task = asyncio.current_task()
     if active_task is not None:
         _active_voice_tool_tasks[task_key] = active_task
     try:
+        tool_call = await db.get(VoiceToolCall, reserved_id)
+        if tool_call is None:
+            raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
+        # End the reservation read transaction before the conditional claim so
+        # SQLite cannot reuse a stale read snapshot after a concurrent cancel.
+        await db.rollback()
+
+        # Cancellation and the execution claim serialize in the database.
+        # If cancellation commits first, this conditional update changes no
+        # rows and the external search/read is never started.
+        claim = await db.execute(
+            update(VoiceToolCall)
+            .where(
+                VoiceToolCall.id == reserved_id,
+                VoiceToolCall.status == "pending",
+                VoiceToolCall.cancel_requested.is_(False),
+                VoiceToolCall.execution_started.is_(False),
+            )
+            .values(execution_started=True)
+        )
+        if claim.rowcount != 1:
+            await db.rollback()
+            cancelled = await db.get(VoiceToolCall, reserved_id)
+            if cancelled is not None and cancelled.cancel_requested:
+                cancelled.status = "cancelled"
+                cancelled.error_code = "tool_cancelled"
+                cancelled.pending_slot = None
+                cancelled.finished_at = datetime.now(UTC)
+                await db.commit()
+                return {
+                    "provider_call_id": provider_call_id,
+                    "name": name,
+                    "status": "cancelled",
+                    "result": {"error": "tool_cancelled"},
+                    "replayed": False,
+                }
+            raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
+        await db.commit()
+
         execution = await run_voice_web_tool(name, args)
     except asyncio.CancelledError:
         await db.rollback()
-        cancelled = await db.scalar(select(VoiceToolCall).where(
-            VoiceToolCall.voice_call_id == voice_call_id,
-            VoiceToolCall.provider_call_id == provider_call_id,
-        ))
+        cancelled = await db.get(VoiceToolCall, reserved_id)
         if cancelled is not None:
             cancelled.status = "cancelled"
             cancelled.error_code = "tool_cancelled"

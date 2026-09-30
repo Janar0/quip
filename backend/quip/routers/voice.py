@@ -29,7 +29,13 @@ from quip.services.permissions import get_current_user
 from quip.services.voice.common import get_owned_call
 from quip.services.voice.context import VoiceContextService
 from quip.services.voice.events import persist_provider_event
-from quip.services.voice.session import VoiceProviderError, exchange_sdp, get_qwen_realtime_config
+from quip.services.voice.session import (
+    VoiceProviderError,
+    exchange_sdp,
+    get_qwen_realtime_config,
+    get_qwen_realtime_public_config,
+    qwen_realtime_camera_supported,
+)
 from quip.services.voice.tasks import (
     cancel_delegated_task,
     read_delegated_task,
@@ -39,6 +45,12 @@ from quip.services.voice.tasks import (
 from quip.services.voice.tools import cancel_voice_tool, execute_voice_tool
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+
+@router.get("/config")
+async def voice_config(user: User = Depends(get_current_user)):
+    """Return authenticated, non-secret model capabilities for the call UI."""
+    return get_qwen_realtime_public_config()
 
 
 @router.get("/calls/{call_id}/context", response_model=VoiceContextResponse)
@@ -182,6 +194,11 @@ async def start_voice_call(
     config = get_qwen_realtime_config()
     if not config:
         raise HTTPException(status_code=503, detail="Voice calling is not configured")
+    if body.camera_enabled and not qwen_realtime_camera_supported(config.model):
+        raise HTTPException(
+            status_code=422,
+            detail="Camera input is not supported by the configured realtime model",
+        )
 
     chat_result = await db.execute(select(Chat).where(Chat.id == body.chat_id, Chat.user_id == user.id))
     chat = chat_result.scalar_one_or_none()

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from copy import deepcopy
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -212,6 +213,14 @@ async def test_luna_each_completion_preserves_context_cap(monkeypatch):
         async def flush_result(self):
             pass
 
+        async def try_finish(self, *, expected_context_version, status, error):
+            return SimpleNamespace(
+                accepted=True,
+                status=status,
+                context_version=expected_context_version,
+                steering=[],
+            )
+
     monkeypatch.setattr(tasks, '_build_task_messages', build_context)
     monkeypatch.setattr(tasks, 'CompletionService', FakeCompletion)
     monkeypatch.setattr(tasks, 'run_voice_web_tool', fake_tool)
@@ -284,6 +293,81 @@ async def test_accepted_finalization_steering_is_not_ignored(client, auth_header
         assert any("NEW goal" in message[0]["content"] for message in completion_calls[1:])
     finally:
         release.set()
+        await manager.close()
+        del app.state.chat_run_manager
+
+
+@pytest.mark.asyncio
+async def test_steering_in_atomic_finish_window_rebuilds_luna_answer(
+    client, auth_headers, db_session, app_session_factory, monkeypatch
+):
+    from quip.main import app
+    from quip.services.chat_runs import ChatRunManager, RunExecutionContext, read_run
+
+    chat = await setup_chat(client, auth_headers, db_session)
+    call = VoiceCall(user_id=chat.user_id, chat_id=chat.id, model='fixture', status='active')
+    db_session.add(call)
+    await db_session.commit()
+    monkeypatch.setattr(tasks, 'get_cached_models', lambda: [{'id': 'fixture/luna', 'name': 'Luna', 'provider': 'openrouter', 'supports_tools': True}])
+    monkeypatch.setitem(config._settings, 'openrouter_api_key', 'fake-key')
+
+    async def build_context(_execution, _spec, _goal, _state, clarifications):
+        return [{'role': 'user', 'content': 'Old goal\n' + '\n'.join(clarifications)}], 7
+
+    completion_calls = []
+
+    class FakeCompletion:
+        @staticmethod
+        async def stream_selected_model(messages, *_args, **_kwargs):
+            completion_calls.append(messages)
+            response = 'Old unsteered answer' if len(completion_calls) == 1 else 'Updated answer after final-window clarification'
+            yield f'event: content\ndata: {json.dumps({"text": response})}\n\n'
+
+    monkeypatch.setattr(tasks, '_build_task_messages', build_context)
+    monkeypatch.setattr(tasks, 'CompletionService', FakeCompletion)
+    finish_window = asyncio.Event()
+    release_finish = asyncio.Event()
+    finish_versions = []
+    original_try_finish = RunExecutionContext.try_finish
+
+    async def pause_before_atomic_finish(self, **kwargs):
+        finish_versions.append(kwargs['expected_context_version'])
+        if len(finish_versions) == 1:
+            finish_window.set()
+            await asyncio.wait_for(release_finish.wait(), 3)
+        return await original_try_finish(self, **kwargs)
+
+    monkeypatch.setattr(RunExecutionContext, 'try_finish', pause_before_atomic_finish)
+    manager = ChatRunManager(app_session_factory, runner_mode='single_process')
+    app.state.chat_run_manager = manager
+    try:
+        started = await client.post(
+            f'/api/voice/calls/{call.id}/tasks', headers=auth_headers,
+            json={'provider_call_id': 'delegate-final-window', 'goal': 'Old goal'},
+        )
+        task_id = UUID(started.json()['task_id'])
+        await asyncio.wait_for(finish_window.wait(), 3)
+        current = await read_run(app_session_factory, run_id=task_id, chat_id=chat.id, user_id=chat.user_id)
+        steered = await client.post(
+            f'/api/voice/calls/{call.id}/tasks/{task_id}/steer', headers=auth_headers,
+            json={
+                'expected_revision': current['revision'],
+                'idempotency_key': 'atomic-final-window',
+                'instruction': 'Use the NEW goal instead',
+            },
+        )
+        assert steered.status_code == 200, steered.text
+        release_finish.set()
+        await asyncio.gather(*list(manager._tasks.values()))
+        result = await read_run(app_session_factory, run_id=task_id, chat_id=chat.id, user_id=chat.user_id)
+
+        assert finish_versions[:2] == [1, 2]
+        assert len(completion_calls) == 2
+        assert 'NEW goal' in completion_calls[1][0]['content']
+        assert result['status'] == 'completed'
+        assert result['message']['content'] == 'Updated answer after final-window clarification'
+    finally:
+        release_finish.set()
         await manager.close()
         del app.state.chat_run_manager
 
