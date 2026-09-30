@@ -2,7 +2,7 @@
 
 import ipaddress
 import json
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 
 def validated_search_sources(result_json: str, *, limit: int = 30) -> list[dict[str, str]]:
@@ -22,8 +22,9 @@ def validated_search_sources(result_json: str, *, limit: int = 30) -> list[dict[
         raw_url = item.get("url")
         if not isinstance(raw_url, str):
             continue
+        url = raw_url.strip()
         try:
-            parts = urlsplit(raw_url.strip())
+            parts = urlsplit(url)
             host = (parts.hostname or "").lower().rstrip(".")
             if (
                 parts.scheme.lower() not in {"http", "https"}
@@ -42,13 +43,12 @@ def validated_search_sources(result_json: str, *, limit: int = 30) -> list[dict[
                 pass
         except ValueError:
             continue
-        url = urlunsplit((parts.scheme.lower(), parts.netloc, parts.path, parts.query, ""))
         if url in seen:
             continue
         seen.add(url)
         sources.append({
             "title": str(item.get("title") or host)[:240],
-            "url": url[:2000],
+            "url": url,
             "snippet": str(item.get("snippet") or item.get("content") or "")[:600],
         })
         if len(sources) >= max(1, min(limit, 30)):

@@ -85,6 +85,8 @@ export interface ResearchRunInfo {
   error?: string | null;
   /** Last server-persisted message, used as a baseline when polling. */
   message?: { id: string; content: string; artifacts?: Artifact[] } | null;
+  /** Current text received from the live Research SSE stream, kept client-side. */
+  streamedContent?: string;
 }
 
 export type ContentBlock =

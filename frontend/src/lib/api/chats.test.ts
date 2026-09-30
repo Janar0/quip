@@ -169,7 +169,7 @@ it('exposes research only when backend reports the guarded feature flag', async 
 
 it('sends explicit research mode and publishes the new chat ID on its first SSE event', async () => {
   const stream = new Response([
-    'event: chat\ndata: {"chat_id":"new-chat","user_message_id":"user","message_id":"answer","run_id":"run-1"}\n\n',
+    'event: chat\ndata: {"chat_id":"new-chat","user_message_id":"user","message_id":"answer","run_id":"run-1","task_kind":"research"}\n\n',
     'event: content\ndata: {"text":"Started"}\n\n',
   ].join(''));
   request.mockImplementation(async (path) => path === '/api/chat/completions' ? stream : Response.json([]));
@@ -178,7 +178,7 @@ it('sends explicit research mode and publishes the new chat ID on its first SSE 
   const completion = request.mock.calls.find(([path]) => path === '/api/chat/completions');
   expect(JSON.parse(completion?.[1]?.body as string).mode_hint).toBe('research');
   expect(ready).toHaveBeenCalledWith({
-    chatId: 'new-chat', userMessageId: 'user', messageId: 'answer', runId: 'run-1',
+    chatId: 'new-chat', userMessageId: 'user', messageId: 'answer', runId: 'run-1', taskKind: 'research',
   });
   stopResearchPolling('new-chat');
 });
@@ -237,7 +237,7 @@ it('defers Stop until the research chat event supplies a durable run ID', async 
     expect(request.mock.calls.some(([path]) => path.endsWith('/cancel'))).toBe(false);
 
     streamController.enqueue(new TextEncoder().encode(
-      'event: chat\ndata: {"chat_id":"chat-1","user_message_id":"user-1","message_id":"answer-1","run_id":"run-early-stop"}\n\n',
+      'event: chat\ndata: {"chat_id":"chat-1","user_message_id":"user-1","message_id":"answer-1","run_id":"run-early-stop","task_kind":"research"}\n\n',
     ));
     streamController.close();
     await requestTask;

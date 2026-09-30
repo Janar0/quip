@@ -32,13 +32,19 @@ function applyResearchRun(runId: string, run: ResearchRunInfo): void {
 function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streaming: boolean): MessageInfo {
   const saved = run.message;
   const previousSaved = message.research?.message;
+  const localTextCameFromStream = message.research?.streamedContent === message.content;
+  const terminalStreamText = !isActiveResearch(run.status) && localTextCameFromStream;
   const canSyncReport = !streaming
     && message.role === 'assistant'
     && saved?.id === message.id
-    && (!previousSaved || message.content === previousSaved.content);
+    && (!previousSaved || message.content === previousSaved.content || terminalStreamText);
+  const projectedResearch = { ...run };
+  if (!canSyncReport && message.research?.streamedContent !== undefined) {
+    projectedResearch.streamedContent = message.research.streamedContent;
+  }
   return canSyncReport
-    ? { ...message, content: saved.content, artifacts: saved.artifacts ?? message.artifacts, research: run }
-    : { ...message, research: run };
+    ? { ...message, content: saved.content, artifacts: saved.artifacts ?? message.artifacts, research: projectedResearch }
+    : { ...message, research: projectedResearch };
 }
 
 function syncResearchPolling(chatId: string): void {
@@ -274,20 +280,30 @@ export async function stopResearchRun(chatId: string, runId: string): Promise<vo
 
 /** Stop active research durably; ordinary streams keep their abort behavior. */
 export async function stopGeneration(): Promise<void> {
+  if (pendingResearchRequest) {
+    // Keep the SSE handshake alive. The first `chat` event identifies the
+    // durable run, after which this pending Stop is sent through the API.
+    pendingResearchRequest.stopRequested = true;
+    if (
+      pendingResearchRequest.chatId
+      && pendingResearchRequest.runId
+      && !pendingResearchRequest.cancelSent
+    ) {
+      pendingResearchRequest.cancelSent = true;
+      await stopResearchRun(pendingResearchRequest.chatId, pendingResearchRequest.runId);
+    }
+    return;
+  }
+  if (get(isStreaming)) {
+    get(abortController)?.abort();
+    return;
+  }
   const activeResearch = [...get(messages)].reverse().find((message) =>
     message.research && isActiveResearch(message.research.status),
   );
   if (activeResearch?.research) {
     await stopResearchRun(activeResearch.chat_id, activeResearch.research.runId);
-    return;
   }
-  if (pendingResearchRequest) {
-    // Keep the SSE handshake alive. The first `chat` event identifies the
-    // durable run, after which this pending Stop is sent through the API.
-    pendingResearchRequest.stopRequested = true;
-    return;
-  }
-  get(abortController)?.abort();
 }
 
 /** Failed/aborted requests still need unique keys before the next send. */
@@ -311,7 +327,7 @@ export async function streamChat(
   branchFromMessageId?: string,
   workspaceId?: string,
   modeHint?: 'search' | 'research',
-  onChatReady?: (ids: { chatId?: string; userMessageId?: string; messageId?: string; runId?: string }) => void,
+  onChatReady?: (ids: { chatId?: string; userMessageId?: string; messageId?: string; runId?: string; taskKind?: string }) => void,
 ): Promise<string | undefined> {
   if (get(isStreaming)) return;
   const model = get(selectedModel);
@@ -390,7 +406,7 @@ export async function streamChat(
     const ids = await processSSEStream(res, async (readyIds) => {
       if (readyIds.chatId) syncResearchPolling(readyIds.chatId);
       onChatReady?.(readyIds);
-      if (researchRequest && readyIds.chatId && readyIds.runId) {
+      if (researchRequest && readyIds.taskKind === 'research' && readyIds.chatId && readyIds.runId) {
         researchRequest.chatId = readyIds.chatId;
         researchRequest.runId = readyIds.runId;
         if (researchRequest.stopRequested && !researchRequest.cancelSent) {

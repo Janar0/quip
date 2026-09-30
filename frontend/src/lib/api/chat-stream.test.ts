@@ -37,7 +37,7 @@ it('makes malformed events visible instead of silently discarding them', async (
 it('keeps research progress, sources, terminal status, and early chat identity', async () => {
   const onChatReady = vi.fn();
   await processSSEStream(events([
-    ['chat', { chat_id: 'research-chat', user_message_id: 'user', message_id: 'answer', run_id: 'run-1' }],
+    ['chat', { chat_id: 'research-chat', user_message_id: 'user', message_id: 'answer', run_id: 'run-1', task_kind: 'research' }],
     ['status', { phase: 'searching', detail: 'Mock retrieval', sub_queries: ['topic'] }],
     ['sources', { sources: [{ title: 'Example', url: 'https://example.org/source' }] }],
     ['content', { text: 'Report text with [1] citation.' }],
@@ -45,12 +45,13 @@ it('keeps research progress, sources, terminal status, and early chat identity',
   ]), onChatReady);
 
   expect(onChatReady).toHaveBeenCalledWith({
-    chatId: 'research-chat', userMessageId: 'user', messageId: 'answer', runId: 'run-1',
+    chatId: 'research-chat', userMessageId: 'user', messageId: 'answer', runId: 'run-1', taskKind: 'research',
   });
   expect(get(messages).find((message) => message.id === 'answer')).toMatchObject({
     content: 'Report text with [1] citation.',
     research: {
       runId: 'run-1', status: 'partial', error: 'One agent failed',
+      streamedContent: 'Report text with [1] citation.',
       snapshot: {
         progress: [{ phase: 'searching', detail: 'Mock retrieval', sub_queries: ['topic'] }],
         sources: [{ title: 'Example', url: 'https://example.org/source' }],
@@ -61,7 +62,7 @@ it('keeps research progress, sources, terminal status, and early chat identity',
 
 it('replaces optimistic research progress with the authoritative persisted snapshot', async () => {
   await processSSEStream(events([
-    ['chat', { chat_id: 'research-chat', message_id: 'answer', run_id: 'run-1' }],
+    ['chat', { chat_id: 'research-chat', message_id: 'answer', run_id: 'run-1', task_kind: 'research' }],
     ['status', { phase: 'searching', detail: 'Live status' }],
     ['research_snapshot', {
       snapshot: {
@@ -77,4 +78,13 @@ it('replaces optimistic research progress with the authoritative persisted snaps
     sources: [{ title: 'Kept URL', url: 'https://example.org/full-path' }],
     truncated: true,
   });
+});
+
+it('does not treat ordinary run IDs as durable Research ownership', async () => {
+  await processSSEStream(events([
+    ['chat', { chat_id: 'chat', message_id: 'answer', run_id: 'ordinary-run', task_kind: 'chat' }],
+    ['content', { text: 'Ordinary answer' }],
+  ]));
+  expect(get(messages)[0]).toMatchObject({ id: 'answer', content: 'Ordinary answer' });
+  expect(get(messages)[0].research).toBeUndefined();
 });

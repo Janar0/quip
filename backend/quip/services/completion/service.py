@@ -624,6 +624,7 @@ class CompletionService:
                         "user_message_id": user_msg_id,
                         "message_id": assistant_msg_id,
                         "run_id": str(run_id),
+                        "task_kind": "research",
                         "user_parent_id": user_parent_id_str,
                     })
                     async for event in subscription:
@@ -654,6 +655,7 @@ class CompletionService:
                 "user_message_id": user_msg_id,
                 "message_id": assistant_msg_id,
                 "run_id": str(run_id),
+                "task_kind": "chat",
                 "user_parent_id": user_parent_id_str,
             })
 
@@ -922,7 +924,12 @@ class CompletionService:
         async def generate():
             yield sse_event(
                 "chat",
-                {"chat_id": chat_id_str, "message_id": new_msg_id, "run_id": str(run_id)},
+                {
+                    "chat_id": chat_id_str,
+                    "message_id": new_msg_id,
+                    "run_id": str(run_id),
+                    "task_kind": "chat",
+                },
             )
 
             orchestrator = StreamOrchestrator(

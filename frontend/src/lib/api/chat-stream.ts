@@ -4,7 +4,13 @@ import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { readSSE } from './sse';
 
 /** Parse SSE stream, update the streaming message, return real message IDs */
-type ChatReadyIds = { chatId?: string; userMessageId?: string; messageId?: string; runId?: string };
+type ChatReadyIds = {
+  chatId?: string;
+  userMessageId?: string;
+  messageId?: string;
+  runId?: string;
+  taskKind?: string;
+};
 
 export async function processSSEStream(
   response: Response,
@@ -37,7 +43,7 @@ export async function processSSEStream(
                 id: messageId!,
                 chat_id: chatId!,
                 parent_id: userMessageId ?? m.parent_id,
-                ...(data.run_id ? { research: {
+                ...(data.task_kind === 'research' && data.run_id ? { research: {
                   runId: data.run_id,
                   status: 'running' as const,
                   revision: 0,
@@ -53,7 +59,13 @@ export async function processSSEStream(
             return m;
           })
         );
-        await onChatReady?.({ chatId, userMessageId, messageId, runId: data.run_id });
+        await onChatReady?.({
+          chatId,
+          userMessageId,
+          messageId,
+          runId: data.run_id,
+          ...(data.task_kind ? { taskKind: data.task_kind } : {}),
+        });
       } else if (currentEvent === 'reasoning') {
         fullReasoning += data.text;
         updateStreamingContent(messageId, fullContent, fullReasoning);
@@ -239,9 +251,13 @@ export function updateStreamingContent(
   messages.update((msgs) =>
     msgs.map((m) => {
       if (m.id !== targetId) return m;
-      return contentBlocks !== undefined
+      const updated = contentBlocks !== undefined
         ? { ...m, content, reasoning, contentBlocks }
         : { ...m, content, reasoning };
+      return m.research ? {
+        ...updated,
+        research: { ...m.research, streamedContent: content },
+      } : updated;
     }),
   );
 }
