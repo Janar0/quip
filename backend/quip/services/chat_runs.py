@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -200,6 +201,7 @@ class ChatRunManager:
         self._contexts: dict[UUID, RunExecutionContext] = {}
         self._cancel_events: dict[UUID, asyncio.Event] = {}
         self._subscribers: dict[UUID, set[asyncio.Queue]] = {}
+        self._start_locks: weakref.WeakValueDictionary[UUID, asyncio.Lock] = weakref.WeakValueDictionary()
         self._transition_locks: dict[UUID, asyncio.Lock] = {}
         self._owner_id = uuid4().hex
         self._closing = False
@@ -207,6 +209,14 @@ class ChatRunManager:
     async def start(self, spec: ChatRunSpec, worker: Worker) -> RunSubscription:
         if self.runner_mode != "single_process":
             raise RuntimeError("Research task runner is disabled")
+        start_lock = self._start_locks.get(spec.run_id)
+        if start_lock is None:
+            start_lock = asyncio.Lock()
+            self._start_locks[spec.run_id] = start_lock
+        async with start_lock:
+            return await self._start_locked(spec, worker)
+
+    async def _start_locked(self, spec: ChatRunSpec, worker: Worker) -> RunSubscription:
         queue: asyncio.Queue = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
         subscribers = self._subscribers.setdefault(spec.run_id, set())
         subscribers.add(queue)
@@ -660,6 +670,8 @@ async def interrupt_active_runs(session_factory, *, task_kinds: set[str] | None 
 
     for run_id in active_run_ids:
         def interrupt(run: ChatRun, metadata: dict[str, Any]):
+            if run.status not in ACTIVE_STATUSES:
+                return None, {}, False
             task_kind = metadata.get("task_kind")
             if (
                 metadata.get("schema_version") != 1

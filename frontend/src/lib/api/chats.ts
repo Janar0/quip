@@ -10,6 +10,7 @@ import { cancelChatRun, ChatRunRequestError, getChatRun } from '$lib/api/chat-ru
 
 let researchPollTimer: ReturnType<typeof setInterval> | null = null;
 let researchPollChatId: string | null = null;
+let activeStreamMessageId: string | null = null;
 type PendingResearchRequest = {
   chatId?: string;
   runId?: string;
@@ -25,19 +26,19 @@ function isActiveResearch(status: ResearchRunStatus): boolean {
 function applyResearchRun(runId: string, run: ResearchRunInfo): void {
   messages.update((items) => items.map((message) => {
     if (message.research?.runId !== runId || message.research.revision > run.revision) return message;
-    return projectResearchRun(message, run, get(isStreaming));
+    return projectResearchRun(message, run, activeStreamMessageId);
   }));
 }
 
-function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streaming: boolean): MessageInfo {
+function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streamingMessageId: string | null): MessageInfo {
   const saved = run.message;
   const previousSaved = message.research?.message;
   const localTextCameFromStream = message.research?.streamedContent === message.content;
-  const terminalStreamText = !isActiveResearch(run.status) && localTextCameFromStream;
-  const canSyncReport = !streaming
+  const sameMessageStreaming = streamingMessageId === message.id;
+  const canSyncReport = (!sameMessageStreaming || !isActiveResearch(run.status))
     && message.role === 'assistant'
     && saved?.id === message.id
-    && (!previousSaved || message.content === previousSaved.content || terminalStreamText);
+    && (!previousSaved || message.content === previousSaved.content || localTextCameFromStream);
   const projectedResearch = { ...run };
   if (!canSyncReport && message.research?.streamedContent !== undefined) {
     projectedResearch.streamedContent = message.research.streamedContent;
@@ -45,6 +46,13 @@ function projectResearchRun(message: MessageInfo, run: ResearchRunInfo, streamin
   return canSyncReport
     ? { ...message, content: saved.content, artifacts: saved.artifacts ?? message.artifacts, research: projectedResearch }
     : { ...message, research: projectedResearch };
+}
+
+function syncPendingResearchReports(): void {
+  messages.update((items) => items.map((message) => {
+    if (!message.research) return message;
+    return projectResearchRun(message, message.research, null);
+  }));
 }
 
 function syncResearchPolling(chatId: string): void {
@@ -185,7 +193,7 @@ export async function loadChat(chatId: string, options: { background?: boolean }
         if (!state) continue;
         const message = msgs.find((item: { research?: ResearchRunInfo }) => item.research?.runId === runId)
           ?? msgs.find((item: { id: string }) => researchRuns.find((run: { id: string; assistant_message_id: string }) => run.id === runId)?.assistant_message_id === item.id);
-        if (message) Object.assign(message, projectResearchRun(message as MessageInfo, state, get(isStreaming)));
+        if (message) Object.assign(message, projectResearchRun(message as MessageInfo, state, activeStreamMessageId));
       }
       if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
       syncResearchPolling(chatId);
@@ -338,6 +346,7 @@ export async function streamChat(
   if (researchRequest) pendingResearchRequest = researchRequest;
   abortController.set(ctrl);
   isStreaming.set(true);
+  activeStreamMessageId = 'streaming';
 
   // Build attachment info for the temp user message
   const attachments: AttachmentInfo[] | undefined = uploadedFiles?.length
@@ -404,6 +413,7 @@ export async function streamChat(
     }
 
     const ids = await processSSEStream(res, async (readyIds) => {
+      if (readyIds.messageId) activeStreamMessageId = readyIds.messageId;
       if (readyIds.chatId) syncResearchPolling(readyIds.chatId);
       onChatReady?.(readyIds);
       if (researchRequest && readyIds.taskKind === 'research' && readyIds.chatId && readyIds.runId) {
@@ -423,8 +433,10 @@ export async function streamChat(
     }
   } finally {
     if (pendingResearchRequest === researchRequest) pendingResearchRequest = null;
+    activeStreamMessageId = null;
     finalizeOptimisticMessages();
     isStreaming.set(false);
+    syncPendingResearchReports();
     abortController.set(null);
     await loadChats().catch(() => {});
   }
@@ -436,6 +448,7 @@ export async function regenerateMessage(chatId: string, messageId: string, model
   const ctrl = new AbortController();
   abortController.set(ctrl);
   isStreaming.set(true);
+  activeStreamMessageId = 'streaming';
 
   // Find the old message to inherit its parent_id — the new regenerated response
   // must be a sibling of it (same parent = the user message that triggered both).
@@ -474,14 +487,18 @@ export async function regenerateMessage(chatId: string, messageId: string, model
       return;
     }
 
-    await processSSEStream(res);
+    await processSSEStream(res, (readyIds) => {
+      if (readyIds.messageId) activeStreamMessageId = readyIds.messageId;
+    });
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
       setStreamError(undefined, e instanceof Error ? e.message : String(e));
     }
   } finally {
+    activeStreamMessageId = null;
     finalizeOptimisticMessages();
     isStreaming.set(false);
+    syncPendingResearchReports();
     abortController.set(null);
   }
 }
