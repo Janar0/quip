@@ -57,7 +57,7 @@
     return () => clearInterval(id);
   });
 
-  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = []) {
+  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = [], modeHint?: 'search' | 'research') {
     const newChatId = await streamChat(
       text,
       chatId,
@@ -65,6 +65,13 @@
       uploadedFiles.length ? uploadedFiles : undefined,
       undefined,
       workspaceId,
+      modeHint,
+      (ids) => {
+        if (ids.chatId && !chatId) {
+          chatId = ids.chatId;
+          goto(`/chat/${ids.chatId}`, { replaceState: true });
+        }
+      },
     );
     if (newChatId && !chatId) {
       chatId = newChatId;

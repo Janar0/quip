@@ -13,7 +13,7 @@
   interface Props {
     chatId: string | undefined;
     workspaceId?: string;
-    onSend: (text: string, fileIds?: string[], uploadedFiles?: UploadedFile[]) => void | Promise<void>;
+    onSend: (text: string, fileIds?: string[], uploadedFiles?: UploadedFile[], modeHint?: 'search' | 'research') => void | Promise<void>;
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
     loading?: boolean;

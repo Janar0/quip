@@ -30,10 +30,12 @@ async def save_assistant_message(
     tool_executions: list[dict] | None = None,
     search_images: list[dict] | None = None,
     subagent_generations: list[str] | None = None,
+    session_factory=None,
 ):
     """Save the completed assistant message to DB in a fresh session."""
     try:
-        async with async_session() as db:
+        factory = session_factory or async_session
+        async with factory() as db:
             result = await db.execute(
                 select(Message).where(Message.id == UUID(assistant_msg_id))
             )
@@ -89,3 +91,33 @@ async def save_assistant_message(
             await db.commit()
     except Exception as e:
         logger.error(f"Failed to save assistant message: {e}")
+
+
+async def update_assistant_message_draft(
+    assistant_msg_id: str,
+    chat_id: str,
+    *,
+    content: str,
+    session_factory=None,
+) -> None:
+    """Persist in-progress text without creating a usage record."""
+    try:
+        factory = session_factory or async_session
+        async with factory() as db:
+            result = await db.execute(
+                select(Message).where(
+                    Message.id == UUID(assistant_msg_id),
+                    Message.chat_id == UUID(chat_id),
+                    Message.role == "assistant",
+                )
+            )
+            message = result.scalar_one_or_none()
+            if message is None:
+                return
+            message.content = content
+            chat = await db.get(Chat, UUID(chat_id))
+            if chat:
+                chat.updated_at = datetime.now(UTC)
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to save assistant draft: %s", exc)

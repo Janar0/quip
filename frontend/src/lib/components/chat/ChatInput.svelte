@@ -3,7 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { fade } from 'svelte/transition';
   import { D1 } from '$lib/motion';
-  import { isStreaming } from '$lib/stores/chat';
+  import { isStreaming, researchEnabled } from '$lib/stores/chat';
   import { stopGeneration } from '$lib/api/chats';
   import { uploadFiles, getFileUrl, deleteFile, type UploadedFile } from '$lib/api/files';
 
@@ -13,13 +13,14 @@
     workspaceId,
     variant = 'chat',
   }: {
-    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[]) => void;
+    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[], modeHint?: 'search' | 'research') => void;
     chatId?: string;
     workspaceId?: string;
     variant?: 'chat' | 'start';
   } = $props();
 
   let text = $state('');
+  let modeHint = $state<'auto' | 'research'>('auto');
   let textareaEl: HTMLTextAreaElement;
   let fileInputEl: HTMLInputElement;
   let isDragOver = $state(false);
@@ -183,7 +184,8 @@
       .filter((a) => a.uploaded)
       .map((a) => a.uploaded!);
     const fileIds = uploaded.map((u) => u.id);
-    onSend(trimmed || ' ', fileIds, uploaded);
+    onSend(trimmed || ' ', fileIds, uploaded, modeHint === 'auto' ? undefined : modeHint);
+    modeHint = 'auto';
 
     for (const att of attachedFiles) {
       if (att.preview) URL.revokeObjectURL(att.preview);
@@ -310,6 +312,21 @@
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>
           </button>
+          {#if $researchEnabled}
+            <button
+              type="button"
+              class="ml-1 px-2.5 py-2 rounded-lg text-xs transition-colors active:scale-[0.96]"
+              style={modeHint === 'research'
+                ? 'background: var(--quip-hover); color: var(--quip-text); border: 1px solid var(--quip-glass-border-strong)'
+                : 'color: var(--quip-text-muted); border: 1px solid transparent'}
+              onclick={() => (modeHint = modeHint === 'research' ? 'auto' : 'research')}
+              aria-pressed={modeHint === 'research'}
+              disabled={$isStreaming}
+              title={$t('research.mode')}
+            >
+              {$t('research.mode')}
+            </button>
+          {/if}
           <input
             type="file"
             multiple

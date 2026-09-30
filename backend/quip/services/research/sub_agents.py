@@ -11,9 +11,8 @@ from quip.services.research._stream_loop import (
 )
 from quip.services.research.types import (
     ResearchEvent,
+    ResearchLimitReached,
     ResearchSession,
-    SESSION_WEB_SEARCH_BUDGET,
-    SUB_AGENT_MAX_ROUNDS,
 )
 from quip.services.tools import (
     LOAD_SKILL_TOOL,
@@ -46,7 +45,11 @@ async def _run_search_sub_agent(
             nonlocal queries_used
             if name != "web_search":
                 return None
-            if session.web_search_count >= SESSION_WEB_SEARCH_BUDGET:
+            try:
+                session.ensure_can_start_call()
+            except ResearchLimitReached as exc:
+                return json.dumps({"error": str(exc)})
+            if session.web_search_count >= session.max_web_searches:
                 return json.dumps({"error": "session web_search budget exhausted"})
             if queries_used >= max_queries:
                 return json.dumps({"error": "sub-agent max_queries exhausted"})
@@ -57,7 +60,7 @@ async def _run_search_sub_agent(
         content, usage = await _run_sub_stream_loop(
             session, task_id, body, goal,
             tools=[LOAD_SKILL_TOOL, READ_URL_TOOL] + SEARCH_TOOLS,
-            max_rounds=SUB_AGENT_MAX_ROUNDS,
+            max_rounds=session.max_subagent_rounds,
             progress_event_type="subagent_progress",
             on_tool_call=_enforce_budget,
         )
@@ -65,7 +68,6 @@ async def _run_search_sub_agent(
         session.handles[task_id].status = "done"
         session.handles[task_id].result = result
         session.handles[task_id].usage = usage
-        session.add_usage(usage)
         sources_found = 0
         try:
             parsed = json.loads(content) if content else {}
@@ -109,14 +111,13 @@ async def _run_sandbox_sub_agent(
         content, usage = await _run_sub_stream_loop(
             session, task_id, body, task_description,
             tools=[LOAD_SKILL_TOOL] + SANDBOX_TOOLS,
-            max_rounds=SUB_AGENT_MAX_ROUNDS,
+            max_rounds=session.max_subagent_rounds,
             progress_event_type="subagent_progress",
         )
         result = {"summary": content}
         session.handles[task_id].status = "done"
         session.handles[task_id].result = result
         session.handles[task_id].usage = usage
-        session.add_usage(usage)
         await session.result_queue.put((task_id, result))
         await session.emit(ResearchEvent("subagent_result", {
             "task_id": task_id, "kind": "sandbox", "result": result,
@@ -158,34 +159,35 @@ async def _run_artifact_sub_agent(
 
         full_content = ""
         sub_usage = UsageInfo()
-        stream = await _stream(session, messages, None)
-        async for chunk in stream:
-            if session.cancel_scope.is_set():
-                break
-            if chunk.error:
-                raise RuntimeError(chunk.error)
-            if chunk.content:
-                full_content += chunk.content
-                await session.emit(ResearchEvent("subagent_progress", {
-                    "task_id": task_id, "detail": chunk.content,
-                }))
-            if chunk.usage:
-                sub_usage.prompt_tokens += chunk.usage.prompt_tokens
-                sub_usage.completion_tokens += chunk.usage.completion_tokens
-                sub_usage.cached_tokens += chunk.usage.cached_tokens
-                sub_usage.cost += chunk.usage.cost or 0.0
-                if chunk.usage.generation_id:
-                    sub_usage.generation_id = chunk.usage.generation_id
-                if chunk.usage.provider:
-                    sub_usage.provider = chunk.usage.provider
-            if chunk.finish_reason:
-                break
+        async with session.admit_provider_call():
+            stream = await _stream(session, messages, None)
+            async for chunk in stream:
+                if session.cancel_scope.is_set():
+                    break
+                if chunk.error:
+                    raise RuntimeError(chunk.error)
+                if chunk.content:
+                    full_content += chunk.content
+                    await session.emit(ResearchEvent("subagent_progress", {
+                        "task_id": task_id, "detail": chunk.content,
+                    }))
+                if chunk.usage:
+                    sub_usage.prompt_tokens += chunk.usage.prompt_tokens
+                    sub_usage.completion_tokens += chunk.usage.completion_tokens
+                    sub_usage.cached_tokens += chunk.usage.cached_tokens
+                    sub_usage.cost += chunk.usage.cost or 0.0
+                    if chunk.usage.generation_id:
+                        sub_usage.generation_id = chunk.usage.generation_id
+                    if chunk.usage.provider:
+                        sub_usage.provider = chunk.usage.provider
+                    session.add_usage(chunk.usage)
+                if chunk.finish_reason:
+                    break
 
         result = {"artifact": full_content, "kind": kind}
         session.handles[task_id].status = "done"
         session.handles[task_id].result = result
         session.handles[task_id].usage = sub_usage
-        session.add_usage(sub_usage)
         await session.result_queue.put((task_id, result))
         await session.emit(ResearchEvent("subagent_result", {
             "task_id": task_id, "kind": "artifact", "result": result,

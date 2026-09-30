@@ -11,12 +11,14 @@ from quip.services.tools import (
     execute_tool_call,
 )
 from quip.services.sandbox import sandbox_manager
+from quip.services.research.sources import validated_search_sources
 
 logger = logging.getLogger(__name__)
 
 
 async def _stream(session, messages, tools):
     """Provider-agnostic streaming wrapper."""
+    session.ensure_can_start_call()
     if session.is_ollama:
         ollama_model = session.model.removeprefix("ollama/")
         return ollama.stream_completion(
@@ -74,30 +76,32 @@ async def _run_sub_stream_loop(
         round_content = ""
         accumulated: list[AccumulatedToolCall] = []
 
-        stream = await _stream(session, messages, tools)
-        async for chunk in stream:
-            if session.cancel_scope.is_set():
-                break
-            if chunk.error:
-                raise RuntimeError(chunk.error)
-            if chunk.content:
-                round_content += chunk.content
-                await session.emit(ResearchEvent(progress_event_type, {
-                    "task_id": task_id, "detail": chunk.content,
-                }))
-            if chunk.tool_calls:
-                accumulate_tool_calls(accumulated, chunk.tool_calls)
-            if chunk.usage:
-                sub_usage.prompt_tokens += chunk.usage.prompt_tokens
-                sub_usage.completion_tokens += chunk.usage.completion_tokens
-                sub_usage.cached_tokens += chunk.usage.cached_tokens
-                sub_usage.cost += chunk.usage.cost or 0.0
-                if chunk.usage.generation_id:
-                    sub_usage.generation_id = chunk.usage.generation_id
-                if chunk.usage.provider:
-                    sub_usage.provider = chunk.usage.provider
-            if chunk.finish_reason:
-                break
+        async with session.admit_provider_call():
+            stream = await _stream(session, messages, tools)
+            async for chunk in stream:
+                if session.cancel_scope.is_set():
+                    break
+                if chunk.error:
+                    raise RuntimeError(chunk.error)
+                if chunk.content:
+                    round_content += chunk.content
+                    await session.emit(ResearchEvent(progress_event_type, {
+                        "task_id": task_id, "detail": chunk.content,
+                    }))
+                if chunk.tool_calls:
+                    accumulate_tool_calls(accumulated, chunk.tool_calls)
+                if chunk.usage:
+                    sub_usage.prompt_tokens += chunk.usage.prompt_tokens
+                    sub_usage.completion_tokens += chunk.usage.completion_tokens
+                    sub_usage.cached_tokens += chunk.usage.cached_tokens
+                    sub_usage.cost += chunk.usage.cost or 0.0
+                    if chunk.usage.generation_id:
+                        sub_usage.generation_id = chunk.usage.generation_id
+                    if chunk.usage.provider:
+                        sub_usage.provider = chunk.usage.provider
+                    session.add_usage(chunk.usage)
+                if chunk.finish_reason:
+                    break
 
         full_content += round_content
 
@@ -123,6 +127,8 @@ async def _run_sub_stream_loop(
         needs_sandbox = any(tc.function_name in _SANDBOX_TOOL_NAMES for tc in accumulated)
 
         for tc in accumulated:
+            if session.cancel_scope.is_set():
+                break
             try:
                 args = json.loads(tc.function_arguments) if tc.function_arguments else {}
             except json.JSONDecodeError:
@@ -135,6 +141,7 @@ async def _run_sub_stream_loop(
             if override is not None:
                 result_str = override
             else:
+                session.ensure_can_start_call()
                 if needs_sandbox and sandbox is None and sandbox_manager.available:
                     try:
                         from quip.database import async_session
@@ -153,6 +160,11 @@ async def _run_sub_stream_loop(
                     )
                 except Exception as e:  # noqa: BLE001
                     result_str = json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+            if tc.function_name == "web_search":
+                sources = validated_search_sources(result_str)
+                if sources:
+                    await session.emit(ResearchEvent("sources", {"sources": sources}))
 
             messages.append({
                 "role": "tool",

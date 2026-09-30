@@ -1,14 +1,16 @@
+import asyncio
 import logging
 import re
 from typing import Optional
 
 from quip.services.research._stream_loop import _build_runtime_header, _stream
 from quip.services.research.types import (
-    ORCHESTRATOR_MAX_ROUNDS,
     ResearchEvent,
+    ResearchLimitReached,
     ResearchSession,
     StatusCallback,
 )
+from quip.services.research.limits import ResearchLimits
 from quip.services.research.tools import ORCHESTRATOR_TOOLS
 from quip.services.research.dispatcher import execute_research_tool
 from quip.services.tools import AccumulatedToolCall, accumulate_tool_calls
@@ -34,6 +36,9 @@ async def run_deep_research(
     ollama_url: str = "",
     locale: Optional[str] = None,
     location: Optional[str] = None,
+    cancel_event=None,
+    limits: ResearchLimits | None = None,
+    steering_reader=None,
 ) -> None:
     """Run the deep research orchestrator.
 
@@ -42,6 +47,7 @@ async def run_deep_research(
     streamed by the main agent is forwarded as regular ``content`` events;
     sub-agent lifecycle is forwarded as ``subagent_*`` events.
     """
+    limits = limits or ResearchLimits.from_config()
     session = ResearchSession(
         query=query,
         emit=emit,
@@ -51,7 +57,17 @@ async def run_deep_research(
         ollama_url=ollama_url,
         locale=locale,
         location=location,
+        max_child_agents=limits.max_child_agents,
+        max_concurrent_agents=limits.max_concurrent_agents,
+        max_runtime_seconds=limits.max_runtime_seconds,
+        max_cost_usd=limits.max_cost_usd,
+        max_orchestrator_rounds=limits.max_orchestrator_rounds,
+        max_subagent_rounds=limits.max_subagent_rounds,
+        max_web_searches=limits.max_web_searches,
+        steering_reader=steering_reader,
     )
+    if cancel_event is not None:
+        session.cancel_scope = cancel_event
     await emit(ResearchEvent("status", {
         "phase": "decomposing",
         "detail": "Analyzing question for research plan..."
@@ -76,35 +92,43 @@ async def run_deep_research(
     ]
 
     try:
-        for _round in range(ORCHESTRATOR_MAX_ROUNDS):
+        for _round in range(session.max_orchestrator_rounds):
             if session.cancel_scope.is_set():
                 break
 
+            if session.steering_reader:
+                for item in await session.steering_reader():
+                    instruction = str(item.get("instruction", "")).strip()[:2000]
+                    if instruction:
+                        messages.append({
+                            "role": "user",
+                            "content": "Additional user direction for this research task: " + instruction,
+                        })
+                        await emit(ResearchEvent("steering_applied", {"id": item.get("id")}))
+
             round_content = ""
             accumulated: list[AccumulatedToolCall] = []
-            finish_reason: Optional[str] = None
-
-            stream = await _stream(session, messages, ORCHESTRATOR_TOOLS)
-            async for chunk in stream:
-                if session.cancel_scope.is_set():
-                    break
-                if chunk.error:
-                    await emit(ResearchEvent("error", {"message": chunk.error}))
-                    return
-                if chunk.reasoning:
-                    await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
-                if chunk.content:
-                    round_content += chunk.content
-                    await emit(ResearchEvent("content", {"text": chunk.content}))
-                    for art in _extract_artifacts(chunk.content):
-                        await emit(ResearchEvent("artifact", {"tag": art}))
-                if chunk.tool_calls:
-                    accumulate_tool_calls(accumulated, chunk.tool_calls)
-                if chunk.usage:
-                    session.add_usage(chunk.usage)
-                if chunk.finish_reason:
-                    finish_reason = chunk.finish_reason
-                    break
+            async with session.admit_provider_call():
+                stream = await _stream(session, messages, ORCHESTRATOR_TOOLS)
+                async for chunk in stream:
+                    if session.cancel_scope.is_set():
+                        break
+                    if chunk.error:
+                        await emit(ResearchEvent("error", {"message": chunk.error}))
+                        return
+                    if chunk.reasoning:
+                        await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
+                    if chunk.content:
+                        round_content += chunk.content
+                        await emit(ResearchEvent("content", {"text": chunk.content}))
+                        for art in _extract_artifacts(chunk.content):
+                            await emit(ResearchEvent("artifact", {"tag": art}))
+                    if chunk.tool_calls:
+                        accumulate_tool_calls(accumulated, chunk.tool_calls)
+                    if chunk.usage:
+                        session.add_usage(chunk.usage)
+                    if chunk.finish_reason:
+                        break
 
             if not accumulated:
                 break
@@ -123,6 +147,8 @@ async def run_deep_research(
             })
 
             for tc in accumulated:
+                if session.cancel_scope.is_set():
+                    break
                 result_str = await execute_research_tool(
                     session, tc.function_name, tc.function_arguments
                 )
@@ -152,18 +178,25 @@ async def run_deep_research(
                     "detail": "Writing the final research report..."
                 }))
                 # Disable tools so the model CANNOT call wait_for_any_result again
-                stream = await _stream(session, messages, [])
-                async for chunk in stream:
-                    if chunk.content:
-                        await emit(ResearchEvent("content", {"text": chunk.content}))
-                        for art in _extract_artifacts(chunk.content):
-                            await emit(ResearchEvent("artifact", {"tag": art}))
-                    if chunk.reasoning:
-                        await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
-                    if chunk.usage:
-                        session.add_usage(chunk.usage)
+                async with session.admit_provider_call():
+                    stream = await _stream(session, messages, [])
+                    async for chunk in stream:
+                        if chunk.error:
+                            await emit(ResearchEvent("error", {"message": chunk.error}))
+                            break
+                        if chunk.content:
+                            await emit(ResearchEvent("content", {"text": chunk.content}))
+                            for art in _extract_artifacts(chunk.content):
+                                await emit(ResearchEvent("artifact", {"tag": art}))
+                        if chunk.reasoning:
+                            await emit(ResearchEvent("reasoning", {"text": chunk.reasoning}))
+                        if chunk.usage:
+                            session.add_usage(chunk.usage)
 
-        # Final usage event so the SSE handler can persist it.
+    except ResearchLimitReached as exc:
+        await emit(ResearchEvent("error", {"message": str(exc)}))
+    finally:
+        # Aggregate usage is persisted by the task manager, once per ChatRun.
         await emit(ResearchEvent("usage", {
             "prompt_tokens": session.total_usage.prompt_tokens,
             "completion_tokens": session.total_usage.completion_tokens,
@@ -173,11 +206,14 @@ async def run_deep_research(
             "generation_id": session.total_usage.generation_id,
             "subagent_generations": list(session.subagent_generations),
         }))
-    finally:
         # Cancel any still-running sub-agents on exit.
         session.cancel_scope.set()
+        children = []
         for h in session.handles.values():
             if h.status == "running" and not h.task.done():
                 h.task.cancel()
                 h.status = "cancelled"
+                children.append(h.task)
+        if children:
+            await asyncio.gather(*children, return_exceptions=True)
         await emit(ResearchEvent("done", {}))

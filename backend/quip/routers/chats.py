@@ -1,8 +1,8 @@
 from datetime import UTC
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,10 @@ from quip.schemas.chat import (
     ChatUpdate,
     ChatWithMessages,
     MessageResponse,
+)
+from quip.services.chat_runs import (
+    enqueue_run_steering,
+    read_run,
 )
 from quip.services.permissions import get_current_user
 from quip.services.sandbox import sandbox_manager
@@ -119,8 +123,107 @@ async def get_chat(
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         messages=[MessageResponse.model_validate(m) for m in messages],
-        runs=[ChatRunResponse.model_validate(run) for run in run_result.scalars().all()],
+        runs=[
+            ChatRunResponse.model_validate({
+                "id": run.id,
+                "chat_id": run.chat_id,
+                "assistant_message_id": run.assistant_message_id,
+                "status": run.status,
+                "task_kind": (run.run_metadata or {}).get("task_kind", "chat"),
+                "model": run.model,
+                "error": run.error,
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+                "created_at": run.created_at,
+            })
+            for run in run_result.scalars().all()
+        ],
     )
+
+
+def _run_manager(request: Request):
+    manager = getattr(request.app.state, "chat_run_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Task service is unavailable")
+    return manager
+
+
+@router.get("/{chat_id}/runs/{run_id}")
+async def get_chat_run(
+    chat_id: UUID,
+    run_id: UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    manager = _run_manager(request)
+    result = await read_run(
+        manager.session_factory,
+        run_id=run_id,
+        chat_id=chat_id,
+        user_id=user.id,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return result
+
+
+@router.post("/{chat_id}/runs/{run_id}/cancel")
+async def cancel_chat_run(
+    chat_id: UUID,
+    run_id: UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    manager = _run_manager(request)
+    accepted = await manager.request_cancel(run_id=run_id, chat_id=chat_id, user_id=user.id)
+    result = await read_run(
+        manager.session_factory,
+        run_id=run_id,
+        chat_id=chat_id,
+        user_id=user.id,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"accepted": accepted, "run": result}
+
+
+class RunSteeringRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/{chat_id}/runs/{run_id}/steer")
+async def steer_chat_run(
+    chat_id: UUID,
+    run_id: UUID,
+    data: RunSteeringRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    manager = _run_manager(request)
+    result = await enqueue_run_steering(
+        manager.session_factory,
+        run_id=run_id,
+        chat_id=chat_id,
+        user_id=user.id,
+        instruction=data.instruction,
+    )
+    if not result.get("accepted"):
+        current = await read_run(
+            manager.session_factory,
+            run_id=run_id,
+            chat_id=chat_id,
+            user_id=user.id,
+        )
+        if current is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=409, detail="Run cannot accept more instructions")
+    current = await read_run(
+        manager.session_factory,
+        run_id=run_id,
+        chat_id=chat_id,
+        user_id=user.id,
+    )
+    return {**result, "run": current}
 
 
 @router.patch("/{chat_id}", response_model=ChatResponse)

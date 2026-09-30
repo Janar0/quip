@@ -1,0 +1,904 @@
+"""Shared bounded lifecycle for page-resilient work attached to a ChatRun."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy import select, update
+
+from quip.models.chat import ChatRun, Message
+from quip.services.messages_persist import (
+    save_assistant_message,
+    update_assistant_message_draft,
+)
+
+logger = logging.getLogger(__name__)
+
+ACTIVE_STATUSES = ("queued", "running", "cancelling")
+CANCELLABLE_STATUSES = ("queued", "running")
+TERMINAL_STATUSES = {"completed", "partial", "failed", "cancelled", "interrupted"}
+MAX_REPORT_CHARS = 200_000
+MAX_SNAPSHOT_BYTES = 48_000
+MAX_SOURCE_URL_BYTES = 2_048
+MAX_SOURCE_TITLE_BYTES = 512
+MAX_STEERING_ITEMS = 4
+MAX_STEERING_CHARS = 2_000
+SUBSCRIBER_QUEUE_SIZE = 64
+RUNNER_LEASE_TTL_SECONDS = 30
+RUNNER_HEARTBEAT_INTERVAL_SECONDS = 5
+_SENTINEL = object()
+
+
+@dataclass(frozen=True)
+class ChatRunSpec:
+    run_id: UUID
+    chat_id: UUID
+    user_id: UUID
+    assistant_message_id: UUID
+    task_kind: str
+    context_version: int = 1
+    timeout_seconds: int = 600
+
+
+@dataclass
+class RunOutcome:
+    status: str = "completed"
+    error: str | None = None
+    usage: dict[str, Any] | None = None
+    reasoning: str = ""
+    artifacts: list[dict] | None = None
+    subagent_generations: list[str] | None = None
+
+
+class RunSubscription:
+    def __init__(self, manager: ChatRunManager, run_id: UUID, queue: asyncio.Queue):
+        self._manager = manager
+        self.run_id = run_id
+        self._queue = queue
+        self._closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        item = await self._queue.get()
+        if item is _SENTINEL:
+            await self.aclose()
+            raise StopAsyncIteration
+        return item
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._manager._unsubscribe(self.run_id, self._queue)
+
+
+class RunExecutionContext:
+    def __init__(self, manager: ChatRunManager, spec: ChatRunSpec, cancel_event: asyncio.Event):
+        self.manager = manager
+        self.spec = spec
+        self.cancel_event = cancel_event
+        self.report = ""
+        self.final_outcome: RunOutcome | None = None
+        self._last_draft_chars = 0
+        self._last_draft_at = 0.0
+
+    async def emit(self, event: Any) -> None:
+        if hasattr(event, "type") and hasattr(event, "data"):
+            payload = {"type": event.type, "data": event.data}
+        else:
+            payload = event
+        if isinstance(payload, dict) and isinstance(payload.get("type"), str):
+            await self.manager._broadcast(self.spec.run_id, payload)
+
+    async def update_snapshot(self, **patch: Any) -> None:
+        await update_run_snapshot(self.manager.session_factory, run_id=self.spec.run_id, patch=patch)
+
+    async def append_result(self, text: str) -> None:
+        if not text or len(self.report) >= MAX_REPORT_CHARS:
+            return
+        self.report += text[: MAX_REPORT_CHARS - len(self.report)]
+        now = asyncio.get_running_loop().time()
+        if len(self.report) - self._last_draft_chars >= 1024 or now - self._last_draft_at >= 1.0:
+            await self.flush_result()
+
+    async def flush_result(self) -> None:
+        await update_assistant_message_draft(
+            str(self.spec.assistant_message_id),
+            str(self.spec.chat_id),
+            content=self.report,
+            session_factory=self.manager.session_factory,
+        )
+        self._last_draft_chars = len(self.report)
+        self._last_draft_at = asyncio.get_running_loop().time()
+
+    async def take_steering(self) -> list[dict[str, Any]]:
+        return await consume_run_steering(
+            self.manager.session_factory,
+            run_id=self.spec.run_id,
+            chat_id=self.spec.chat_id,
+            user_id=self.spec.user_id,
+        )
+
+
+Worker = Callable[[RunExecutionContext], Awaitable[RunOutcome | None]]
+
+
+class ChatRunManager:
+    """Own task lifetime while exposing detachable, bounded event subscriptions."""
+
+    def __init__(self, session_factory, *, runner_mode: str = "disabled", max_concurrent_runs: int = 2):
+        self.session_factory = session_factory
+        self.runner_mode = runner_mode
+        self.max_concurrent_runs = max(1, min(int(max_concurrent_runs), 8))
+        self._semaphore = asyncio.Semaphore(self.max_concurrent_runs)
+        self._tasks: dict[UUID, asyncio.Task] = {}
+        self._contexts: dict[UUID, RunExecutionContext] = {}
+        self._cancel_events: dict[UUID, asyncio.Event] = {}
+        self._subscribers: dict[UUID, set[asyncio.Queue]] = {}
+        self._transition_locks: dict[UUID, asyncio.Lock] = {}
+        self._owner_id = uuid4().hex
+        self._closing = False
+
+    async def start(self, spec: ChatRunSpec, worker: Worker) -> RunSubscription:
+        if self.runner_mode != "single_process":
+            raise RuntimeError("Research task runner is disabled")
+        queue: asyncio.Queue = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
+        subscribers = self._subscribers.setdefault(spec.run_id, set())
+        subscribers.add(queue)
+
+        current = self._tasks.get(spec.run_id)
+        if current is not None and not current.done():
+            return RunSubscription(self, spec.run_id, queue)
+
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ChatRun).where(ChatRun.id == spec.run_id).with_for_update()
+            )
+            run = result.scalar_one_or_none()
+            if (
+                run is None
+                or run.chat_id != spec.chat_id
+                or run.user_id != spec.user_id
+                or run.assistant_message_id != spec.assistant_message_id
+                or run.status != "queued"
+                or bool((run.run_metadata or {}).get("cancel_requested"))
+            ):
+                self._unsubscribe(spec.run_id, queue)
+                raise RuntimeError("Chat run is missing or no longer active")
+            metadata = dict(run.run_metadata or {})
+            metadata.setdefault("schema_version", 1)
+            metadata.setdefault("task_kind", spec.task_kind)
+            metadata.setdefault("revision", 0)
+            metadata.setdefault("context_version", spec.context_version)
+            metadata.setdefault("cancel_requested", False)
+            metadata.setdefault("steering", [])
+            metadata.setdefault("snapshot", {})
+            existing_owner = metadata.get("runner_owner_id")
+            heartbeat = _parse_datetime(metadata.get("runner_heartbeat_at"))
+            if (
+                existing_owner
+                and existing_owner != self._owner_id
+                and heartbeat is not None
+                and (datetime.now(UTC) - heartbeat).total_seconds() < RUNNER_LEASE_TTL_SECONDS
+            ):
+                self._unsubscribe(spec.run_id, queue)
+                raise RuntimeError("Chat run is already owned by an active worker")
+            metadata["runner_owner_id"] = self._owner_id
+            metadata["runner_heartbeat_at"] = datetime.now(UTC).isoformat()
+            run.run_metadata = metadata
+            await db.commit()
+
+        cancel_event = asyncio.Event()
+        context = RunExecutionContext(self, spec, cancel_event)
+        self._contexts[spec.run_id] = context
+        self._cancel_events[spec.run_id] = cancel_event
+        task = asyncio.create_task(self._execute(spec, context, worker), name=f"chat-run-{spec.run_id}")
+        self._tasks[spec.run_id] = task
+        return RunSubscription(self, spec.run_id, queue)
+
+    async def _execute(self, spec: ChatRunSpec, context: RunExecutionContext, worker: Worker) -> None:
+        outcome = RunOutcome()
+        try:
+            result = await asyncio.wait_for(
+                self._run_with_slot_and_cancel_monitor(spec, context, worker),
+                timeout=max(1, spec.timeout_seconds),
+            )
+            if isinstance(result, RunOutcome):
+                outcome = result
+        except TimeoutError:
+            outcome = context.final_outcome or outcome
+            outcome.status = "partial" if context.report.strip() else "failed"
+            outcome.error = f"Task exceeded the {spec.timeout_seconds} second time limit"
+            await context.emit({"type": "error", "data": {"message": outcome.error}})
+        except asyncio.CancelledError:
+            outcome = context.final_outcome or outcome
+            outcome.status = "interrupted" if self._closing else "cancelled"
+            if not self._closing:
+                context.cancel_event.set()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Chat run %s failed", spec.run_id)
+            outcome.status = "partial" if context.report.strip() else "failed"
+            outcome.error = str(exc)[:4000]
+            await context.emit({"type": "error", "data": {"message": "Research task failed"}})
+        finally:
+            try:
+                await context.flush_result()
+                async with self.session_factory() as db:
+                    run = await db.get(ChatRun, spec.run_id)
+                    model = run.model if run else None
+                if model and (context.report or outcome.usage):
+                    await save_assistant_message(
+                        str(spec.assistant_message_id),
+                        str(spec.chat_id),
+                        spec.user_id,
+                        context.report,
+                        model,
+                        outcome.usage,
+                        reasoning=outcome.reasoning,
+                        subagent_generations=outcome.subagent_generations,
+                        session_factory=self.session_factory,
+                    )
+                lock = self._transition_locks.setdefault(spec.run_id, asyncio.Lock())
+                async with lock:
+                    terminal_status = await _finish_run(
+                        self.session_factory,
+                        run_id=spec.run_id,
+                        status=outcome.status,
+                        error=outcome.error,
+                        runner_owner_id=self._owner_id,
+                    )
+                await self._broadcast(spec.run_id, {
+                    "type": "run_status",
+                    "data": {"status": terminal_status or outcome.status, "error": outcome.error},
+                })
+            except Exception:  # noqa: BLE001
+                logger.exception("Could not finalize ChatRun %s", spec.run_id)
+            finally:
+                self._signal_subscribers(spec.run_id, _SENTINEL)
+                self._contexts.pop(spec.run_id, None)
+                self._cancel_events.pop(spec.run_id, None)
+                self._tasks.pop(spec.run_id, None)
+                self._transition_locks.pop(spec.run_id, None)
+
+    async def _run_with_slot_and_cancel_monitor(
+        self, spec: ChatRunSpec, context: RunExecutionContext, worker: Worker
+    ) -> RunOutcome | None:
+        """Count queueing against the run deadline and observe durable Stop while queued."""
+        acquired = False
+        loop = asyncio.get_running_loop()
+        last_heartbeat = loop.time()
+        try:
+            while not acquired:
+                if context.cancel_event.is_set():
+                    return RunOutcome(status="cancelled")
+                try:
+                    await asyncio.wait_for(self._semaphore.acquire(), timeout=0.5)
+                    acquired = True
+                except TimeoutError:
+                    if loop.time() - last_heartbeat >= RUNNER_HEARTBEAT_INTERVAL_SECONDS:
+                        try:
+                            still_owner = await _refresh_runner_lease(
+                                self.session_factory, run_id=spec.run_id, owner_id=self._owner_id
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception("Could not refresh ChatRun lease %s", spec.run_id)
+                        else:
+                            if not still_owner:
+                                context.cancel_event.set()
+                                return RunOutcome(status="cancelled")
+                            last_heartbeat = loop.time()
+                    if await _run_cancel_requested(
+                        self.session_factory,
+                        run_id=spec.run_id,
+                        chat_id=spec.chat_id,
+                        user_id=spec.user_id,
+                    ):
+                        context.cancel_event.set()
+                        return RunOutcome(status="cancelled")
+
+            if context.cancel_event.is_set() or await _run_cancel_requested(
+                self.session_factory,
+                run_id=spec.run_id,
+                chat_id=spec.chat_id,
+                user_id=spec.user_id,
+            ):
+                context.cancel_event.set()
+                return RunOutcome(status="cancelled")
+            if not await _mark_run_running(self.session_factory, spec.run_id):
+                if await _run_cancel_requested(
+                    self.session_factory,
+                    run_id=spec.run_id,
+                    chat_id=spec.chat_id,
+                    user_id=spec.user_id,
+                ):
+                    return RunOutcome(status="cancelled")
+                raise RuntimeError("Chat run could not enter the running state")
+            return await self._run_worker_with_cancel_monitor(spec, context, worker)
+        finally:
+            if acquired:
+                self._semaphore.release()
+
+    async def _run_worker_with_cancel_monitor(
+        self, spec: ChatRunSpec, context: RunExecutionContext, worker: Worker
+    ) -> RunOutcome | None:
+        """Observe durable cancellation too, including a Stop routed to another worker."""
+        task = asyncio.create_task(worker(context))
+        loop = asyncio.get_running_loop()
+        last_heartbeat = loop.time()
+        try:
+            while not task.done():
+                done, _ = await asyncio.wait({task}, timeout=0.5)
+                if done:
+                    break
+                if loop.time() - last_heartbeat >= RUNNER_HEARTBEAT_INTERVAL_SECONDS:
+                    try:
+                        still_owner = await _refresh_runner_lease(
+                            self.session_factory, run_id=spec.run_id, owner_id=self._owner_id
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Could not refresh ChatRun lease %s", spec.run_id)
+                    else:
+                        if not still_owner:
+                            context.cancel_event.set()
+                            task.cancel()
+                            break
+                        last_heartbeat = loop.time()
+                if await _run_cancel_requested(
+                    self.session_factory,
+                    run_id=spec.run_id,
+                    chat_id=spec.chat_id,
+                    user_id=spec.user_id,
+                ):
+                    context.cancel_event.set()
+                    task.cancel()
+                    break
+            try:
+                return await task
+            except asyncio.CancelledError:
+                if context.cancel_event.is_set():
+                    return RunOutcome(status="cancelled")
+                raise
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def request_cancel(self, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> bool:
+        lock = self._transition_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            accepted = await request_run_cancel(
+                self.session_factory,
+                run_id=run_id,
+                chat_id=chat_id,
+                user_id=user_id,
+            )
+        if accepted:
+            event = self._cancel_events.get(run_id)
+            if event:
+                event.set()
+            task = self._tasks.get(run_id)
+            if task and not task.done():
+                task.cancel()
+        return accepted
+
+    async def close(self) -> None:
+        self._closing = True
+        tasks = list(self._tasks.values())
+        for event in self._cancel_events.values():
+            event.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def recover_startup(self) -> int:
+        return await interrupt_active_runs(self.session_factory)
+
+    async def _broadcast(self, run_id: UUID, event: dict[str, Any]) -> None:
+        self._signal_subscribers(run_id, event)
+
+    def _signal_subscribers(self, run_id: UUID, item: Any) -> None:
+        for queue in tuple(self._subscribers.get(run_id, ())):
+            if queue.full():
+                # SSE is best-effort; durable snapshots are the reconnect path.
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                pass
+
+    def _unsubscribe(self, run_id: UUID, queue: asyncio.Queue) -> None:
+        queues = self._subscribers.get(run_id)
+        if queues:
+            queues.discard(queue)
+            if not queues:
+                self._subscribers.pop(run_id, None)
+
+async def read_run(session_factory, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> dict[str, Any] | None:
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun).where(
+                ChatRun.id == run_id,
+                ChatRun.chat_id == chat_id,
+                ChatRun.user_id == user_id,
+            )
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            return None
+        message = await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+        metadata = dict(run.run_metadata or {})
+        return {
+            "run_id": str(run.id),
+            "task_id": str(run.id),
+            "chat_id": str(run.chat_id),
+            "status": run.status,
+            "revision": int(metadata.get("revision", 0)),
+            "context_version": int(metadata.get("context_version", 1)),
+            "cancel_requested": bool(metadata.get("cancel_requested", False)),
+            "task_kind": metadata.get("task_kind", "chat"),
+            "steering": metadata.get("steering", []),
+            "snapshot": metadata.get("snapshot", {}),
+            "error": run.error,
+            "result_message_id": str(run.assistant_message_id) if run.assistant_message_id else None,
+            "message": {
+                "id": str(message.id),
+                "content": message.content or "",
+                "artifacts": message.artifacts or [],
+            } if message else None,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        }
+
+
+async def update_run_snapshot(session_factory, *, run_id: UUID, patch: dict[str, Any]) -> bool:
+    async with session_factory() as db:
+        run = await db.get(ChatRun, run_id)
+        if run is None or run.status not in ACTIVE_STATUSES:
+            return False
+        metadata = dict(run.run_metadata or {})
+        snapshot = dict(metadata.get("snapshot") or {})
+        snapshot.update(patch)
+        metadata["snapshot"] = bounded_snapshot(snapshot)
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        run.run_metadata = metadata
+        await db.commit()
+        return True
+
+
+async def request_run_cancel(session_factory, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> bool:
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun).where(
+                ChatRun.id == run_id,
+                ChatRun.chat_id == chat_id,
+                ChatRun.user_id == user_id,
+                ChatRun.status.in_(CANCELLABLE_STATUSES),
+            )
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            return False
+        metadata = dict(run.run_metadata or {})
+        if metadata.get("cancel_requested"):
+            return False
+        metadata["cancel_requested"] = True
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        updated = await db.execute(
+            update(ChatRun)
+            .where(ChatRun.id == run_id, ChatRun.status.in_(CANCELLABLE_STATUSES))
+            .values(run_metadata=metadata, status="cancelling")
+        )
+        await db.commit()
+        return updated.rowcount == 1
+
+
+async def enqueue_run_steering(
+    session_factory,
+    *,
+    run_id: UUID,
+    chat_id: UUID,
+    user_id: UUID,
+    instruction: str,
+) -> dict[str, Any]:
+    text = instruction.strip()
+    if not text or len(text) > MAX_STEERING_CHARS:
+        return {"accepted": False}
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun).where(
+                ChatRun.id == run_id,
+                ChatRun.chat_id == chat_id,
+                ChatRun.user_id == user_id,
+                ChatRun.status.in_(ACTIVE_STATUSES),
+            )
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            return {"accepted": False}
+        metadata = dict(run.run_metadata or {})
+        if metadata.get("cancel_requested"):
+            return {"accepted": False}
+        steering = list(metadata.get("steering") or [])
+        if len(steering) >= MAX_STEERING_ITEMS:
+            return {"accepted": False}
+        item = {"id": str(uuid4()), "instruction": text}
+        steering.append(item)
+        metadata["steering"] = steering
+        metadata["context_version"] = int(metadata.get("context_version", 1)) + 1
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        run.run_metadata = metadata
+        await db.commit()
+        return {"accepted": True, "item": item, "context_version": metadata["context_version"]}
+
+
+async def consume_run_steering(session_factory, *, run_id: UUID, chat_id: UUID, user_id: UUID) -> list[dict[str, Any]]:
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun).where(
+                ChatRun.id == run_id,
+                ChatRun.chat_id == chat_id,
+                ChatRun.user_id == user_id,
+                ChatRun.status.in_(ACTIVE_STATUSES),
+            )
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            return []
+        metadata = dict(run.run_metadata or {})
+        steering = list(metadata.get("steering") or [])
+        if steering:
+            metadata["steering"] = []
+            metadata["revision"] = int(metadata.get("revision", 0)) + 1
+            run.run_metadata = metadata
+            await db.commit()
+        return steering
+
+
+async def _mark_run_running(session_factory, run_id: UUID) -> bool:
+    async with session_factory() as db:
+        updated = await db.execute(
+            update(ChatRun)
+            .where(ChatRun.id == run_id, ChatRun.status == "queued")
+            .values(status="running", started_at=datetime.now(UTC))
+        )
+        await db.commit()
+        return updated.rowcount == 1
+
+
+async def _finish_run(
+    session_factory,
+    *,
+    run_id: UUID,
+    status: str,
+    error: str | None,
+    runner_owner_id: str | None = None,
+) -> str | None:
+    if status not in TERMINAL_STATUSES:
+        status = "failed"
+    async with session_factory() as db:
+        run = await db.get(ChatRun, run_id)
+        if run is None or run.status not in ACTIVE_STATUSES:
+            return run.status if run else None
+        metadata = dict(run.run_metadata or {})
+        if metadata.get("cancel_requested") and status not in {"interrupted"}:
+            status = "cancelled"
+        metadata["revision"] = int(metadata.get("revision", 0)) + 1
+        statement = update(ChatRun).where(
+            ChatRun.id == run_id,
+            ChatRun.status.in_(ACTIVE_STATUSES),
+        )
+        if runner_owner_id:
+            statement = statement.where(
+                ChatRun.run_metadata["runner_owner_id"].as_string() == runner_owner_id
+            )
+        updated = await db.execute(statement.values(
+            run_metadata=metadata,
+            status=status,
+            error=error[:4000] if error else None,
+            finished_at=datetime.now(UTC),
+        ))
+        await db.commit()
+        if updated.rowcount == 1:
+            return status
+        current = await db.get(ChatRun, run_id)
+        return current.status if current else None
+
+
+async def interrupt_active_runs(session_factory, *, task_kinds: set[str] | None = None) -> int:
+    """Mark stale owned runs interrupted without replaying or claiming live work.
+
+    Ownerless running rows may belong to a pre-lease process and are left alone.
+    An old ownerless queued row is safe to interrupt because no runner owns it
+    until it atomically writes its lease before execution.
+    """
+    now = datetime.now(UTC)
+    stale_before = now - timedelta(seconds=RUNNER_LEASE_TTL_SECONDS)
+    interrupted = 0
+    async with session_factory() as db:
+        result = await db.execute(select(ChatRun).where(ChatRun.status.in_(ACTIVE_STATUSES)))
+        active_runs = result.scalars().all()
+        for run in active_runs:
+            metadata = dict(run.run_metadata or {})
+            task_kind = metadata.get("task_kind")
+            if (
+                metadata.get("schema_version") != 1
+                or not isinstance(task_kind, str)
+                or task_kind == "chat"
+                or (task_kinds is not None and task_kind not in task_kinds)
+            ):
+                continue
+
+            owner_id = metadata.get("runner_owner_id")
+            heartbeat = _parse_datetime(metadata.get("runner_heartbeat_at"))
+            conditions = [ChatRun.id == run.id, ChatRun.status.in_(ACTIVE_STATUSES)]
+            if owner_id and heartbeat:
+                if heartbeat >= stale_before:
+                    continue
+                conditions.extend((
+                    ChatRun.run_metadata["runner_owner_id"].as_string() == owner_id,
+                    ChatRun.run_metadata["runner_heartbeat_at"].as_string()
+                    == metadata.get("runner_heartbeat_at"),
+                ))
+            elif run.status == "queued" and not owner_id and not heartbeat:
+                created_at = _parse_datetime(run.created_at)
+                if created_at is None or created_at >= stale_before:
+                    continue
+                conditions.extend((
+                    ChatRun.status == "queued",
+                    ChatRun.run_metadata["runner_owner_id"].as_string().is_(None),
+                    ChatRun.run_metadata["runner_heartbeat_at"].as_string().is_(None),
+                    ChatRun.created_at <= stale_before,
+                ))
+            else:
+                # An ownerless running run may still belong to an older live worker.
+                continue
+
+            metadata["revision"] = int(metadata.get("revision", 0)) + 1
+            metadata["cancel_requested"] = False
+            snapshot = dict(metadata.get("snapshot") or {})
+            snapshot["interruption"] = "The server restarted; this task was not replayed."
+            metadata["snapshot"] = bounded_snapshot(snapshot)
+            updated = await db.execute(
+                update(ChatRun).where(*conditions).values(
+                    run_metadata=metadata,
+                    status="interrupted",
+                    error="The server restarted; task was not replayed.",
+                    finished_at=now,
+                )
+            )
+            interrupted += updated.rowcount or 0
+        await db.commit()
+        return interrupted
+
+
+async def _refresh_runner_lease(session_factory, *, run_id: UUID, owner_id: str) -> bool:
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun).where(ChatRun.id == run_id).with_for_update()
+        )
+        run = result.scalar_one_or_none()
+        if run is None or run.status not in ACTIVE_STATUSES:
+            return False
+        metadata = dict(run.run_metadata or {})
+        if metadata.get("runner_owner_id") != owner_id:
+            return False
+        metadata["runner_heartbeat_at"] = datetime.now(UTC).isoformat()
+        run.run_metadata = metadata
+        await db.commit()
+        return True
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+async def _run_cancel_requested(
+    session_factory, *, run_id: UUID, chat_id: UUID, user_id: UUID
+) -> bool:
+    async with session_factory() as db:
+        result = await db.execute(
+            select(ChatRun.run_metadata, ChatRun.status).where(
+                ChatRun.id == run_id,
+                ChatRun.chat_id == chat_id,
+                ChatRun.user_id == user_id,
+            )
+        )
+        row = result.one_or_none()
+        if row is None:
+            return True
+        metadata, status = row
+        return status == "cancelling" or bool((metadata or {}).get("cancel_requested"))
+
+
+def _bounded_json(value: Any, *, depth: int = 0) -> Any:
+    if depth > 5:
+        return "[truncated]"
+    if isinstance(value, str):
+        return value[:4000]
+    if isinstance(value, dict):
+        return {str(key)[:100]: _bounded_json(item, depth=depth + 1) for key, item in list(value.items())[:64]}
+    if isinstance(value, (list, tuple)):
+        return [_bounded_json(item, depth=depth + 1) for item in value[:100]]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:1000]
+
+
+def _utf8_prefix(value: Any, max_bytes: int) -> tuple[str, bool]:
+    text = value if isinstance(value, str) else str(value or "")
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text, False
+    return encoded[:max_bytes].decode("utf-8", errors="ignore"), True
+
+
+def _snapshot_json_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+
+
+def bounded_snapshot(snapshot: Any) -> dict[str, Any]:
+    """Return a size-bounded snapshot without storing partial citation URLs."""
+    if not isinstance(snapshot, dict):
+        return {"truncated": True}
+
+    truncated = bool(snapshot.get("truncated", False))
+    safe: dict[str, Any] = {}
+    known = {"sources", "progress", "subagents", "errors", "usage", "truncated"}
+    for key, value in snapshot.items():
+        key = str(key)[:100]
+        if key not in known:
+            safe[key] = _bounded_json(value)
+
+    safe_progress: list[dict[str, Any]] = []
+    progress = snapshot.get("progress")
+    if isinstance(progress, list):
+        if len(progress) > 40:
+            truncated = True
+        for item in progress[-40:]:
+            if not isinstance(item, dict):
+                truncated = True
+                continue
+            bounded: dict[str, Any] = {}
+            for field_name, byte_limit in (("phase", 80), ("detail", 512)):
+                if field_name in item:
+                    bounded[field_name], cut = _utf8_prefix(item[field_name], byte_limit)
+                    truncated = truncated or cut
+            for field_name, byte_limit, max_items in (("sub_queries", 256, 12), ("urls_reading", MAX_SOURCE_URL_BYTES, 10)):
+                values = item.get(field_name)
+                if not isinstance(values, (list, tuple)):
+                    continue
+                if len(values) > max_items:
+                    truncated = True
+                collected = []
+                for value in values[:max_items]:
+                    bounded_value, cut = _utf8_prefix(value, byte_limit)
+                    if field_name == "urls_reading" and cut:
+                        truncated = True
+                        continue
+                    collected.append(bounded_value)
+                    truncated = truncated or cut
+                bounded[field_name] = collected
+            for field_name in ("sources_found", "urls_read"):
+                value = item.get(field_name)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    bounded[field_name] = value
+            safe_progress.append(bounded)
+    if safe_progress or "progress" in snapshot:
+        safe["progress"] = safe_progress
+
+    safe_subagents: dict[str, dict[str, str]] = {}
+    subagents = snapshot.get("subagents")
+    if isinstance(subagents, dict):
+        entries = list(subagents.items())
+        if len(entries) > 8:
+            truncated = True
+        for task_id, item in entries[-8:]:
+            if not isinstance(item, dict):
+                truncated = True
+                continue
+            bounded: dict[str, str] = {}
+            for field_name, byte_limit in (("task_id", 80), ("kind", 40), ("status", 24), ("goal", 300)):
+                value = item.get(field_name)
+                if value is None:
+                    continue
+                bounded[field_name], cut = _utf8_prefix(value, byte_limit)
+                truncated = truncated or cut
+            bounded_id, cut = _utf8_prefix(task_id, 80)
+            truncated = truncated or cut
+            if "task_id" not in bounded:
+                bounded["task_id"] = bounded_id
+            safe_subagents[bounded_id] = bounded
+    if safe_subagents or "subagents" in snapshot:
+        safe["subagents"] = safe_subagents
+
+    safe_errors: list[dict[str, str]] = []
+    errors = snapshot.get("errors")
+    if isinstance(errors, list):
+        if len(errors) > 20:
+            truncated = True
+        for item in errors[-20:]:
+            value = item.get("message") if isinstance(item, dict) else item
+            message, cut = _utf8_prefix(value, 1000)
+            safe_errors.append({"message": message})
+            truncated = truncated or cut
+    if safe_errors or "errors" in snapshot:
+        safe["errors"] = safe_errors
+
+    safe_sources: list[dict[str, str]] = []
+    sources = snapshot.get("sources")
+    if isinstance(sources, list):
+        if len(sources) > 30:
+            truncated = True
+        for source in sources[:30]:
+            if not isinstance(source, dict) or not isinstance(source.get("url"), str):
+                truncated = True
+                continue
+            url, url_cut = _utf8_prefix(source["url"], MAX_SOURCE_URL_BYTES)
+            if url_cut:
+                # Citation targets stay exact or are omitted; never persist a broken URL prefix.
+                truncated = True
+                continue
+            title, title_cut = _utf8_prefix(source.get("title", ""), MAX_SOURCE_TITLE_BYTES)
+            bounded_source = {"title": title, "url": url}
+            if isinstance(source.get("snippet"), str) and source["snippet"]:
+                snippet, snippet_cut = _utf8_prefix(source["snippet"], 600)
+                bounded_source["snippet"] = snippet
+                truncated = truncated or snippet_cut
+            safe_sources.append(bounded_source)
+            truncated = truncated or title_cut
+    if safe_sources or "sources" in snapshot:
+        safe["sources"] = safe_sources
+
+    if "usage" in snapshot:
+        safe["usage"] = _bounded_json(snapshot.get("usage"))
+
+    while _snapshot_json_bytes({**safe, "truncated": truncated}) > MAX_SNAPSHOT_BYTES:
+        truncated = True
+        if safe.get("sources"):
+            safe["sources"].pop()
+        elif safe.get("progress"):
+            safe["progress"].pop(0)
+        elif safe.get("errors"):
+            safe["errors"].pop(0)
+        elif safe.get("subagents"):
+            safe["subagents"].pop(next(iter(safe["subagents"])))
+        elif safe.get("usage"):
+            usage = safe["usage"]
+            if isinstance(usage, dict) and "subagent_generations" in usage:
+                usage.pop("subagent_generations", None)
+            else:
+                safe.pop("usage", None)
+        else:
+            optional = [key for key in safe if key != "truncated"]
+            if not optional:
+                return {"truncated": True}
+            largest = max(optional, key=lambda key: _snapshot_json_bytes(safe[key]))
+            safe.pop(largest, None)
+
+    safe["truncated"] = truncated
+    return safe

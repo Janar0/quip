@@ -30,6 +30,8 @@
   import AttachmentGrid from '$lib/components/chat/AttachmentGrid.svelte';
   import ReasoningSection from '$lib/components/chat/ReasoningSection.svelte';
   import SourcesList from '$lib/components/chat/SourcesList.svelte';
+  import DeepResearchProgress from '$lib/components/chat/DeepResearchProgress.svelte';
+  import { stopResearchRun } from '$lib/api/chats';
 
   let {
     message,
@@ -143,6 +145,19 @@
   let primarySource = $derived(primarySourceResult.primarySource);
   let imageMode = $derived(imageResolved.imageMode);
   let sources = $derived(extracted.sources);
+  let researchSources = $derived.by(() => (message.research?.snapshot.sources ?? []).map((source, index) => {
+    let domain = source.url;
+    try { domain = new URL(source.url).hostname.replace(/^www\./, ''); } catch { /* keep URL for display */ }
+    return { num: index + 1, url: source.url, title: source.title || domain, domain };
+  }));
+  let visibleSources = $derived.by(() => {
+    const seen = new Set<string>();
+    return [...sources, ...researchSources].filter((source) => {
+      if (seen.has(source.url)) return false;
+      seen.add(source.url);
+      return true;
+    }).map((source, index) => ({ ...source, num: index + 1 }));
+  });
   let hasTopGrid = $derived(
     imageMode === 'top' && !!(message.searchImages && message.searchImages.length >= 2),
   );
@@ -264,6 +279,18 @@
 
       {#if message.error}
         <div role="alert" class="my-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm break-words" style="color: var(--quip-text)">{message.error}</div>
+      {/if}
+
+      {#if message.research}
+        {@const history = message.research.snapshot.progress ?? []}
+        <DeepResearchProgress
+          {history}
+          current={history.at(-1) ?? { phase: message.research.status }}
+          status={message.research.status}
+          errors={message.research.snapshot.errors ?? []}
+          truncated={message.research.snapshot.truncated ?? false}
+          onStop={() => stopResearchRun(message.chat_id, message.research!.runId)}
+        />
       {/if}
 
       {#if hasReasoning}
@@ -454,8 +481,8 @@
         {/each}
       {/if}
 
-      {#if sources.length > 0}
-        <SourcesList {sources} />
+      {#if visibleSources.length > 0}
+        <SourcesList sources={visibleSources} />
       {/if}
 
       <!-- Action bar: buttons left, cost right, same row, aligned -->
