@@ -1,6 +1,7 @@
 from quip.models.bootstrap import BootstrapState
 from quip.models.budget import Budget
 from quip.models.chat import Chat, ChatRun, Message
+from quip.models.voice import VoiceCall, VoiceToolCall
 from quip.models.config import Config
 from quip.models.file import DocumentChunk, DocumentImage, File
 from quip.models.sandbox import Sandbox
@@ -18,6 +19,8 @@ __all__ = [
     "BootstrapState",
     "Chat",
     "ChatRun",
+    "VoiceCall",
+    "VoiceToolCall",
     "Config",
     "DocumentChunk",
     "DocumentImage",

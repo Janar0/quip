@@ -47,11 +47,11 @@
 - `POST /api/voice/calls/{call_id}/end` marks an owned call terminal. No server-side session kill or hard billing cap is promised.
 - `VoiceCall` records owner, chat, configured provider/model, lifecycle timestamps/status, and client-reported usage metadata. `VoiceToolCall` has a unique `(voice_call_id, provider_call_id)` key, argument hash, status, and result metadata.
 
-- [ ] Add failing tests for unauthenticated requests, another user's chat/call, missing config, upstream SDP failure, and response/header/key secrecy; add migration round-trip/schema tests.
-- [ ] Run: `cd backend && pytest tests/test_voice_sessions.py tests/test_migrations.py -q` — expected failures before implementation.
-- [ ] Implement the two ledger models, migration, fixed-endpoint SDP broker, authenticated routes, visible sanitized errors, and sample-only Qwen config names; never accept a provider URL or credential from the browser.
-- [ ] Run the same pytest command — expected pass, including no credential string in JSON/errors.
-- [ ] Commit the session slice.
+- [x] Add failing tests for unauthenticated requests, another user's chat/call, missing config, upstream SDP failure, and response/header/key secrecy; add migration round-trip/schema tests.
+- [x] Run: `cd backend && pytest tests/test_voice_sessions.py tests/test_migrations.py -q` — expected failures before implementation.
+- [x] Implement the two ledger models, migration, fixed-endpoint SDP broker, authenticated routes, visible sanitized errors, and sample-only Qwen config names; never accept a provider URL or credential from the browser.
+- [x] Run the same pytest command — expected pass, including no credential string in JSON/errors.
+- [x] Commit the session slice.
 
 ### Task 2: Transcript and idempotent Quip tool bridge
 

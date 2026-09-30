@@ -26,6 +26,7 @@ from quip.routers.models import router as models_router
 from quip.routers.sandbox import router as sandbox_router
 from quip.routers.skills import router as skills_router
 from quip.routers.workspaces import router as workspaces_router
+from quip.routers.voice import router as voice_router
 from quip.services.openwebui_migration import run_migration_if_needed
 from quip.services.sandbox import sandbox_cleanup_loop, sandbox_manager
 from quip.services.telegram import TelegramBotService
@@ -85,6 +86,7 @@ app.include_router(images_router)
 app.include_router(audio_router)
 app.include_router(icons_router)
 app.include_router(workspaces_router)
+app.include_router(voice_router)
 
 
 @app.get("/health/live")
