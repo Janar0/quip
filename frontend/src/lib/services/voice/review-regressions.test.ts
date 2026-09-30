@@ -143,6 +143,39 @@ it('End while awaiting microphone permission releases late tracks and never sign
   expect(observed.providerStarts).toBe(0);
 });
 
+it('End while camera pipeline initialization is pending disposes the late pipeline', async () => {
+  const s = setup();
+  s.session.chooseCamera(true);
+  let finish!: (pipeline: { stream: MediaStream; track: MediaStreamTrack; dispose: () => void }) => void;
+  const dispose = vi.fn(() => s.outboundCamera.stop());
+  vi.spyOn(s.session as any, 'createVideoPipeline').mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  const starting = s.session.start();
+  await vi.waitFor(() => expect(s.localStreams).toHaveLength(1));
+  await s.session.end();
+  finish({ stream: mediaStream([], [s.outboundCamera]), track: s.outboundCamera, dispose });
+  await starting;
+
+  expect(dispose).toHaveBeenCalledOnce();
+  expect(s.camera.stop).toHaveBeenCalled();
+  expect(s.api.start).not.toHaveBeenCalled();
+  expect(s.pc.addTrack).not.toHaveBeenCalled();
+});
+
+it('End while provider SDP signaling is pending closes a late-created call', async () => {
+  const s = setup();
+  let finish!: (answer: { call_id: string; sdp: string }) => void;
+  vi.mocked(s.api.start).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  const starting = s.session.start();
+  await vi.waitFor(() => expect(s.api.start).toHaveBeenCalledOnce());
+  await s.session.end();
+  finish({ call_id: 'late-call', sdp: 'v=0\r\no=- provider answer' });
+  await starting;
+
+  expect(s.api.end).toHaveBeenCalledWith('late-call');
+  expect(s.pc.closed).toBe(true);
+  expect(s.session.state.status).toBe('ended');
+});
+
 it('user speech interruption is processed while a web tool is still pending', async () => {
   const s=setup();
   let finish!: (value:any)=>void;
