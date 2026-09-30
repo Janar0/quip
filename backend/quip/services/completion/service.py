@@ -359,6 +359,53 @@ def _accumulate_usage(acc: dict | None, new: dict | None) -> dict | None:
 class CompletionService:
 
     @staticmethod
+    async def stream_selected_model(
+        messages: list[dict],
+        model_id: str,
+        *,
+        tools: list[dict],
+        max_tokens: int = 1_200,
+    ):
+        """Stream one tool-enabled round through Quip's selected provider seam.
+
+        Internal long-running workers use this instead of reimplementing
+        OpenRouter/Ollama routing or creating a second ChatRun/message pair.
+        The task owner supplies an explicit, bounded tool list.
+        """
+        from fastapi import HTTPException
+
+        effective_model = _resolve_model(model_id)
+        if effective_model != model_id:
+            raise HTTPException(status_code=409, detail="Selected model changed")
+        model_info = get_cached_model(effective_model)
+        if not model_info:
+            raise HTTPException(status_code=503, detail="Selected text model is no longer in the catalog")
+        if model_info.get("supports_tools") is False:
+            raise HTTPException(status_code=503, detail="Selected text model does not support tool calling")
+
+        is_ollama = effective_model.startswith("ollama/")
+        api_key = get_setting("openrouter_api_key")
+        if not is_ollama and not api_key:
+            raise HTTPException(status_code=503, detail="OpenRouter is not configured")
+
+        orchestrator = StreamOrchestrator(
+            messages=messages,
+            model=effective_model,
+            base_url=get_setting("ollama_url", "http://localhost:11434"),
+            api_key=api_key,
+            tool_gating_enabled=False,
+            search_enabled=True,
+            search_mode=False,
+            sandbox_available=False,
+            loaded_skills=set(),
+            supports_tools=True,
+            context_length=model_info.get("context_length", 0),
+            max_tokens=max(64, min(int(max_tokens), 1_200)),
+        )
+        async for item in orchestrator.stream_with_tools(tools):
+            yield item
+
+    @staticmethod
     async def determine_parent(
         db: AsyncSession, chat: Chat, branch_from_message_id: UUID | None
     ) -> UUID | None:

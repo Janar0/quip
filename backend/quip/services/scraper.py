@@ -4,7 +4,7 @@ import re
 
 import httpx
 
-from quip.services.url_security import safe_get
+from quip.services.url_security import safe_get, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ DEFAULT_MAX_CHARS = 15000
 
 async def read_url(url: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     """Fetch URL content as markdown. Tries Jina Reader first, then direct fetch."""
+    # Validate the destination before sending it to a third-party reader proxy.
+    url = await validate_outbound_url(url)
     try:
         return await _jina_reader(url, max_chars)
     except Exception as e:

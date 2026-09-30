@@ -30,6 +30,7 @@ class StreamOrchestrator:
         loaded_skills: set[str],
         supports_tools: bool = True,
         context_length: int = 0,
+        max_tokens: int | None = None,
     ):
         self.messages = messages
         self.model = model
@@ -42,6 +43,7 @@ class StreamOrchestrator:
         self.loaded_skills = loaded_skills
         self.supports_tools = supports_tools
         self.context_length = context_length
+        self.max_tokens = max_tokens
 
     def _build_tools(self) -> list[dict]:
         if not self.supports_tools:
@@ -62,6 +64,7 @@ class StreamOrchestrator:
                 base_url=self.base_url or ollama.DEFAULT_OLLAMA_URL,
                 tools=tools,
                 context_length=self.context_length,
+                max_tokens=self.max_tokens,
             )
         return openrouter.stream_completion(
             messages=self.messages,
@@ -69,6 +72,7 @@ class StreamOrchestrator:
             api_key=self.api_key,
             tools=tools,
             context_length=self.context_length,
+            max_tokens=self.max_tokens,
         )
 
     async def _stream_chunks(self, tools: list[dict]) -> AsyncGenerator[str | tuple, None]:
@@ -111,6 +115,11 @@ class StreamOrchestrator:
 
         for ev in coalescer.flush():
             yield ev
+
+    async def stream_with_tools(self, tools: list[dict]) -> AsyncGenerator[str | tuple, None]:
+        """Expose one provider-neutral streaming round to bounded task workers."""
+        async for item in self._stream_chunks(tools):
+            yield item
 
     async def run(
         self,

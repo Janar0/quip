@@ -69,7 +69,7 @@ async def test_voice_session_is_disabled_without_operator_configuration(client, 
 
 
 @pytest.mark.asyncio
-async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_headers, monkeypatch):
+async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_headers, db_session, monkeypatch):
     from quip.services.voice import session
 
     chat_id = await _create_chat(client, auth_headers)
@@ -115,6 +115,7 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
             "chat_id": str(chat_id),
             "sdp": "v=0\r\no=browser 1 1 IN IP4 127.0.0.1\r\n",
             "type": "offer",
+            "camera_enabled": True,
             "endpoint": "https://attacker.invalid/",
             "api_key": "client-forgery",
         },
@@ -126,6 +127,11 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
     assert captured["content"].startswith(b"v=0")
     assert secret not in response.text
     assert "api_key" not in response.json()
+    persisted_call = await db_session.scalar(
+        select(VoiceCall).where(VoiceCall.id == UUID(response.json()["call_id"]))
+    )
+    assert persisted_call is not None
+    assert persisted_call.camera_enabled is True
 
 
 @pytest.mark.asyncio
@@ -203,6 +209,7 @@ async def test_voice_provider_error_is_sanitized_and_session_is_failed(client, a
     assert failed_call is not None
     assert failed_call.status == "failed"
     assert failed_call.error_code == "provider_signaling_failed"
+    assert failed_call.camera_enabled is False
 
 
 @pytest.mark.asyncio

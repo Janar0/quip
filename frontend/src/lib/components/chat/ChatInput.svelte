@@ -6,6 +6,7 @@
   import { isStreaming } from '$lib/stores/chat';
   import { stopGeneration } from '$lib/api/chats';
   import { uploadFiles, getFileUrl, deleteFile, type UploadedFile } from '$lib/api/files';
+  import VoiceCallPanel from './VoiceCallPanel.svelte';
 
   let {
     onSend,
@@ -23,6 +24,7 @@
   let textareaEl: HTMLTextAreaElement;
   let fileInputEl: HTMLInputElement;
   let isDragOver = $state(false);
+  let voicePanelOpen = $state(false);
   let dragCounter = 0;
 
   interface AttachedFile {
@@ -224,6 +226,11 @@
   </div>
 {/if}
 
+{#if voicePanelOpen && chatId}
+  <div class="mx-auto max-w-4xl px-4 pt-2">
+    <VoiceCallPanel {chatId} onClose={() => { voicePanelOpen = false; }} />
+  </div>
+{/if}
 
 <form
   onsubmit={handleSubmit}
@@ -297,6 +304,20 @@
       <!-- Action bar -->
       <div class="flex items-center justify-between px-3 pb-3">
         <div class="flex items-center gap-1">
+          {#if chatId && variant === 'chat'}
+            <button
+              type="button"
+              class="p-2 rounded-lg quip-icon-btn active:scale-[0.92]"
+              onclick={() => { voicePanelOpen = !voicePanelOpen; }}
+              title={$t('voice.open')}
+              aria-label={$t('voice.open')}
+              aria-expanded={voicePanelOpen}
+            >
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3M8 22h8"/>
+              </svg>
+            </button>
+          {/if}
           <!-- Paperclip -->
           <button
             type="button"

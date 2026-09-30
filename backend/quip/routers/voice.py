@@ -2,7 +2,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,11 +10,155 @@ from quip.database import get_db
 from quip.models.chat import Chat
 from quip.models.user import User
 from quip.models.voice import VoiceCall
-from quip.schemas.voice import VoiceCallEndResponse, VoiceCallStartRequest, VoiceCallStartResponse
+from quip.schemas.voice import (
+    VoiceCallEndResponse,
+    VoiceCallStartRequest,
+    VoiceCallStartResponse,
+    VoiceContextResponse,
+    VoiceEventRequest,
+    VoiceToolRequest,
+    VoiceToolResponse,
+    VoiceTaskStartRequest,
+    VoiceTaskStartResponse,
+    VoiceTaskSteerRequest,
+    VoiceTaskSteerResponse,
+)
 from quip.services.permissions import get_current_user
 from quip.services.voice.session import VoiceProviderError, exchange_sdp, get_qwen_realtime_config
+from quip.services.voice.common import get_owned_call
+from quip.services.voice.context import VoiceContextService
+from quip.services.voice.events import persist_provider_event
+from quip.services.voice.tools import execute_voice_tool
+from quip.services.voice.tasks import (
+    cancel_delegated_task,
+    read_delegated_task,
+    start_or_steer_delegated_task,
+    steer_delegated_task,
+)
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+
+@router.get("/calls/{call_id}/context", response_model=VoiceContextResponse)
+async def voice_call_context(
+    call_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    call = await get_owned_call(db, call_id, user.id)
+    if call is None:
+        raise HTTPException(status_code=404, detail="Voice call not found")
+    if call.status in {"ended", "failed"}:
+        raise HTTPException(status_code=409, detail="Voice call has ended")
+    chat_result = await db.execute(
+        select(Chat).where(Chat.id == call.chat_id, Chat.user_id == user.id)
+    )
+    chat = chat_result.scalar_one_or_none()
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    packet = await VoiceContextService().build_task_context(
+        db, user, chat, "Live voice conversation context"
+    )
+    return {
+        "chat_id": packet.chat_id,
+        "context_version": packet.context_version,
+        "task_goal": packet.task_goal,
+        "summary": packet.summary,
+        "summary_sources": list(packet.summary_sources),
+        "task_state": packet.task_state,
+        "recent": packet.recent,
+        "retrieved": packet.retrieved,
+        "estimated_tokens": packet.estimated_tokens,
+        "instruction": packet.instruction,
+    }
+
+
+@router.post("/calls/{call_id}/events")
+async def voice_event(
+    call_id: UUID,
+    body: VoiceEventRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await persist_provider_event(db, user, call_id, body.event)
+
+
+@router.post("/calls/{call_id}/tools", response_model=VoiceToolResponse)
+async def voice_tool(
+    call_id: UUID,
+    body: VoiceToolRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await execute_voice_tool(
+        db,
+        user,
+        call_id,
+        provider_call_id=body.provider_call_id,
+        name=body.name,
+        raw_arguments=body.arguments,
+    )
+
+
+@router.post("/calls/{call_id}/tasks", response_model=VoiceTaskStartResponse, status_code=202)
+async def start_voice_task(
+    call_id: UUID,
+    body: VoiceTaskStartRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await start_or_steer_delegated_task(
+        request,
+        db,
+        user,
+        call_id=call_id,
+        provider_call_id=body.provider_call_id,
+        goal=body.goal,
+    )
+
+
+@router.get("/calls/{call_id}/tasks/{task_id}")
+async def voice_task_status(
+    call_id: UUID,
+    task_id: UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await read_delegated_task(db, request, user, call_id=call_id, task_id=task_id)
+
+
+@router.post("/calls/{call_id}/tasks/{task_id}/steer", response_model=VoiceTaskSteerResponse)
+async def steer_voice_task(
+    call_id: UUID,
+    task_id: UUID,
+    body: VoiceTaskSteerRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await steer_delegated_task(
+        db,
+        request,
+        user,
+        call_id=call_id,
+        task_id=task_id,
+        expected_revision=body.expected_revision,
+        idempotency_key=body.idempotency_key,
+        instruction=body.instruction,
+    )
+
+
+@router.post("/calls/{call_id}/tasks/{task_id}/cancel")
+async def cancel_voice_task(
+    call_id: UUID,
+    task_id: UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await cancel_delegated_task(db, request, user, call_id=call_id, task_id=task_id)
 
 
 @router.post("/calls", response_model=VoiceCallStartResponse)
@@ -48,6 +192,7 @@ async def start_voice_call(
         provider="qwen",
         model=config.model,
         status="connecting",
+        camera_enabled=body.camera_enabled,
     )
     db.add(call)
     await db.commit()
