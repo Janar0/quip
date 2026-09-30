@@ -445,7 +445,12 @@ export async function streamChat(
   if (get(isStreaming)) return;
   const model = get(selectedModel);
   const ctrl = new AbortController();
-  const researchRequest: PendingResearchRequest | null = modeHint === 'research'
+  const effectiveModeHint = modeHint === 'search' && get(searchEnabled)
+    ? 'search'
+    : modeHint === 'research' && get(researchEnabled)
+      ? 'research'
+      : undefined;
+  const researchRequest: PendingResearchRequest | null = effectiveModeHint === 'research'
     ? { stopRequested: false, cancelSent: false }
     : null;
   if (researchRequest) pendingResearchRequest = researchRequest;
@@ -501,8 +506,7 @@ export async function streamChat(
     if (fileIds?.length) body.file_ids = fileIds;
     if (workspaceId) body.workspace_id = workspaceId;
     if (branchFromMessageId) body.branch_from_message_id = branchFromMessageId;
-    if (modeHint === 'search' && get(searchEnabled)) body.mode_hint = 'search';
-    if (modeHint === 'research' && get(researchEnabled)) body.mode_hint = 'research';
+    if (effectiveModeHint) body.mode_hint = effectiveModeHint;
 
     const res = await api('/api/chat/completions', {
       method: 'POST',

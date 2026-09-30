@@ -245,6 +245,7 @@ it('uses durable cancellation for an active research run', async () => {
 });
 
 it('defers Stop until the research chat event supplies a durable run ID', async () => {
+  researchEnabled.set(true);
   let streamController!: ReadableStreamDefaultController<Uint8Array>;
   let completionSignal: AbortSignal | undefined;
   const body = new ReadableStream<Uint8Array>({
