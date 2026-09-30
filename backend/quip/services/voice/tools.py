@@ -7,8 +7,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.core.config import get_bool_setting
@@ -24,6 +23,7 @@ MAX_SEARCHES_PER_CALL = 5
 MAX_TOOL_SECONDS = 30
 MAX_RESULT_CHARS = 8_000
 ALLOWED_TOOLS = {"web_search", "read_url"}
+_active_voice_tool_tasks: dict[tuple[UUID, str], asyncio.Task] = {}
 
 
 def _parse_arguments(name: str, raw_arguments: str) -> tuple[dict, str]:
@@ -97,7 +97,7 @@ async def run_voice_web_tool(name: str, args: dict) -> dict:
     except HTTPException as exc:
         result = {"error": "tool_permission_denied" if exc.status_code == 403 else "invalid_tool_input"}
         status, error_code = "failed", result["error"]
-    except asyncio.TimeoutError:
+    except TimeoutError:
         result = {"error": "tool_timeout"}
         status, error_code = "failed", "tool_timeout"
     except ValueError:
@@ -114,18 +114,26 @@ async def run_voice_web_tool(name: str, args: dict) -> dict:
     return {"status": status, "error_code": error_code, "result": result}
 
 
-async def _save_result_message(db: AsyncSession, call, provider_call_id: str, result: dict) -> UUID:
+async def _save_result_message(
+    db: AsyncSession,
+    *,
+    call_id: UUID,
+    chat_id: UUID,
+    model: str,
+    provider_call_id: str,
+    result: dict,
+) -> UUID:
     message = Message(
         id=uuid4(),
-        chat_id=call.chat_id,
-        parent_id=await get_latest_leaf_message_id(db, call.chat_id),
+        chat_id=chat_id,
+        parent_id=await get_latest_leaf_message_id(db, chat_id),
         role="tool",
         content=json.dumps(result, ensure_ascii=False),
-        model=call.model,
+        model=model,
         provider="qwen",
         meta={
             "source": "qwen_voice_tool",
-            "voice_call_id": str(call.id),
+            "voice_call_id": str(call_id),
             "provider_call_id": provider_call_id,
         },
         created_at=datetime.now(UTC),
@@ -149,6 +157,9 @@ async def execute_voice_tool(
         raise HTTPException(status_code=404, detail="Voice call not found")
     if call.status != "active":
         raise HTTPException(status_code=409, detail="Voice call is not active")
+    voice_call_id = call.id
+    chat_id = call.chat_id
+    model_id = call.model
     if name not in ALLOWED_TOOLS:
         raise HTTPException(status_code=422, detail="Unsupported voice tool")
     args, arguments_hash = _parse_arguments(name, raw_arguments)
@@ -156,7 +167,7 @@ async def execute_voice_tool(
         await _check_search_gate()
     existing = await db.scalar(
         select(VoiceToolCall).where(
-            VoiceToolCall.voice_call_id == call.id,
+            VoiceToolCall.voice_call_id == voice_call_id,
             VoiceToolCall.provider_call_id == provider_call_id,
         )
     )
@@ -173,35 +184,51 @@ async def execute_voice_tool(
             "replayed": True,
         }
 
-    rows = list((await db.scalars(
-        select(VoiceToolCall).where(VoiceToolCall.voice_call_id == call.id)
-    )).all())
-    if len(rows) >= MAX_TOOL_CALLS_PER_CALL:
-        raise HTTPException(status_code=429, detail="Voice tool call limit reached")
-    if name == "web_search" and sum(row.function_name == "web_search" for row in rows) >= MAX_SEARCHES_PER_CALL:
-        raise HTTPException(status_code=429, detail="Voice search limit reached")
-    if any(row.status == "pending" for row in rows):
-        raise HTTPException(status_code=409, detail="Another voice tool is already running")
+    # Each limit is backed by a per-call unique slot. Database uniqueness makes
+    # admission atomic across requests and processes (unlike a read/count/write
+    # check). A pending slot acts as a durable single-flight reservation.
+    search_slots = range(MAX_SEARCHES_PER_CALL) if name == "web_search" else (None,)
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as conflict_insert
+    elif dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as conflict_insert
+    else:
+        raise RuntimeError("Voice tool admission requires SQLite or PostgreSQL")
+    reserved_id = None
+    for admission_slot in range(MAX_TOOL_CALLS_PER_CALL):
+        for search_slot in search_slots:
+            candidate_id = uuid4()
+            statement = conflict_insert(VoiceToolCall).values(
+                id=candidate_id,
+                voice_call_id=voice_call_id,
+                provider_call_id=provider_call_id,
+                function_name=name,
+                arguments_hash=arguments_hash,
+                status="pending",
+                cancel_requested=False,
+                admission_slot=admission_slot,
+                search_slot=search_slot,
+                pending_slot=1,
+            ).on_conflict_do_nothing()
+            result = await db.execute(statement)
+            if result.rowcount == 1:
+                reserved_id = candidate_id
+                break
+        if reserved_id is not None:
+            break
 
-    tool_call = VoiceToolCall(
-        voice_call_id=call.id,
-        provider_call_id=provider_call_id,
-        function_name=name,
-        arguments_hash=arguments_hash,
-        status="pending",
-    )
-    db.add(tool_call)
-    try:
-        await db.commit()
-    except IntegrityError:
+    if reserved_id is None:
         await db.rollback()
-        existing = await db.scalar(
-            select(VoiceToolCall).where(
-                VoiceToolCall.voice_call_id == call.id,
-                VoiceToolCall.provider_call_id == provider_call_id,
-            )
-        )
-        if existing and existing.arguments_hash == arguments_hash and existing.status != "pending":
+        existing = await db.scalar(select(VoiceToolCall).where(
+            VoiceToolCall.voice_call_id == voice_call_id,
+            VoiceToolCall.provider_call_id == provider_call_id,
+        ))
+        if existing:
+            if existing.arguments_hash != arguments_hash or existing.function_name != name:
+                raise HTTPException(status_code=409, detail="Tool call ID was reused with different arguments")
+            if existing.status == "pending":
+                raise HTTPException(status_code=409, detail="Tool call is already running")
             return {
                 "provider_call_id": provider_call_id,
                 "name": name,
@@ -209,9 +236,65 @@ async def execute_voice_tool(
                 "result": existing.result or {"error": "tool_result_unavailable"},
                 "replayed": True,
             }
-        raise HTTPException(status_code=409, detail="Another voice tool is already running") from None
+        rows = list((await db.scalars(
+            select(VoiceToolCall).where(VoiceToolCall.voice_call_id == voice_call_id)
+        )).all())
+        if len(rows) >= MAX_TOOL_CALLS_PER_CALL:
+            raise HTTPException(status_code=429, detail="Voice tool call limit reached")
+        if name == "web_search" and sum(row.function_name == "web_search" for row in rows) >= MAX_SEARCHES_PER_CALL:
+            raise HTTPException(status_code=429, detail="Voice search limit reached")
+        if any(row.status == "pending" for row in rows):
+            raise HTTPException(status_code=409, detail="Another voice tool is already running")
+        raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
 
-    execution = await run_voice_web_tool(name, args)
+    await db.commit()
+    tool_call = await db.get(VoiceToolCall, reserved_id)
+    if tool_call is None:
+        raise HTTPException(status_code=409, detail="Voice tool admission conflicted")
+
+    task_key = (voice_call_id, provider_call_id)
+    active_task = asyncio.current_task()
+    if active_task is not None:
+        _active_voice_tool_tasks[task_key] = active_task
+    try:
+        execution = await run_voice_web_tool(name, args)
+    except asyncio.CancelledError:
+        await db.rollback()
+        cancelled = await db.scalar(select(VoiceToolCall).where(
+            VoiceToolCall.voice_call_id == voice_call_id,
+            VoiceToolCall.provider_call_id == provider_call_id,
+        ))
+        if cancelled is not None:
+            cancelled.status = "cancelled"
+            cancelled.error_code = "tool_cancelled"
+            cancelled.pending_slot = None
+            cancelled.finished_at = datetime.now(UTC)
+            await db.commit()
+        return {
+            "provider_call_id": provider_call_id,
+            "name": name,
+            "status": "cancelled",
+            "result": {"error": "tool_cancelled"},
+            "replayed": False,
+        }
+    finally:
+        if _active_voice_tool_tasks.get(task_key) is active_task:
+            _active_voice_tool_tasks.pop(task_key, None)
+
+    await db.refresh(tool_call)
+    if tool_call.cancel_requested:
+        tool_call.status = "cancelled"
+        tool_call.error_code = "tool_cancelled"
+        tool_call.pending_slot = None
+        tool_call.finished_at = datetime.now(UTC)
+        await db.commit()
+        return {
+            "provider_call_id": provider_call_id,
+            "name": name,
+            "status": "cancelled",
+            "result": {"error": "tool_cancelled"},
+            "replayed": False,
+        }
     result = execution["result"]
     status = execution["status"]
     error_code = execution["error_code"]
@@ -220,10 +303,18 @@ async def execute_voice_tool(
     if len(encoded) > MAX_RESULT_CHARS:
         result = {"content": encoded[: MAX_RESULT_CHARS - 20] + "…[truncated]"}
     tool_call.status = status
+    tool_call.pending_slot = None
     tool_call.result = result
     tool_call.error_code = error_code
     tool_call.finished_at = datetime.now(UTC)
-    tool_call.result_message_id = await _save_result_message(db, call, provider_call_id, result)
+    tool_call.result_message_id = await _save_result_message(
+        db,
+        call_id=voice_call_id,
+        chat_id=chat_id,
+        model=model_id,
+        provider_call_id=provider_call_id,
+        result=result,
+    )
     await db.commit()
     return {
         "provider_call_id": provider_call_id,
@@ -232,3 +323,29 @@ async def execute_voice_tool(
         "result": result,
         "replayed": False,
     }
+
+
+async def cancel_voice_tool(
+    db: AsyncSession,
+    user: User,
+    call_id: UUID,
+    provider_call_id: str,
+) -> dict:
+    call = await get_owned_call(db, call_id, user.id)
+    if call is None:
+        raise HTTPException(status_code=404, detail="Voice call not found")
+    voice_call_id = call.id
+    row = await db.scalar(select(VoiceToolCall).where(
+        VoiceToolCall.voice_call_id == voice_call_id,
+        VoiceToolCall.provider_call_id == provider_call_id,
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Voice tool call not found")
+    if row.status != "pending":
+        return {"provider_call_id": provider_call_id, "status": row.status}
+    row.cancel_requested = True
+    await db.commit()
+    task = _active_voice_tool_tasks.get((voice_call_id, provider_call_id))
+    if task is not None and not task.done():
+        task.cancel()
+    return {"provider_call_id": provider_call_id, "status": "cancelling"}

@@ -58,7 +58,7 @@ class VoiceToolRequest(BaseModel):
 class VoiceToolResponse(BaseModel):
     provider_call_id: str
     name: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "cancelled"]
     result: dict[str, Any]
     replayed: bool = False
 

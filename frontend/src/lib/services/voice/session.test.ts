@@ -103,6 +103,7 @@ function setup(options: { cameraDenied?: boolean; defaultVideoPipeline?: boolean
     })),
     steerTask: vi.fn(async (_callId, taskId, expectedRevision) => ({ task_id: taskId, status: 'running', revision: expectedRevision + 1, context_version: 2, replayed: false })),
     cancelTask: vi.fn(async (_callId, taskId) => ({ task_id: taskId, status: 'cancelling' })),
+    cancelTool: vi.fn(async (_callId, providerCallId) => ({ provider_call_id: providerCallId, status: 'cancelling' })),
     end: vi.fn(async () => ({})),
   };
   const states: VoiceSessionState[] = [];
@@ -251,6 +252,8 @@ describe('VoiceSession WebRTC controller', () => {
     s.pc.channel.emit({ type: 'session.created', session: {} });
     s.pc.connect();
     await s.session.whenProviderEventsIdle();
+    s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
+    await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
       type: 'response.function_call_arguments.done',
       call_id: 'function-1', name: 'web_search', arguments: '{"query":"музей сегодня"}',
@@ -258,7 +261,7 @@ describe('VoiceSession WebRTC controller', () => {
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
     await s.session.whenProviderEventsIdle();
 
-    expect(s.api.tool).toHaveBeenCalledWith('call-1', 'function-1', 'web_search', '{"query":"музей сегодня"}');
+    expect(s.api.tool).toHaveBeenCalledWith('call-1', 'function-1', 'web_search', '{"query":"музей сегодня"}', expect.any(AbortSignal));
     expect(s.pc.channel.sent).toContainEqual({
       type: 'conversation.item.create',
       item: { type: 'function_call_output', call_id: 'function-1', output: '{"results":[]}' },
@@ -266,13 +269,15 @@ describe('VoiceSession WebRTC controller', () => {
     expect(s.pc.channel.sent).toContainEqual({ type: 'response.create' });
   });
 
-  it('speech interruption cancels Qwen output but does not cancel a pending Quip task/tool result or resume speech', async () => {
+  it('speech interruption cancels Qwen output and the pending web tool without resuming stale speech', async () => {
     let finishTool!: (value: any) => void;
     const s = setup();
     vi.mocked(s.api.tool).mockReturnValueOnce(new Promise((resolve) => { finishTool = resolve; }));
     await s.session.start();
     s.pc.channel.emit({ type: 'session.created', session: {} });
     s.pc.connect();
+    await s.session.whenProviderEventsIdle();
+    s.pc.channel.emit({ type: 'response.created', response: { id: 'response-pending' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
       type: 'response.function_call_arguments.done',
@@ -281,11 +286,12 @@ describe('VoiceSession WebRTC controller', () => {
     await vi.waitFor(() => expect(s.api.tool).toHaveBeenCalled());
     s.session.interruptSpeech();
     expect(s.pc.channel.sent).toContainEqual({ type: 'response.cancel' });
+    expect(s.api.cancelTool).toHaveBeenCalledWith('call-1', 'function-pending');
     finishTool({ provider_call_id: 'function-pending', name: 'web_search', status: 'completed', result: { results: [] }, replayed: false });
     await s.session.whenProviderEventsIdle();
 
     expect(s.api.end).not.toHaveBeenCalled();
-    expect(s.pc.channel.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.create' }));
+    expect(s.pc.channel.sent.filter((event: any) => event.type === 'conversation.item.create')).toHaveLength(0);
     expect(s.pc.channel.sent.filter((event: any) => event.type === 'response.create')).toHaveLength(0);
   });
 
@@ -299,6 +305,8 @@ describe('VoiceSession WebRTC controller', () => {
     await s.session.start();
     s.pc.channel.emit({ type: 'session.created', session: {} });
     s.pc.connect();
+    await s.session.whenProviderEventsIdle();
+    s.pc.channel.emit({ type: 'response.created', response: { id: 'response-1' } });
     await s.session.whenProviderEventsIdle();
     s.pc.channel.emit({
       type: 'response.function_call_arguments.done', call_id: 'delegate-1', name: 'delegate_to_text_model',

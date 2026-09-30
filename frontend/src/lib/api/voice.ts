@@ -30,7 +30,7 @@ export interface VoiceContextPacket {
 export interface VoiceToolResult {
   provider_call_id: string;
   name: string;
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'cancelled';
   result: Record<string, unknown>;
   replayed: boolean;
 }
@@ -64,11 +64,12 @@ export interface VoiceTaskSteerResult {
   replayed: boolean;
 }
 
-async function jsonRequest<T>(path: string, method: string, body?: unknown): Promise<T> {
+async function jsonRequest<T>(path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await api(path, {
       method,
+      ...(signal ? { signal } : {}),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch {
@@ -104,12 +105,15 @@ export const voiceApi = {
   event(callId: string, event: Record<string, unknown>): Promise<Record<string, unknown>> {
     return jsonRequest(`/api/voice/calls/${encodeURIComponent(callId)}/events`, 'POST', { event });
   },
-  tool(callId: string, providerCallId: string, name: string, argumentsJson: string): Promise<VoiceToolResult> {
+  tool(callId: string, providerCallId: string, name: string, argumentsJson: string, signal?: AbortSignal): Promise<VoiceToolResult> {
     return jsonRequest(`/api/voice/calls/${encodeURIComponent(callId)}/tools`, 'POST', {
       provider_call_id: providerCallId,
       name,
       arguments: argumentsJson,
-    });
+    }, signal);
+  },
+  cancelTool(callId: string, providerCallId: string): Promise<{ provider_call_id: string; status: string }> {
+    return jsonRequest(`/api/voice/calls/${encodeURIComponent(callId)}/tools/${encodeURIComponent(providerCallId)}/cancel`, 'POST');
   },
   startTask(callId: string, providerCallId: string, goal: string): Promise<VoiceTaskStart> {
     return jsonRequest(`/api/voice/calls/${encodeURIComponent(callId)}/tasks`, 'POST', {

@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.database import get_db
@@ -16,25 +17,26 @@ from quip.schemas.voice import (
     VoiceCallStartResponse,
     VoiceContextResponse,
     VoiceEventRequest,
-    VoiceToolRequest,
-    VoiceToolResponse,
     VoiceTaskStartRequest,
     VoiceTaskStartResponse,
     VoiceTaskSteerRequest,
     VoiceTaskSteerResponse,
+    VoiceToolRequest,
+    VoiceToolResponse,
 )
+from quip.services.completion.service import _check_budget
 from quip.services.permissions import get_current_user
-from quip.services.voice.session import VoiceProviderError, exchange_sdp, get_qwen_realtime_config
 from quip.services.voice.common import get_owned_call
 from quip.services.voice.context import VoiceContextService
 from quip.services.voice.events import persist_provider_event
-from quip.services.voice.tools import execute_voice_tool
+from quip.services.voice.session import VoiceProviderError, exchange_sdp, get_qwen_realtime_config
 from quip.services.voice.tasks import (
     cancel_delegated_task,
     read_delegated_task,
     start_or_steer_delegated_task,
     steer_delegated_task,
 )
+from quip.services.voice.tools import cancel_voice_tool, execute_voice_tool
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
@@ -98,6 +100,16 @@ async def voice_tool(
         name=body.name,
         raw_arguments=body.arguments,
     )
+
+
+@router.post("/calls/{call_id}/tools/{provider_call_id}/cancel")
+async def cancel_voice_tool_call(
+    call_id: UUID,
+    provider_call_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await cancel_voice_tool(db, user, call_id, provider_call_id)
 
 
 @router.post("/calls/{call_id}/tasks", response_model=VoiceTaskStartResponse, status_code=202)
@@ -176,6 +188,9 @@ async def start_voice_call(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
+    # Reject exhausted accounts before allocating a call row or contacting Qwen.
+    await _check_budget(user, db)
+
     active_result = await db.execute(
         select(VoiceCall.id).where(
             VoiceCall.user_id == user.id,
@@ -195,7 +210,11 @@ async def start_voice_call(
         camera_enabled=body.camera_enabled,
     )
     db.add(call)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A voice call is already active") from None
 
     try:
         answer_sdp = await exchange_sdp(config, body.sdp)

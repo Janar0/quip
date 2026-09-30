@@ -27,7 +27,7 @@ from quip.services.chat_runs import (
 )
 from quip.services.completion.service import CompletionService, _accumulate_usage, _parse_sse_frame
 from quip.services.voice.common import get_latest_leaf_message_id, get_owned_call
-from quip.services.voice.context import VoiceContextService, VoiceContextPacket, estimate_tokens
+from quip.services.voice.context import VoiceContextPacket, VoiceContextService, estimate_tokens
 from quip.services.voice.tools import MAX_RESULT_CHARS, run_voice_web_tool
 
 logger = logging.getLogger(__name__)
@@ -120,9 +120,13 @@ def _task_call_hash(goal: str) -> str:
     return hashlib.sha256(goal.strip().encode("utf-8")).hexdigest()
 
 
-def _delegation_calls(metadata: dict) -> list[dict]:
-    calls = metadata.get("delegation_calls")
-    return calls if isinstance(calls, list) else []
+async def _voice_task_messages(db: AsyncSession, call: VoiceCall) -> list[Message]:
+    return list((await db.scalars(
+        select(Message)
+        .where(Message.chat_id == call.chat_id, Message.role == "user")
+        .order_by(Message.created_at.desc())
+        .limit(10_000)
+    )).all())
 
 
 async def _load_call_runs(db: AsyncSession, call: VoiceCall) -> list[ChatRun]:
@@ -139,7 +143,12 @@ async def _load_call_runs(db: AsyncSession, call: VoiceCall) -> list[ChatRun]:
 
 
 def _call_replay(run: ChatRun, provider_call_id: str, goal_hash: str) -> bool:
-    for item in _delegation_calls(dict(run.run_metadata or {})):
+    metadata = dict(run.run_metadata or {})
+    calls = metadata.get("delegation_calls")
+    candidates = list(calls) if isinstance(calls, list) else []
+    if metadata.get("provider_call_id"):
+        candidates.append({"provider_call_id": metadata.get("provider_call_id"), "goal_hash": metadata.get("goal_hash")})
+    for item in candidates:
         if item.get("provider_call_id") == provider_call_id:
             if item.get("goal_hash") != goal_hash:
                 raise HTTPException(status_code=409, detail="Provider call ID was reused with different task input")
@@ -154,6 +163,7 @@ async def _save_steering_message(
     run: ChatRun,
     provider_call_id: str,
     goal: str,
+    goal_hash: str,
 ) -> None:
     db.add(Message(
         id=uuid4(),
@@ -168,6 +178,7 @@ async def _save_steering_message(
             "voice_call_id": str(call.id),
             "voice_task_id": str(run.id),
             "steering_provider_call_id": provider_call_id,
+            "steering_goal_hash": goal_hash,
         },
         created_at=datetime.now(UTC),
     ))
@@ -198,6 +209,27 @@ async def start_or_steer_delegated_task(
         goal_hash = _task_call_hash(goal)
 
         call_runs = await _load_call_runs(db, call)
+        task_messages = await _voice_task_messages(db, call)
+        for message in task_messages:
+            metadata = message.meta or {}
+            if (
+                metadata.get("source") != "voice_task_steering"
+                or metadata.get("voice_call_id") != str(call.id)
+                or metadata.get("steering_provider_call_id") != provider_call_id
+            ):
+                continue
+            if metadata.get("steering_goal_hash") != goal_hash:
+                raise HTTPException(status_code=409, detail="Provider call ID was reused with different task input")
+            task_id = UUID(str(metadata.get("voice_task_id")))
+            prior = next((row for row in call_runs if row.id == task_id), None)
+            if prior is not None:
+                return {
+                    "task_id": prior.id,
+                    "status": prior.status,
+                    "model": prior.model or "",
+                    "replayed": True,
+                    "steered": True,
+                }
         for prior in call_runs:
             if _call_replay(prior, provider_call_id, goal_hash):
                 return {
@@ -213,8 +245,14 @@ async def start_or_steer_delegated_task(
             metadata = dict(active.run_metadata or {})
             if metadata.get("cancel_requested"):
                 raise HTTPException(status_code=409, detail="The delegated task is being cancelled")
-            calls = _delegation_calls(metadata)
-            if len(calls) >= MAX_TASK_DELEGATIONS:
+            prior_steering_count = sum(
+                (message.meta or {}).get("source") == "voice_task_steering"
+                and (message.meta or {}).get("voice_call_id") == str(call.id)
+                and (message.meta or {}).get("voice_task_id") == str(active.id)
+                and bool((message.meta or {}).get("steering_provider_call_id"))
+                for message in task_messages
+            )
+            if 1 + prior_steering_count >= MAX_TASK_DELEGATIONS:
                 raise HTTPException(status_code=429, detail="Task delegation limit reached")
             queued = await enqueue_run_steering(
                 manager.session_factory,
@@ -228,15 +266,8 @@ async def start_or_steer_delegated_task(
             await db.rollback()
             await db.refresh(active)
             await db.refresh(call)
-            latest_metadata = dict(active.run_metadata or {})
-            # Copy the nested JSON list before changing it. Mutating the list
-            # in place also mutates SQLAlchemy's loaded value, making the new
-            # JSON object compare equal and preventing the call ID from saving.
-            latest_calls = list(_delegation_calls(latest_metadata))
-            latest_calls.append({"provider_call_id": provider_call_id, "goal_hash": goal_hash})
-            active.run_metadata = {**latest_metadata, "delegation_calls": latest_calls}
             await _save_steering_message(
-                db, call=call, run=active, provider_call_id=provider_call_id, goal=goal
+                db, call=call, run=active, provider_call_id=provider_call_id, goal=goal, goal_hash=goal_hash
             )
             await db.commit()
             return {
@@ -300,7 +331,6 @@ async def start_or_steer_delegated_task(
                 "provider_call_id": provider_call_id,
                 "goal_hash": goal_hash,
                 "task_goal": goal,
-                "delegation_calls": [{"provider_call_id": provider_call_id, "goal_hash": goal_hash}],
             },
         ))
         await db.commit()
@@ -474,6 +504,15 @@ def _context_as_user_text(packet: VoiceContextPacket, task_state: dict, steering
     return "\n\n".join(sections)
 
 
+def _serialized_completion_tokens(messages: list[dict]) -> int:
+    serialized = json.dumps(
+        {"messages": messages, "tools": TASK_TOOL_DEFINITIONS},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return estimate_tokens(serialized)
+
+
 async def _build_task_messages(execution, spec: ChatRunSpec, goal: str, task_state: dict, steering: list[str]):
     async with execution.manager.session_factory() as db:
         chat = await db.scalar(select(Chat).where(Chat.id == spec.chat_id, Chat.user_id == spec.user_id))
@@ -490,11 +529,15 @@ async def _build_task_messages(execution, spec: ChatRunSpec, goal: str, task_sta
         "clarifications. You may call only web_search and read_url. Never delegate recursively, use a shell, access apps, "
         "or claim work that was not completed. Keep intermediate updates concise."
     )
-    # Account for serialization labels and the fixed system prompt as part of
-    # the same cap. Trim older/retrieved sources first, then the summary.
+    # Account for full serialized messages and tool definitions. Every rebuilt
+    # request goes through this same cap, including after tool results.
     while True:
         user_text = _context_as_user_text(packet, packet.task_state, steering)
-        if estimate_tokens(system) + estimate_tokens(user_text) <= MAX_CONTEXT_TOKENS:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_text},
+        ]
+        if _serialized_completion_tokens(messages) <= MAX_CONTEXT_TOKENS:
             break
         if packet.retrieved:
             packet = packet.__class__(**{**packet.__dict__, "retrieved": packet.retrieved[:-1]})
@@ -504,10 +547,7 @@ async def _build_task_messages(execution, spec: ChatRunSpec, goal: str, task_sta
             packet = packet.__class__(**{**packet.__dict__, "summary": packet.summary[: max(0, len(packet.summary) - 400)]})
         else:
             raise RuntimeError("Task prompt exceeded its token cap")
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_text},
-    ], packet.context_version
+    return messages, packet.context_version
 
 
 def _tool_call_payload(calls) -> list[dict]:
@@ -538,30 +578,41 @@ async def run_luna_task(execution, *, spec: ChatRunSpec, model_id: str, goal: st
     searches = 0
     usage = None
     final_text = ""
+    result_persisted = False
+    late_steering_retries = 0
+    late_steering_limit_reached = False
 
-    for round_index in range(MAX_COMPLETION_ROUNDS):
+    async def incorporate_steering() -> bool:
+        nonlocal messages, current_context_version
+        steering = await execution.take_steering()
+        if not steering:
+            return False
+        clarification_history.extend(
+            str(item.get("instruction", ""))[:2_000] for item in steering
+            if isinstance(item, dict) and isinstance(item.get("instruction"), str)
+        )
+        clarification_history[:] = clarification_history[-4:]
+        task_state["clarifications"] = clarification_history
+        messages, current_context_version = await _build_task_messages(
+            execution, spec, goal, task_state, clarification_history
+        )
+        return True
+
+    round_index = 0
+    while round_index < MAX_COMPLETION_ROUNDS + late_steering_retries:
+        round_index += 1
         if execution.cancel_event.is_set():
             return RunOutcome(status="cancelled", usage=usage)
-        steering = await execution.take_steering()
-        if steering:
-            clarification_history.extend(
-                str(item.get("instruction", ""))[:2_000] for item in steering
-                if isinstance(item, dict) and isinstance(item.get("instruction"), str)
-            )
-            clarification_history = clarification_history[-4:]
-            task_state["clarifications"] = clarification_history
-            messages, current_context_version = await _build_task_messages(
-                execution, spec, goal, task_state, clarification_history
-            )
+        await incorporate_steering()
 
         await execution.update_snapshot(
             phase="working",
             context_version=current_context_version,
-            progress=f"Round {round_index + 1} of {MAX_COMPLETION_ROUNDS}",
+            progress=f"Round {round_index} of {MAX_COMPLETION_ROUNDS + late_steering_retries}",
             tool_count=total_tools,
             task_state=task_state,
         )
-        await execution.emit({"type": "task_progress", "data": {"phase": "working", "round": round_index + 1}})
+        await execution.emit({"type": "task_progress", "data": {"phase": "working", "round": round_index}})
         accumulated_calls = []
         response_text = ""
         async for item in CompletionService.stream_selected_model(
@@ -592,24 +643,38 @@ async def run_luna_task(execution, *, spec: ChatRunSpec, model_id: str, goal: st
                 return RunOutcome(status="partial" if final_text else "failed", error="Selected model completion failed", usage=usage)
         # A user clarification arriving during the provider stream supersedes
         # this not-yet-executed response; the background task itself continues.
-        steering = await execution.take_steering()
-        if steering:
-            clarification_history.extend(
-                str(item.get("instruction", ""))[:2_000] for item in steering
-                if isinstance(item, dict) and isinstance(item.get("instruction"), str)
-            )
-            clarification_history = clarification_history[-4:]
-            task_state["clarifications"] = clarification_history
-            messages, current_context_version = await _build_task_messages(
-                execution, spec, goal, task_state, clarification_history
-            )
+        if await incorporate_steering():
             continue
 
         if not accumulated_calls:
             final_text = response_text[:MAX_RESULT_CHARS]
+            if final_text.strip():
+                # Persist before the final steering check. If an accepted
+                # clarification races this write, clear the stale draft and
+                # spend one bounded retry on the updated context.
+                execution.report = ""
+                execution._last_draft_chars = 0
+                await execution.append_result(final_text)
+                await execution.flush_result()
+                result_persisted = True
+                if await incorporate_steering():
+                    if late_steering_retries >= 4:
+                        final_text = "Luna received a final clarification but could not finish within the bounded retry limit."
+                        execution.report = ""
+                        execution._last_draft_chars = 0
+                        await execution.append_result(final_text)
+                        await execution.flush_result()
+                        late_steering_limit_reached = True
+                        break
+                    late_steering_retries += 1
+                    execution.report = ""
+                    execution._last_draft_chars = 0
+                    await execution.flush_result()
+                    final_text = ""
+                    result_persisted = False
+                    continue
             break
 
-        messages.append({"role": "assistant", "tool_calls": _tool_call_payload(accumulated_calls)})
         for tool_call in accumulated_calls:
             if total_tools >= MAX_TASK_TOOLS:
                 result = {"error": "task_tool_limit_reached"}
@@ -643,8 +708,6 @@ async def run_luna_task(execution, *, spec: ChatRunSpec, model_id: str, goal: st
                         "summary": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_TEXT_CHARS],
                     })
                     task_state["completed_web_actions"] = actions[-8:]
-            encoded_result = json.dumps(result, ensure_ascii=False, default=str)[:MAX_RESULT_CHARS]
-            messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": encoded_result})
             await execution.update_snapshot(
                 phase="working",
                 context_version=current_context_version,
@@ -655,13 +718,21 @@ async def run_luna_task(execution, *, spec: ChatRunSpec, model_id: str, goal: st
                 "type": "task_tool_result",
                 "data": {"name": tool_call.function_name, "status": "completed" if not result.get("error") else "failed"},
             })
-    if not final_text.strip():
+        messages, current_context_version = await _build_task_messages(
+            execution, spec, goal, task_state, clarification_history
+        )
+    if late_steering_limit_reached:
+        status = "partial"
+    elif not final_text.strip():
         final_text = "Luna остановилась на лимите шагов; частичный результат доступен в истории задачи." if task_state.get("completed_web_actions") else "Задача не вернула текстовый результат."
         status = "partial" if task_state.get("completed_web_actions") else "failed"
     else:
         status = "completed"
-    await execution.append_result(final_text)
-    await execution.flush_result()
+    if not result_persisted:
+        execution.report = ""
+        execution._last_draft_chars = 0
+        await execution.append_result(final_text)
+        await execution.flush_result()
     await execution.update_snapshot(
         phase=status,
         context_version=current_context_version,

@@ -135,33 +135,53 @@ def _select_within_budget(items: list[VoiceContextItem], token_budget: int) -> t
     return tuple(selected)
 
 
-def _summary_excerpt(messages: list[Message]) -> tuple[str, tuple[str, ...]]:
-    ranked: list[tuple[int, int, Message]] = []
+def _summary_excerpt(
+    messages: list[Message],
+    *,
+    prior_text: str = "",
+    prior_sources: tuple[str, ...] = (),
+) -> tuple[str, tuple[str, ...]]:
+    ranked: list[tuple[int, int, str, str]] = []
+    source_ids = iter(prior_sources)
+    for prior_index, line in enumerate(prior_text.splitlines()):
+        if not line.strip():
+            continue
+        prefix, separator, excerpt = line.partition("] ")
+        if not separator:
+            continue
+        header = prefix.lstrip("[").split()
+        source_id = header[1] if len(header) > 1 else next(source_ids, "")
+        body = excerpt.strip()
+        important = int(any(marker in body.lower() for marker in _IMPORTANT_MARKERS))
+        ranked.append((important, -len(prior_text.splitlines()) + prior_index, source_id, line))
+
     for index, message in enumerate(messages):
         text = message.content or ""
         if not text.strip():
             continue
         lowered = text.lower()
-        important = 3 if any(marker in lowered for marker in _IMPORTANT_MARKERS) else 0
+        important = int(any(marker in lowered for marker in _IMPORTANT_MARKERS))
         # Preserve user requests and decisions while still keeping a little
         # recency/context from ordinary turns. This is extractive, not trusted
         # instructions generated from historical messages.
-        score = important * 100 + index
-        ranked.append((score, index, message))
-    picked = sorted(sorted(ranked, reverse=True)[:24], key=lambda row: row[1])
+        ranked.append((important, index, str(message.id), f"[{message.role} {message.id}] {_excerpt(text, 420)}"))
+    picked = sorted(sorted(ranked, key=lambda row: (row[0], row[1]), reverse=True)[:24], key=lambda row: row[1])
     lines: list[str] = []
-    source_ids: list[str] = []
+    selected_sources: list[str] = []
     remaining_chars = SUMMARY_TOKEN_BUDGET * 4
-    for _score_value, _index, message in picked:
-        prefix = f"[{message.role} {message.id}] "
+    for _importance, _index, source_id, candidate in picked:
+        prefix, separator, excerpt = candidate.partition("] ")
+        if not separator:
+            continue
+        prefix += "] "
         room = remaining_chars - len(prefix)
         if room <= 0:
             break
-        line = prefix + _excerpt(message.content or "", min(420, room))
+        line = prefix + _excerpt(excerpt, min(420, room))
         lines.append(line)
-        source_ids.append(str(message.id))
+        selected_sources.append(source_id)
         remaining_chars -= len(line) + 1
-    return "\n".join(lines), tuple(source_ids)
+    return "\n".join(lines), tuple(selected_sources)
 
 
 class VoiceContextService:
@@ -201,7 +221,30 @@ class VoiceContextService:
             summary_sources = tuple(str(source) for source in existing_summary.get("source_ids", []) if isinstance(source, str))
             summary_version = int(existing_summary.get("version", 1))
         else:
-            summary, summary_sources = _summary_excerpt(active_messages)
+            prior_text = ""
+            prior_sources: tuple[str, ...] = ()
+            new_messages = active_messages
+            if (
+                isinstance(existing_summary, dict)
+                and existing_summary.get("schema_version") == SUMMARY_SCHEMA_VERSION
+                and isinstance(existing_summary.get("text"), str)
+            ):
+                prior_text = existing_summary["text"]
+                prior_sources = tuple(
+                    str(source) for source in existing_summary.get("source_ids", []) if isinstance(source, str)
+                )
+                prior_through = str(existing_summary.get("through_message_id", ""))
+                prior_index = next((
+                    index for index, message in enumerate(active_messages)
+                    if str(message.id) == prior_through
+                ), -1)
+                if prior_index >= 0:
+                    new_messages = active_messages[prior_index + 1:]
+            summary, summary_sources = _summary_excerpt(
+                new_messages,
+                prior_text=prior_text,
+                prior_sources=prior_sources,
+            )
             summary_version = int(existing_summary.get("version", 0)) + 1 if isinstance(existing_summary, dict) else 1
             meta = dict(owned_chat.meta or {})
             meta[SUMMARY_KEY] = {
@@ -229,7 +272,7 @@ class VoiceContextService:
         recent_ids = {UUID(item.source_id) for item in recent if item.source_type == "chat_message"}
         query_terms = _terms(task_goal)
         history_candidates: list[tuple[int, VoiceContextItem]] = []
-        for message in messages[-OLDER_CANDIDATE_LIMIT:]:
+        for message in messages:
             if message.id in recent_ids or not (message.content or "").strip():
                 continue
             score = _score(message.content or "", query_terms)
