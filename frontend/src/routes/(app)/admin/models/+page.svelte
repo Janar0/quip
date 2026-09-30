@@ -4,7 +4,13 @@
   import { toast } from 'svelte-sonner';
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
-  import { getSettings, updateSettings, getAdminModels } from '$lib/api/admin';
+  import {
+    getSettings,
+    updateSettings,
+    getAdminModels,
+    updateAdminModels,
+    type AdminModelUpdateResponse,
+  } from '$lib/api/admin';
   import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let whitelist = $state<string[]>([]);
@@ -12,6 +18,9 @@
   let allModels = $state<{ id: string; name: string }[]>([]);
   let saving = $state(false);
   let loading = $state(true);
+  let openrouterApiKeySet = $state(false);
+  let updatingModels = $state(false);
+  let updateReport = $state<AdminModelUpdateResponse | null>(null);
   let search = $state('');
 
   // System models
@@ -33,6 +42,7 @@
 
   onMount(async () => {
     const [settings, models] = await Promise.all([getSettings(), getAdminModels()]);
+    openrouterApiKeySet = settings.openrouter_api_key_set;
     whitelist = settings.model_whitelist ?? [];
     modelAliases = settings.model_aliases ?? {};
     searchModel = settings.search_model ?? '';
@@ -79,11 +89,98 @@
     toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
     saving = false;
   }
+
+  async function runModelUpdate() {
+    if (updatingModels || saving || savingSystemModels) return;
+    updatingModels = true;
+    updateReport = null;
+    try {
+      const report = await updateAdminModels();
+      updateReport = report;
+      whitelist = report.settings.model_whitelist ?? [];
+      modelAliases = report.settings.model_aliases ?? {};
+      searchModel = report.settings.search_model ?? '';
+      researchModel = report.settings.research_model ?? '';
+      titleModel = report.settings.title_model ?? '';
+      defaultModel = report.settings.default_model ?? '';
+
+      allModels = report.models;
+      toast.success($t(report.updated.length ? 'admin.modelUpdateComplete' : 'admin.modelUpdateNoChanges'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : $t('admin.modelUpdateFailed'));
+    } finally {
+      updatingModels = false;
+    }
+  }
+
+  function skipReasonLabel(reason: string): string {
+    return $t(`admin.modelUpdateReason.${reason}`);
+  }
+
+  function priceChangeLabel(change: NonNullable<AdminModelUpdateResponse['updated'][number]['price_change']>): string {
+    return Object.entries(change)
+      .map(([kind, price]) => {
+        const percent = price.percent_change === undefined
+          ? ''
+          : ` (${Number(price.percent_change) > 0 ? '+' : ''}${price.percent_change}%)`;
+        return `${$t(`admin.modelUpdatePrice.${kind}`)}: ${price.before} → ${price.after}${percent}`;
+      })
+      .join(' · ');
+  }
 </script>
 
 <div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
  <div class="max-w-2xl mx-auto space-y-5">
   <AdminPageHeader icon="M4 6h16M4 10h16M4 14h16M4 18h16" title={$t('admin.tabs.models')} />
+
+  <div class="flex justify-end">
+    <button
+      class="btn preset-outlined"
+      onclick={runModelUpdate}
+      disabled={loading || updatingModels || saving || savingSystemModels || !openrouterApiKeySet}
+    >
+      {updatingModels ? $t('admin.updatingModels') : $t('admin.updateModels')}
+    </button>
+  </div>
+
+  {#if updateReport}
+    <section class="card p-4 sm:p-6 space-y-3" aria-live="polite">
+      <h2 class="text-lg font-semibold">{$t('admin.modelUpdateReport')}</h2>
+      <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+        <span>{updateReport.updated.length} {$t('admin.modelUpdateChanged')}</span>
+        <span>{updateReport.skipped.length} {$t('admin.modelUpdateSkipped')}</span>
+      </div>
+
+      {#if updateReport.updated.length > 0}
+        <ul class="space-y-2 text-sm">
+          {#each updateReport.updated as item (`${item.old_id}:${item.new_id}`)}
+            <li class="rounded bg-elevated/30 p-2">
+              <div class="break-all"><code>{item.old_id}</code> → <code>{item.new_id}</code></div>
+              {#if item.references.length > 0}
+                <div class="mt-1 text-xs" style="color: var(--quip-text-muted)">{$t('admin.modelUpdateReferences')}: {item.references.join(', ')}</div>
+              {/if}
+              {#if item.price_change}
+                <div class="mt-1 text-xs" style="color: var(--quip-text-muted)">{priceChangeLabel(item.price_change)}</div>
+              {:else}
+                <div class="mt-1 text-xs" style="color: var(--quip-text-muted)">{$t('admin.modelUpdatePriceUnavailable')}</div>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if updateReport.skipped.length > 0}
+        <ul class="space-y-1 text-sm">
+          {#each updateReport.skipped as item, index (`${item.model_id ?? 'none'}:${item.reason}:${index}`)}
+            <li class="break-all">
+              {#if item.model_id}<code>{item.model_id}</code>{:else}{$t('admin.modelUpdateNoConfiguredModels')}{/if}
+              <span style="color: var(--quip-text-muted)">— {skipReasonLabel(item.reason)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 
   {#if loading}
     <div class="space-y-4">
@@ -137,7 +234,7 @@
         {/each}
       </div>
 
-      <button class="btn preset-filled-primary-500" onclick={saveWhitelist} disabled={saving}>
+      <button class="btn preset-filled-primary-500" onclick={saveWhitelist} disabled={saving || updatingModels}>
         {saving ? '...' : $t('common.save')}
       </button>
     </section>
@@ -172,7 +269,7 @@
         {/each}
       </div>
 
-      <button class="btn preset-filled-primary-500" onclick={saveAliases} disabled={saving}>
+      <button class="btn preset-filled-primary-500" onclick={saveAliases} disabled={saving || updatingModels}>
         {saving ? '...' : $t('common.save')}
       </button>
     </section>
@@ -234,7 +331,7 @@
         </label>
       </div>
 
-      <button class="btn preset-filled-primary-500" onclick={saveSystemModels} disabled={savingSystemModels}>
+      <button class="btn preset-filled-primary-500" onclick={saveSystemModels} disabled={savingSystemModels || updatingModels}>
         {savingSystemModels ? '...' : $t('common.save')}
       </button>
     </section>

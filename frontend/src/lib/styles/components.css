@@ -29,7 +29,7 @@
     radial-gradient(ellipse 35% 30% at 40% 55%, var(--quip-aurora-2) 0%, transparent 70%),
     radial-gradient(ellipse 35% 30% at 60% 55%, var(--quip-aurora-3) 0%, transparent 70%);
   filter: blur(28px) saturate(1.3);
-  opacity: var(--quip-aurora-opacity, 0.95);
+  opacity: calc(var(--quip-aurora-opacity, 0.95) * 0.62);
   animation: quip-aurora-drift 60s ease-in-out infinite;
 }
 .quip-aurora::after {
@@ -47,7 +47,7 @@
     radial-gradient(ellipse 38% 32% at 42% 58%, var(--quip-aurora-3) 0%, transparent 68%),
     radial-gradient(ellipse 42% 28% at 48% 42%, var(--quip-aurora-1) 0%, transparent 72%);
   filter: blur(44px) saturate(1.1);
-  opacity: 0.48;
+  opacity: 0.28;
   animation: quip-aurora-drift 80s ease-in-out infinite reverse;
 }
 
@@ -112,6 +112,16 @@
   pointer-events: none;
 }
 
+.quip-home-composer .quip-glass-strong {
+  background-color: var(--quip-input-bg);
+  border-color: var(--quip-border-strong);
+  box-shadow: inset 0 1px 0 var(--quip-glass-highlight), 0 14px 36px -20px rgba(0, 0, 0, 0.52);
+}
+.quip-home-composer:focus-within .quip-glass-strong {
+  border-color: var(--quip-border-strong);
+  box-shadow: inset 0 1px 0 var(--quip-glass-highlight), 0 0 0 1px var(--quip-glass-border-strong), 0 16px 40px -20px rgba(0, 0, 0, 0.55);
+}
+
 /* Top header scrim — mirror of composer scrim with the fade flipped downward. */
 .quip-header-scrim {
   position: absolute;
@@ -137,7 +147,7 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  text-shadow: 0 0 60px rgba(255, 255, 255, 0.04);
+  text-shadow: 0 0 28px rgba(255, 255, 255, 0.025);
 }
 [data-theme='quip-dark'] .quip-hero-word::after,
 [data-theme='quip-light'] .quip-hero-word::after { display: none; }
@@ -340,10 +350,13 @@
   backdrop-filter: blur(40px) saturate(1.8);
   border: 1px solid var(--quip-glass-border-strong);
   border-radius: 16px;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  padding: 7px;
   width: 320px;
   max-height: 420px;
-  overflow-y: auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 30px 60px rgba(0, 0, 0, 0.6);
@@ -363,6 +376,51 @@
   letter-spacing: 0.2em;
   font-weight: 600;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.quip-model-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--quip-text-muted);
+  background: var(--quip-hover);
+  border: 1px solid var(--quip-border);
+}
+.quip-model-search-input {
+  min-width: 0;
+  width: 100%;
+  color: var(--quip-text);
+  background: transparent;
+  outline: none;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+}
+.quip-model-search-input::placeholder { color: var(--quip-text-muted); opacity: 0.85; }
+.quip-model-next-response {
+  flex: 0 0 auto;
+  margin: 7px 3px 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--quip-text-dim);
+  background: var(--quip-hover);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.quip-model-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--quip-scrollbar) transparent;
+}
+.quip-model-empty {
+  margin: 12px 6px;
+  color: var(--quip-text-muted);
+  font-size: 12px;
 }
 .quip-model-menu .opt {
   display: flex;
@@ -408,6 +466,28 @@
   flex-shrink: 0;
 }
 .quip-model-menu .opt.sel .check { color: var(--quip-success); }
+
+.quip-workspace-menu {
+  position: fixed;
+  z-index: 1200;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: 14px;
+  color: var(--quip-text);
+  background: var(--quip-bg);
+  border: 1px solid var(--quip-border-strong);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42);
+}
+
+.quip-chat-drawer {
+  background: var(--quip-bg);
+  border-left: 1px solid var(--quip-border);
+  box-shadow: -20px 0 52px rgba(0, 0, 0, 0.28);
+}
+@media (max-width: 767px) {
+  .quip-chat-drawer { box-shadow: none; }
+}
 
 /* Beta pill (top-right of hero) */
 .quip-beta {
@@ -519,6 +599,40 @@
 :focus-visible { outline: 2px solid var(--quip-link); outline-offset: 3px; }
 input, textarea, select { accent-color: var(--quip-link); }
 input::placeholder, textarea::placeholder { color: var(--quip-text-muted); opacity: 1; }
+
+.quip-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1px solid var(--quip-border);
+  border-radius: 0.75rem;
+  background: var(--quip-input-bg);
+}
+.quip-mode-option {
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--quip-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.quip-mode-option:hover:not(:disabled) { color: var(--quip-text); }
+.quip-mode-option.is-active {
+  color: var(--quip-text);
+  background: var(--quip-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--quip-glass-border-strong);
+}
+.quip-mode-option:disabled { opacity: 0.45; }
+@media (max-width: 380px) {
+  .quip-mode-option { padding-inline: 0.45rem; font-size: 0.625rem; }
+}
+
 /* Controls must stay discoverable without a hover-capable mouse. */
 @media (hover: none) {
   .group .opacity-0 { opacity: 1; }

@@ -154,6 +154,9 @@ async def run_deep_research(
                 # Disable tools so the model CANNOT call wait_for_any_result again
                 stream = await _stream(session, messages, [])
                 async for chunk in stream:
+                    if chunk.error:
+                        await emit(ResearchEvent("error", {"message": chunk.error}))
+                        break
                     if chunk.content:
                         await emit(ResearchEvent("content", {"text": chunk.content}))
                         for art in _extract_artifacts(chunk.content):

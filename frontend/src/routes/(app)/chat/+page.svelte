@@ -53,11 +53,11 @@
       let next = backronym;
       while (next === backronym) next = list[Math.floor(Math.random() * list.length)];
       backronym = next;
-    }, 7000);
+    }, 14000);
     return () => clearInterval(id);
   });
 
-  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = []) {
+  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = [], modeHint?: 'search') {
     const newChatId = await streamChat(
       text,
       chatId,
@@ -65,6 +65,7 @@
       uploadedFiles.length ? uploadedFiles : undefined,
       undefined,
       workspaceId,
+      modeHint,
     );
     if (newChatId && !chatId) {
       chatId = newChatId;
@@ -115,19 +116,19 @@
     <div class="quip-aurora flex-1 flex flex-col items-center justify-center relative px-6">
       {#if mounted}
         <div class="relative z-10 flex flex-col items-center w-full max-w-2xl">
-          <div class="relative inline-block mb-3" in:fly={{ y: 12, duration: D3, easing: easeOut }}>
-            <h1 class="quip-hero-word text-[96px] md:text-[132px] select-none text-center m-0">
+          <div class="relative inline-block mb-2" in:fly={{ y: 12, duration: D3, easing: easeOut }}>
+            <h1 class="quip-hero-word text-[52px] sm:text-[66px] md:text-[82px] select-none text-center m-0">
               {headline}
             </h1>
             <span class="quip-beta absolute top-2 -right-1 translate-x-full">beta</span>
           </div>
-          <div class="relative min-h-4 w-full mb-7 px-4">
+          <div class="relative min-h-4 w-full mb-5 px-4">
             {#key backronym}
               <p
                 in:fade={{ duration: D2, delay: 80 }}
                 out:fade={{ duration: D2 }}
-                class="quip-mono absolute inset-x-4 text-center text-[10px] uppercase tracking-[0.32em] leading-snug"
-                style="color: var(--quip-text-dim)"
+                class="quip-mono absolute inset-x-4 text-center text-[9px] uppercase tracking-[0.16em] leading-snug opacity-65"
+                style="color: var(--quip-text-muted)"
               >
                 {backronym}
               </p>
@@ -137,13 +138,13 @@
 
         <div
           in:fly={{ y: 12, duration: D3, delay: 120, easing: easeOut }}
-          class="relative z-30 mb-5"
+          class="relative z-30 mb-4"
         >
           <ModelSelector variant="picker" />
         </div>
 
         {#if $selectedWorkspace}
-          <a href={`/workspace/${$selectedWorkspace.id}`} class="relative z-20 mb-3 text-[11px] px-3 py-1.5 rounded-full hover:bg-white/[.05]" style="color: var(--quip-text-muted); border: 1px solid var(--quip-border)">
+          <a href={`/workspace/${$selectedWorkspace.id}`} class="quip-theme-hover relative z-20 mb-3 text-[11px] px-3 py-1.5 rounded-full" style="color: var(--quip-text-muted); border: 1px solid var(--quip-border)">
             {$t('workspace.label')}: {$selectedWorkspace.name}
           </a>
         {/if}
@@ -152,7 +153,7 @@
           <ChatInput onSend={handleSend} chatId={chatId} {workspaceId} variant="start" />
         </div>
 
-        <p in:fade={{ duration: D2, delay: 260 }} class="relative z-10 text-[10px] mt-6 text-center opacity-40" style="color: var(--quip-text-muted)">{$t('home.disclaimer')}</p>
+        <p in:fade={{ duration: D2, delay: 260 }} class="relative z-10 text-[10px] mt-4 text-center" style="color: var(--quip-text-muted)">{$t('home.disclaimer')}</p>
       {/if}
     </div>
   {/if}

@@ -46,7 +46,7 @@
   class="flex items-center gap-3 rounded-xl border border-outline bg-panel/30 hover:bg-elevated/50 transition-colors p-3 my-1.5 max-w-sm"
 >
   <!-- File icon -->
-  <div class="flex-shrink-0 w-10 h-10 rounded-lg {iconColor} flex items-center justify-center">
+  <div class="flex-shrink-0 w-10 h-10 rounded-lg {iconColor} flex items-center justify-center" style="color: var(--quip-text)">
     {#if label === 'Image'}
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
         <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/>
@@ -65,11 +65,11 @@
   <!-- File info -->
   <div class="flex-1 min-w-0">
     <div class="text-sm font-medium truncate">{filename}</div>
-    <div class="text-xs opacity-40">{label}{ext ? ` \u00b7 ${ext}` : ''}</div>
+    <div class="text-xs" style="color: var(--quip-text-muted)">{label}{ext ? ` \u00b7 ${ext}` : ''}</div>
   </div>
 
   <!-- Download icon -->
-  <div class="flex-shrink-0 opacity-40 hover:opacity-80 transition-opacity">
+  <div class="flex-shrink-0" style="color: var(--quip-text-muted)">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
     </svg>

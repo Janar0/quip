@@ -4,11 +4,15 @@
   import { D2, easeOut } from '$lib/motion';
   import type { ToolExecution } from '$lib/stores/sandbox';
 
-  let { executions }: { executions: ToolExecution[] } = $props();
+  let {
+    executions,
+    showSourceLinks = true,
+  }: { executions: ToolExecution[]; showSourceLinks?: boolean } = $props();
 
   let expanded = $state(true);
   let allDone = $derived(executions.every((e) => e.status !== 'running'));
   let hasError = $derived(executions.some((e) => e.status === 'error'));
+  let hasPartial = $derived(executions.some((e) => e.result?.status === 'partial' || !!e.result?.warning));
 
   interface SearchResultItem {
     title: string;
@@ -25,10 +29,33 @@
   }
 
   function getResults(exec: ToolExecution): SearchResultItem[] {
-    if (exec.name === 'web_search' && exec.result?.results) {
-      return exec.result.results as SearchResultItem[];
-    }
-    return [];
+    if (
+      exec.name !== 'web_search'
+      || !Array.isArray(exec.result?.results)
+      || !['success', 'partial'].includes(String(exec.result?.status))
+    ) return [];
+
+    return exec.result.results.flatMap((item: unknown) => {
+      if (!item || typeof item !== 'object' || !('url' in item)) return [];
+      const result = item as Record<string, unknown>;
+      if (typeof result.url !== 'string') return [];
+      try {
+        const url = new URL(result.url);
+        if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return [];
+        return [{
+          title: typeof result.title === 'string' && result.title.trim() ? result.title.trim() : url.hostname,
+          url: url.href,
+          snippet: typeof result.snippet === 'string' ? result.snippet : undefined,
+        }];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  function getOutcomeText(exec: ToolExecution, field: 'error' | 'warning' | 'message'): string {
+    const value = exec.result?.[field];
+    return typeof value === 'string' ? value : '';
   }
 
   function stepLabel(exec: ToolExecution): string {
@@ -61,7 +88,9 @@
     {#if !allDone}
       <span class="spinner-ring flex-shrink-0" style="width: 12px; height: 12px; border-width: 1.5px"></span>
     {:else if hasError}
-      <svg class="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      <svg class="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="var(--quip-error)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    {:else if hasPartial}
+      <svg class="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="var(--quip-warning)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
     {:else}
       <svg class="w-3 h-3 flex-shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
     {/if}
@@ -97,7 +126,7 @@
           {#if exec.status === 'running'}
             <span class="spinner-ring flex-shrink-0" style="width: 9px; height: 9px; border-width: 1.5px"></span>
           {:else if exec.status === 'error'}
-            <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="var(--quip-error)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           {:else}
             <svg class="w-2.5 h-2.5 flex-shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
           {/if}
@@ -116,19 +145,17 @@
   {#if expanded && allDone}
     <div class="space-y-2 pt-1" transition:fade={{ duration: D2 }}>
       {#each executions as exec (exec.id)}
-        {#if getResults(exec).length > 0}
+        {#if showSourceLinks && getResults(exec).length > 0}
           <div class="space-y-1.5">
             {#each getResults(exec) as r}
               <div class="text-[11px] flex items-start gap-1.5">
-                {#if r.url}
-                  <img
-                    src={`https://www.google.com/s2/favicons?domain=${new URL(r.url).hostname}&sz=16`}
-                    alt=""
-                    class="w-3.5 h-3.5 mt-0.5 rounded-sm flex-shrink-0 opacity-60"
-                    loading="lazy"
-                    onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                  />
-                {/if}
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${new URL(r.url).hostname}&sz=16`}
+                  alt=""
+                  class="w-3.5 h-3.5 mt-0.5 rounded-sm flex-shrink-0 opacity-60"
+                  loading="lazy"
+                  onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
                 <div class="min-w-0 flex-1">
                   <a href={r.url} target="_blank" rel="noopener" class="hover:underline font-medium block truncate" style="color: var(--quip-link)">{r.title}</a>
                   {#if r.snippet}
@@ -138,6 +165,15 @@
               </div>
             {/each}
           </div>
+        {/if}
+        {#if getOutcomeText(exec, 'error')}
+          <p class="text-[11px] break-words" style="color: var(--quip-error)">{getOutcomeText(exec, 'error')}</p>
+        {/if}
+        {#if getOutcomeText(exec, 'warning')}
+          <p class="text-[11px] break-words" style="color: var(--quip-warning)">{getOutcomeText(exec, 'warning')}</p>
+        {/if}
+        {#if getOutcomeText(exec, 'message')}
+          <p class="text-[11px] break-words" style="color: var(--quip-text-muted)">{getOutcomeText(exec, 'message')}</p>
         {/if}
       {/each}
     </div>

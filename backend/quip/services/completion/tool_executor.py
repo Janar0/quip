@@ -86,7 +86,11 @@ class ToolExecutor:
     ) -> tuple[dict[str, dict], list[dict]]:
         """Collect image URLs and sources from web_search results."""
         for name, parsed, _raw in results:
-            if name != "web_search" or not isinstance(parsed, dict):
+            if (
+                name != "web_search"
+                or not isinstance(parsed, dict)
+                or parsed.get("status") not in {"success", "partial"}
+            ):
                 continue
             for img in parsed.get("images") or []:
                 if not isinstance(img, dict):

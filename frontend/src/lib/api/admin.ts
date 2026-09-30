@@ -136,6 +136,32 @@ export async function getAdminModels(): Promise<ModelInfo[]> {
   return data.models ?? [];
 }
 
+export interface AdminModelUpdateResponse {
+  updated: {
+    old_id: string;
+    new_id: string;
+    references: string[];
+    price_change: Record<string, { before: string; after: string; percent_change?: string }> | null;
+  }[];
+  skipped: { model_id: string | null; reason: string }[];
+  mapper_model: string | null;
+  models: Pick<ModelInfo, 'id' | 'name'>[];
+  settings: Pick<
+    SettingsPayload,
+    'model_whitelist' | 'model_aliases' | 'default_model' | 'search_model' | 'research_model' | 'title_model' | 'telegram_model'
+  >;
+}
+
+export async function updateAdminModels(): Promise<AdminModelUpdateResponse> {
+  const response = await api('/api/admin/models/update', { method: 'POST' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = (payload as { detail?: unknown }).detail;
+    throw new Error(typeof detail === 'string' ? detail : 'Model update failed.');
+  }
+  return payload as AdminModelUpdateResponse;
+}
+
 // --- Skills ---
 
 export interface SkillSettingField {

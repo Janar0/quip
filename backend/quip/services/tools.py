@@ -452,17 +452,26 @@ async def execute_tool_call(
         # Search tools (no sandbox needed)
         if tool_name == "web_search":
             from quip.services.search import web_search
-            results, images = await web_search(args.get("query", ""))
-            return json.dumps({
+            query = args.get("query", "")
+            response = await web_search(query)
+            result = {
+                "status": response.status,
                 "results": [
                     {"title": r.title, "url": r.url, "snippet": r.snippet, "content": r.content}
-                    for r in results
+                    for r in response.results
                 ],
                 "images": [
                     {"img_src": i.img_src, "source_url": i.source_url, "title": i.title}
-                    for i in images
+                    for i in response.images
                 ],
-            })
+            }
+            if response.error:
+                result["error"] = response.error
+            if response.warning:
+                result["warning"] = response.warning
+            if response.status == "no_results":
+                result["message"] = f"No usable web results were found for: {query}"
+            return json.dumps(result)
 
         elif tool_name == "read_url":
             from quip.services.scraper import read_url

@@ -106,7 +106,7 @@ import { createTelegramLink, getTelegramStatus, getUserSettings, unlinkTelegram,
   <h1 class="text-2xl font-bold">{$t('settings.title')}</h1>
 
   {#if loading}
-    <p class="opacity-50">{$t('common.loading')}</p>
+    <p class="text-muted">{$t('common.loading')}</p>
   {:else}
     <div class="space-y-5">
       <!-- Display Name -->
@@ -158,7 +158,7 @@ import { createTelegramLink, getTelegramStatus, getUserSettings, unlinkTelegram,
       <section class="card p-4 space-y-3">
         <div>
           <h2 class="font-semibold">{$t('settings.telegram')}</h2>
-          <p class="text-sm opacity-60 mt-1">{$t('settings.telegramDesc')}</p>
+          <p class="text-sm text-muted mt-1">{$t('settings.telegramDesc')}</p>
         </div>
         {#if telegramLinked}
           <div class="flex items-center justify-between gap-3">
@@ -170,7 +170,7 @@ import { createTelegramLink, getTelegramStatus, getUserSettings, unlinkTelegram,
             {telegramLinkLoading ? $t('common.loading') : $t('settings.telegramConnect')}
           </button>
           {#if telegramLinkUrl}
-            <a class="text-xs break-all underline opacity-70" href={telegramLinkUrl} target="_blank" rel="noreferrer">{telegramLinkUrl}</a>
+            <a class="text-xs break-all underline" style="color: var(--quip-link)" href={telegramLinkUrl} target="_blank" rel="noreferrer">{telegramLinkUrl}</a>
           {/if}
         {/if}
       </section>

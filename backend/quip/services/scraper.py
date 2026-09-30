@@ -23,7 +23,9 @@ async def read_url(url: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
             return await _direct_fetch(url, max_chars)
         except Exception as e2:
             logger.warning(f"Direct fetch also failed for {url}: {e2}")
-            return f"Failed to read {url}: {e2}"
+            raise RuntimeError(
+                "Page retrieval failed: both Jina Reader and direct fetch were unsuccessful."
+            ) from e2
 
 
 async def _jina_reader(url: str, max_chars: int) -> str:

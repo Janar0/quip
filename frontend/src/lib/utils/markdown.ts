@@ -304,11 +304,50 @@ export interface SourceInfo {
   domain: string;
 }
 
+function safeSourceUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed) || /[\\\s\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  try {
+    const url = new URL(trimmed);
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+function decodeStructuredSourceTitle(token: string): string {
+  const base64 = token.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+function maskCodeBlocksForSourceParsing(content: string): {
+  text: string;
+  restore: (value: string) => string;
+} {
+  const codeBlocks: string[] = [];
+  const text = content.replace(
+    /(^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\2[^\n]*(?:\n|$)|(`+)[^`]*?\3)/gm,
+    (code) => {
+      const token = `\u0000SOURCECODE${codeBlocks.length}\u0000`;
+      codeBlocks.push(code);
+      return token;
+    },
+  );
+  return {
+    text,
+    restore: (value) => value.replace(/\u0000SOURCECODE(\d+)\u0000/g, (_match, index: string) => codeBlocks[Number(index)] ?? ''),
+  };
+}
+
 /** Parse a block of `[N] Title - URL` lines into SourceInfo[]. Unparseable
  *  lines are skipped silently — keeps streaming robust when the URL is still
  *  coming in. Lines without [N] prefix are auto-numbered. */
 function parseSourcesBlock(block: string): SourceInfo[] {
   const sources: SourceInfo[] = [];
+  const seenUrls = new Set<string>();
   for (const line of block.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -317,8 +356,31 @@ function parseSourcesBlock(block: string): SourceInfo[] {
     let title = '';
     let url = '';
 
+    // Search-mode footer metadata uses a URL-safe encoded title so Markdown
+    // inside an untrusted search result can never contribute another URL.
+    const structured = trimmed.match(/^\[(\d{1,2})\]\s+quip-source-v1:([A-Za-z0-9_-]+)\s+-\s+(https?:\/\/\S+)$/i);
+    if (structured) {
+      try {
+        num = parseInt(structured[1], 10);
+        title = decodeStructuredSourceTitle(structured[2]);
+        url = structured[3];
+      } catch {
+        continue;
+      }
+    }
+
+    // Legacy generated footers put the retrieved URL after the title. Anchor
+    // this parse at the end so a URL embedded in Markdown title text cannot
+    // override the authoritative trailing result URL.
+    const trailingDashUrl = !num && trimmed.match(/^(?:\[(\d{1,2})\]\s*)?(.+?)\s*[-–—]\s*(https?:\/\/\S+)\s*$/);
+    if (trailingDashUrl) {
+      num = trailingDashUrl[1] ? parseInt(trailingDashUrl[1], 10) : undefined;
+      title = trailingDashUrl[2];
+      url = trailingDashUrl[3];
+    }
+
     // Format: [N] [Title](URL)
-    const mdLink = trimmed.match(/^\[(\d{1,2})\]\s*\[([^\]]+)\]\(([^)]+)\)/);
+    const mdLink = !num && trimmed.match(/^\[(\d{1,2})\]\s*\[([^\]]+)\]\(([^)]+)\)/);
     if (mdLink) {
       num = parseInt(mdLink[1]);
       title = mdLink[2];
@@ -363,15 +425,19 @@ function parseSourcesBlock(block: string): SourceInfo[] {
       }
     }
 
-    if (url) {
+    const safeUrlValue = url ? safeSourceUrl(url) : null;
+    if (safeUrlValue) {
       if (!num) num = sources.length + 1;
       let domain = '';
       try {
-        domain = new URL(url).hostname.replace(/^www\./, '');
+        domain = new URL(safeUrlValue).hostname.replace(/^www\./, '');
         const parts = domain.split('.');
         if (parts.length > 2) domain = parts.slice(-2).join('.');
       } catch { /* keep empty */ }
-      sources.push({ num, title: title.trim(), url, domain });
+      const dedupeKey = new URL(safeUrlValue).href;
+      if (seenUrls.has(dedupeKey)) continue;
+      seenUrls.add(dedupeKey);
+      sources.push({ num, title: title.trim(), url: safeUrlValue, domain });
     }
   }
   return sources;
@@ -390,28 +456,30 @@ function parseSourcesBlock(block: string): SourceInfo[] {
  *       that omit [N] prefixes or the --- separator. */
 export function extractSources(content: string): { cleanContent: string; sources: SourceInfo[] } {
   if (!content) return { cleanContent: content, sources: [] };
+  const protectedContent = maskCodeBlocksForSourceParsing(content);
+  const sourceText = protectedContent.text;
 
   // TOP placement. Match header + consecutive `[N] ...` lines (no terminator
   // required — works mid-stream before the `---` separator arrives).
   const topPattern = /^\s*\*{0,2}(?:Sources|Источники):?\*{0,2}\s*\n((?:\s*\[\d{1,2}\][^\n]*\n?)+)/i;
-  const topMatch = content.match(topPattern);
+  const topMatch = sourceText.match(topPattern);
   if (topMatch && (topMatch.index ?? -1) === 0) {
     const sources = parseSourcesBlock(topMatch[1]);
     if (sources.length > 0) {
-      let rest = content.slice(topMatch[0].length);
+      let rest = sourceText.slice(topMatch[0].length);
       // Strip the optional `---` separator + any surrounding blank lines.
       rest = rest.replace(/^\s*---\s*\n?/, '').replace(/^\n+/, '');
-      return { cleanContent: rest, sources };
+      return { cleanContent: protectedContent.restore(rest), sources };
     }
   }
 
   // BOTTOM placement (legacy). Kept so old messages still render correctly.
   const bottomPattern = /\n---\n\s*\*{0,2}(?:Sources|Источники):?\*{0,2}\s*\n([\s\S]*?)$/i;
-  const bottomMatch = content.match(bottomPattern);
+  const bottomMatch = sourceText.match(bottomPattern);
   if (bottomMatch) {
-    const cleanContent = content.slice(0, bottomMatch.index!).trimEnd();
+    const cleanContent = sourceText.slice(0, bottomMatch.index!).trimEnd();
     const sources = parseSourcesBlock(bottomMatch[1]);
-    if (sources.length > 0) return { cleanContent, sources };
+    if (sources.length > 0) return { cleanContent: protectedContent.restore(cleanContent), sources };
   }
 
   // LOOSE placement: **Sources:** / **Источники:** near the end, lines with URLs.
@@ -419,7 +487,7 @@ export function extractSources(content: string): { cleanContent: string; sources
   const loosePattern = /\n\s*\*{0,2}(?:Sources|Источники):?\*{0,2}\s*\n((?:.*https?:\/\/\S+.*(?:\n|$))+)/gi;
   let looseMatch: RegExpExecArray | null;
   let bestMatch: { index: number; full: string; block: string } | null = null;
-  while ((looseMatch = loosePattern.exec(content)) !== null) {
+  while ((looseMatch = loosePattern.exec(sourceText)) !== null) {
     const idx = looseMatch.index;
     // Prefer match closest to the end of content (likely the real Sources block)
     if (!bestMatch || idx > bestMatch.index) {
@@ -429,8 +497,8 @@ export function extractSources(content: string): { cleanContent: string; sources
   if (bestMatch) {
     const sources = parseSourcesBlock(bestMatch.block);
     if (sources.length > 0) {
-      const cleanContent = (content.slice(0, bestMatch.index) + content.slice(bestMatch.index + bestMatch.full.length)).trim();
-      return { cleanContent, sources };
+      const cleanContent = (sourceText.slice(0, bestMatch.index) + sourceText.slice(bestMatch.index + bestMatch.full.length)).trim();
+      return { cleanContent: protectedContent.restore(cleanContent), sources };
     }
   }
 

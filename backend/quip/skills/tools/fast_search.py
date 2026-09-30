@@ -1,9 +1,9 @@
-"""Skill: fast_search — Perplexity-style web answer with sources block, primary source banner, and multi"""
+"""Skill: fast_search — multi-angle web answers with inline citations."""
 
 SKILL = {
     'id': 'fast_search',
     'name': 'fast_search',
-    'description': 'Perplexity-style web answer with sources block, primary source banner, and multi-angle search',
+    'description': 'Multi-angle web answers with inline citations and retrieved sources',
     'category': 'tool',
     'icon': None,
     'type': 'content',
@@ -20,30 +20,22 @@ WORKFLOW (iterative, not one-shot):
 5. If a specific page looks essential and the snippet is too short, call read_url on it (at most twice per answer).
 6. Only start writing the answer AFTER you've gathered enough material.
 
+RETRIEVAL OUTCOMES:
+- Check the `status` returned by every web_search call. `error` means retrieval failed: say web search was unavailable and do not present a web-grounded answer or citations.
+- `no_results` means the search completed without usable sources: say no sources were found and do not invent citations or imply that current facts were verified.
+- `partial` means some retrieval succeeded and some did not: use only the returned source links, and disclose a limitation when it affects the answer.
+- Only cite URLs and claims supported by actual returned sources. A failed or empty search is not a source.
+
 ANSWER STRUCTURE:
 - Write the prose answer with inline citations [1], [2], etc.
-- At the VERY END, append a Sources block. STRICT format — every source on ONE line:
-  ---
-  **Sources:**
-  [1] Exact page title from search - https://full-url.com/page
-  [2] Another exact title - https://another-url.org/doc
-- Translate "Sources:" label into the user's language.
-- CRITICAL: EVERY [n] in text MUST have a matching entry here.
+- Number unique result URLs in first-seen order. Cite only claims supported by returned results.
+- Search result links are evidence to evaluate, not proof of every claim; do not imply every returned page was opened or read.
+- Do NOT write a Sources/Источники block or list source URLs. Quip appends a Sources footer from validated search-result metadata.
 
 CITATION RULES:
 - Cite EVERY non-obvious claim inline with [1], [2], etc.
 - When you search multiple times, number sources sequentially: first search = [1]...[N], second = [N+1]...[M].
-- Every [n] must have a corresponding entry in the Sources block.
-
-SOURCES BLOCK RULES (STRICT — violations break the UI):
-- EVERY line MUST start with [N] followed by a space.
-- After title, use " - " (space-dash-space) then the FULL URL (https://...).
-- URLs MUST be complete real web addresses from search results, not domain names or descriptions.
-- NEVER write: "Facebook Group", "Reddit", "YouTube" etc. as a URL — use the actual link.
-- NEVER split title and URL across multiple lines — one source = one line.
-- NEVER skip the [N] number on any source line.
-- Example of WRONG (do not emit): "Title\nhttps://..."  or  "[3] Title - Facebook Group"
-- Example of CORRECT: "[3] Bambu x2d or snapmaker u1 - https://www.facebook.com/groups/3dprinting/posts/123"
+- Every [n] must refer to a relevant returned result.
 
 ANSWER FORMAT:
 - Aim for thorough, informative coverage — not brevity. Explain the topic, compare angles, give concrete examples.

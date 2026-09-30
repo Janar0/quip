@@ -251,6 +251,8 @@
 	--quip-noise-blend: overlay;
 	--quip-noise-opacity: 0.9;
 	--quip-success: #4ade80;
+	--quip-warning: #fbbf24;
+	--quip-error: #f87171;
 	--quip-selection-bg: #a5b4fc;
 	--quip-selection-text: #111827;
 }
@@ -294,6 +296,8 @@
 	--quip-noise-blend: multiply;
 	--quip-noise-opacity: 0.35;
 	--quip-success: #16a34a;
+	--quip-warning: #a16207;
+	--quip-error: #b91c1c;
 	--quip-selection-bg: #c7d2fe;
 	--quip-selection-text: #111827;
 }

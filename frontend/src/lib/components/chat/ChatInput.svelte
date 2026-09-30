@@ -3,7 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { fade } from 'svelte/transition';
   import { D1 } from '$lib/motion';
-  import { isStreaming } from '$lib/stores/chat';
+  import { isStreaming, searchEnabled } from '$lib/stores/chat';
   import { stopGeneration } from '$lib/api/chats';
   import { uploadFiles, getFileUrl, deleteFile, type UploadedFile } from '$lib/api/files';
 
@@ -13,13 +13,14 @@
     workspaceId,
     variant = 'chat',
   }: {
-    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[]) => void;
+    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[], modeHint?: 'search') => void;
     chatId?: string;
     workspaceId?: string;
     variant?: 'chat' | 'start';
   } = $props();
 
   let text = $state('');
+  let searchMode = $state(false);
   let textareaEl: HTMLTextAreaElement;
   let fileInputEl: HTMLInputElement;
   let isDragOver = $state(false);
@@ -183,7 +184,9 @@
       .filter((a) => a.uploaded)
       .map((a) => a.uploaded!);
     const fileIds = uploaded.map((u) => u.id);
-    onSend(trimmed || ' ', fileIds, uploaded);
+    onSend(trimmed || ' ', fileIds, uploaded, searchMode && $searchEnabled ? 'search' : undefined);
+    // Search is an explicit per-response choice, so the next send returns to chat.
+    searchMode = false;
 
     for (const att of attachedFiles) {
       if (att.preview) URL.revokeObjectURL(att.preview);
@@ -227,7 +230,7 @@
 
 <form
   onsubmit={handleSubmit}
-  class="relative px-4 pb-4 pt-2"
+  class="relative px-4 pb-4 pt-2 {variant === 'start' ? 'quip-home-composer' : ''}"
   aria-label="Chat input"
 >
   <div class="max-w-4xl mx-auto">
@@ -296,8 +299,31 @@
 
       <!-- Action bar -->
       <div class="flex items-center justify-between px-3 pb-3">
-        <div class="flex items-center gap-1">
-          <!-- Paperclip -->
+      <div class="flex items-center gap-2 min-w-0">
+        {#if $searchEnabled}
+          <div class="quip-mode-toggle" role="group" aria-label={$t('chat.responseMode')}>
+            <button
+              type="button"
+              class="quip-mode-option {searchMode ? '' : 'is-active'}"
+              aria-pressed={!searchMode}
+              onclick={() => (searchMode = false)}
+              disabled={$isStreaming}
+            >
+              {$t('chat.mode_auto')}
+            </button>
+            <button
+              type="button"
+              class="quip-mode-option {searchMode ? 'is-active' : ''}"
+              aria-pressed={searchMode}
+              title={$t('chat.searchModeHint')}
+              onclick={() => (searchMode = true)}
+              disabled={$isStreaming}
+            >
+              {$t('chat.mode_search')}
+            </button>
+          </div>
+        {/if}
+        <!-- Paperclip -->
           <button
             type="button"
             class="p-2 rounded-lg quip-icon-btn active:scale-[0.92]"

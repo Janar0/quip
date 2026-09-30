@@ -56,7 +56,7 @@
   let exitCode = $derived((r?.exit_code as number | undefined));
 
   let statusColor = $derived(
-    isRunning ? 'var(--quip-text-muted)' : isError ? '#f87171' : isSuccess ? '#34d399' : 'var(--quip-text-muted)'
+    isRunning ? 'var(--quip-text-muted)' : isError ? 'var(--quip-error)' : isSuccess ? 'var(--quip-success)' : 'var(--quip-text-muted)'
   );
 
   function getFileUrl(path: string): string {
@@ -78,26 +78,26 @@
       {#if isRunning}
         <span class="spinner-ring" style="width: 9px; height: 9px; border-width: 1.5px; border-top-color: {statusColor}"></span>
       {:else if isError}
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--quip-error)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       {:else if isSuccess}
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--quip-success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
       {:else}
         <span class="block w-1.5 h-1.5 rounded-full" style="background: {statusColor}"></span>
       {/if}
     </span>
 
     <!-- Tool label -->
-    <span class="font-mono text-[11px] flex-1 min-w-0 truncate opacity-50">{toolLabel}</span>
+    <span class="font-mono text-[11px] flex-1 min-w-0 truncate" style="color: var(--quip-text-muted)">{toolLabel}</span>
 
     <!-- Exit code badge -->
     {#if !isRunning && exitCode !== undefined && exitCode !== 0}
-      <span class="text-[9px] font-mono px-1 py-0.5 rounded flex-shrink-0" style="background: rgba(127,29,29,0.4); color: #f87171">exit {exitCode}</span>
+      <span class="text-[9px] font-mono px-1 py-0.5 rounded flex-shrink-0" style="background: var(--quip-error-bg); color: var(--quip-error)">exit {exitCode}</span>
     {/if}
 
     <!-- Expand chevron -->
     {#if codeContent || r?.stdout || r?.stderr || (r?.files_created as string[] | undefined)?.length}
       <svg
-        class="w-3 h-3 flex-shrink-0 opacity-40"
+        class="w-3 h-3 flex-shrink-0"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -128,16 +128,16 @@
       <!-- stdout -->
       {#if r?.stdout}
         <div class="mt-0.5 px-3 py-2 rounded" style="background: var(--quip-code-bg); border: 1px solid var(--quip-border)">
-          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: #34d399; opacity: 0.5">stdout</span>
+          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: var(--quip-success)">stdout</span>
           <pre class="mt-1 text-[11px] whitespace-pre-wrap font-mono leading-relaxed" style="color: var(--quip-text-dim)">{r.stdout as string}</pre>
         </div>
       {/if}
 
       <!-- stderr -->
       {#if r?.stderr}
-        <div class="mt-0.5 px-3 py-2 rounded" style="background: rgba(127,29,29,0.06); border: 1px solid var(--quip-border)">
-          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: #f87171; opacity: 0.5">stderr</span>
-          <pre class="mt-1 text-[11px] whitespace-pre-wrap font-mono leading-relaxed" style="color: #f87171; opacity: 0.7">{r.stderr as string}</pre>
+        <div class="mt-0.5 px-3 py-2 rounded" style="background: var(--quip-error-bg); border: 1px solid var(--quip-border)">
+          <span class="text-[9px] font-mono uppercase tracking-widest" style="color: var(--quip-error)">stderr</span>
+          <pre class="mt-1 text-[11px] whitespace-pre-wrap font-mono leading-relaxed" style="color: var(--quip-error)">{r.stderr as string}</pre>
         </div>
       {/if}
 

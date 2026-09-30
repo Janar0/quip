@@ -1,25 +1,51 @@
 """Admin endpoints — settings, user management, models, usage."""
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, delete, func
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from quip.database import get_db
 from quip.models.chat import Chat
+from quip.models.config import Config
+from quip.models.workspace import Workspace
 from quip.models.usage import UsageLog
 from quip.models.budget import Budget
 from quip.models.user import User, Auth
 from quip.services.permissions import get_admin_user
-from quip.core.config import get_setting, set_setting, save_settings, get_bool_setting
+from quip.core.config import get_setting, set_setting, save_settings, get_bool_setting, get_all_settings
 from quip.services.auth import hash_password
 from quip.providers.openrouter import list_models as or_list_models, get_key_info
+from quip.routers.models import get_cached_models, invalidate_openrouter_models_cache
+from quip.services import model_updater
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+_model_update_in_progress = False
+_model_settings_lock = asyncio.Lock()
+
+
+def _single_model_update(handler):
+    """Reject duplicate in-process mapping calls before they reach the provider."""
+
+    @wraps(handler)
+    async def wrapped(*args, **kwargs):
+        global _model_update_in_progress
+        if _model_update_in_progress:
+            raise HTTPException(status_code=409, detail="A model update is already in progress.")
+        _model_update_in_progress = True
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            _model_update_in_progress = False
+
+    return wrapped
 
 
 # --- Settings ---
@@ -135,14 +161,15 @@ async def update_settings(
     request: Request,
     user: User = Depends(get_admin_user),
 ):
-    for key, val in data.model_dump(exclude_none=True).items():
-        if key in _JSON_SETTING_FIELDS:
-            set_setting(key, json.dumps(val))
-        elif key in _BOOL_SETTING_FIELDS:
-            set_setting(key, "true" if val else "false")
-        else:
-            set_setting(key, str(val) if not isinstance(val, str) else val)
-    await save_settings()
+    async with _model_settings_lock:
+        for key, val in data.model_dump(exclude_none=True).items():
+            if key in _JSON_SETTING_FIELDS:
+                set_setting(key, json.dumps(val))
+            elif key in _BOOL_SETTING_FIELDS:
+                set_setting(key, "true" if val else "false")
+            else:
+                set_setting(key, str(val) if not isinstance(val, str) else val)
+        await save_settings()
     if any(key.startswith("telegram_") for key in data.model_dump(exclude_none=True)):
         telegram_bot = getattr(request.app.state, "telegram_bot", None)
         if telegram_bot is not None:
@@ -159,6 +186,284 @@ async def get_models(user: User = Depends(get_admin_user)):
         return {"models": [], "error": "No API key configured"}
     models = await or_list_models(key)
     return {"models": models}
+
+
+@router.post("/models/update")
+@_single_model_update
+async def update_models(
+    request: Request,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh selected model IDs when a verified same-family successor exists."""
+    api_key = get_setting("openrouter_api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="OpenRouter API key is not configured.")
+
+    try:
+        raw_whitelist = get_setting("model_whitelist", "")
+        whitelist = json.loads(raw_whitelist) if raw_whitelist else []
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=409, detail="The model allowlist is invalid JSON.")
+    if not isinstance(whitelist, list) or any(not isinstance(item, str) for item in whitelist):
+        raise HTTPException(status_code=409, detail="The model allowlist has an invalid format.")
+
+    raw_aliases = get_setting("model_aliases", "")
+    cached_before_refresh = {item["id"]: item for item in get_cached_models() if item.get("id")}
+    catalog = await or_list_models(api_key)
+    if not isinstance(catalog, list) or not catalog:
+        raise HTTPException(status_code=502, detail="The provider returned no model catalog; nothing was changed.")
+    catalog = [item for item in catalog if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    if not catalog:
+        raise HTTPException(status_code=502, detail="The provider returned an invalid model catalog; nothing was changed.")
+    invalidate_openrouter_models_cache()
+    fresh_by_id = {item["id"]: item for item in catalog}
+    fresh_models = [{"id": item["id"], "name": str(item.get("name") or item["id"])} for item in catalog]
+
+    config_result = await db.execute(select(Config).where(Config.id == 1))
+    initial_config = config_result.scalar_one_or_none()
+    initial_config_version = initial_config.version if initial_config else None
+    initial_config_data = (
+        json.dumps(initial_config.data, sort_keys=True, separators=(",", ":"))
+        if initial_config
+        else None
+    )
+    users = list((await db.execute(select(User))).scalars().all())
+    workspaces = list((await db.execute(select(Workspace))).scalars().all())
+    user_default_snapshot = {
+        target_user.id: (target_user.settings.get("default_model") if isinstance(target_user.settings, dict) else None)
+        for target_user in users
+    }
+    workspace_default_snapshot = {
+        workspace.id: workspace.default_model for workspace in workspaces
+    }
+    setting_refs = {
+        key: get_setting(key) or ""
+        for key in ("default_model", "search_model", "research_model", "title_model", "telegram_model")
+    }
+    reference_names: dict[str, set[str]] = {}
+
+    def record_reference(model_id: str | None, label: str) -> None:
+        if model_id:
+            reference_names.setdefault(model_id, set()).add(label)
+
+    for model_id in whitelist:
+        record_reference(model_id, "model_whitelist")
+    for key, model_id in setting_refs.items():
+        record_reference(model_id, key)
+    for model_id in workspace_default_snapshot.values():
+        record_reference(model_id, "workspace_defaults")
+    for user_default in user_default_snapshot.values():
+        record_reference(user_default, "user_defaults")
+
+    # Do not keep a read transaction open while making a remote mapping call.
+    await db.rollback()
+
+    source_ids = list(reference_names)
+    if not source_ids:
+        return {
+            "updated": [],
+            "skipped": [{"model_id": None, "reason": "no_configured_models"}],
+            "mapper_model": None,
+            "settings": {
+                "model_whitelist": whitelist,
+                "model_aliases": _read_json_setting("model_aliases", {}),
+                **setting_refs,
+            },
+            "models": fresh_models,
+        }
+
+    candidate_pools, candidate_skips = model_updater.find_successor_candidates(source_ids, catalog)
+    already_skipped = {item["model_id"] for item in candidate_skips}
+    mappable = {
+        source_id: candidates
+        for source_id, candidates in candidate_pools.items()
+        if source_id not in already_skipped
+    }
+    suggestions: dict[str, str] = {}
+    duplicate_suggestions: set[str] = set()
+    mapper_model = None
+    if mappable:
+        for configured in (setting_refs["title_model"], setting_refs["default_model"]):
+            if configured and not configured.startswith("ollama/") and configured in fresh_by_id:
+                mapper_model = configured
+                break
+        if mapper_model is None:
+            for model_id in source_ids:
+                if model_id in fresh_by_id and not model_id.startswith("ollama/"):
+                    mapper_model = model_id
+                    break
+        if mapper_model is None:
+            for candidates in mappable.values():
+                mapper_model = next((item["id"] for item in candidates if item["id"] in fresh_by_id), None)
+                if mapper_model:
+                    break
+        if mapper_model is None:
+            raise HTTPException(status_code=409, detail="No available OpenRouter model can map these successors.")
+        try:
+            suggestions, duplicate_suggestions = await model_updater.request_successor_mappings(
+                mapper_model, mappable, api_key
+            )
+        except model_updater.ModelMappingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    duplicate_suggestions.intersection_update(source_ids)
+    suggestions = {source_id: target_id for source_id, target_id in suggestions.items() if source_id in source_ids}
+    for model_id in duplicate_suggestions:
+        suggestions.pop(model_id, None)
+    resolution = model_updater.resolve_successor_mappings(source_ids, catalog, suggestions)
+    skipped = [item for item in resolution["skipped"] if item["model_id"] not in duplicate_suggestions]
+    skipped.extend({"model_id": model_id, "reason": "duplicate_suggestion"} for model_id in duplicate_suggestions)
+    replacements = resolution["replacements"]
+
+    settings_input: dict[str, object] = {
+        "model_whitelist": whitelist,
+        "model_aliases": _read_json_setting("model_aliases", {}),
+        **setting_refs,
+    }
+    updated_settings, changed_keys = model_updater.apply_model_replacements(settings_input, replacements)
+    if replacements:
+        async with _model_settings_lock:
+            settings_changed = (
+                get_setting("model_whitelist", "") != raw_whitelist
+                or get_setting("model_aliases", "") != raw_aliases
+                or any((get_setting(key) or "") != value for key, value in setting_refs.items())
+            )
+            if settings_changed:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Model settings changed during the update. Review the current selections and retry.",
+                )
+
+            # Serialize SQLite writers before re-reading the snapshot so a settings
+            # request cannot slip between validation and commit. Row locks cover
+            # existing records on databases that implement SELECT FOR UPDATE.
+            if db.get_bind().dialect.name == "sqlite":
+                await db.execute(text("BEGIN IMMEDIATE"))
+            config = (
+                await db.execute(
+                    select(Config).where(Config.id == 1).with_for_update()
+                )
+            ).scalar_one_or_none()
+            current_config_version = config.version if config else None
+            current_config_data = (
+                json.dumps(config.data, sort_keys=True, separators=(",", ":"))
+                if config
+                else None
+            )
+            current_users = list(
+                (
+                    await db.execute(
+                        select(User)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalars().all()
+            )
+            current_workspaces = list(
+                (
+                    await db.execute(
+                        select(Workspace)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalars().all()
+            )
+            current_user_defaults = {
+                target_user.id: (
+                    target_user.settings.get("default_model")
+                    if isinstance(target_user.settings, dict)
+                    else None
+                )
+                for target_user in current_users
+            }
+            current_workspace_defaults = {
+                workspace.id: workspace.default_model for workspace in current_workspaces
+            }
+            if (
+                current_config_version != initial_config_version
+                or current_config_data != initial_config_data
+                or current_user_defaults != user_default_snapshot
+                or current_workspace_defaults != workspace_default_snapshot
+            ):
+                await db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Model selections changed during the update. Review the current selections and retry.",
+                )
+
+            persisted = dict(config.data) if config and isinstance(config.data, dict) else {}
+            persisted.update(get_all_settings())
+            for key in changed_keys:
+                value = updated_settings[key]
+                persisted[key] = json.dumps(value) if key in {"model_whitelist", "model_aliases"} else str(value)
+            if config:
+                config.data = persisted
+                flag_modified(config, "data")
+                config.version = (config.version or 0) + 1
+            else:
+                db.add(Config(id=1, data=persisted, version=1))
+
+            for workspace in current_workspaces:
+                if workspace.default_model in replacements:
+                    workspace.default_model = replacements[workspace.default_model]
+            for target_user in current_users:
+                user_settings = target_user.settings if isinstance(target_user.settings, dict) else {}
+                user_default = user_settings.get("default_model")
+                if user_default in replacements:
+                    target_user.settings = {**user_settings, "default_model": replacements[user_default]}
+                    flag_modified(target_user, "settings")
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+            for key in changed_keys:
+                persisted_value = persisted[key]
+                set_setting(key, persisted_value)
+
+    updated = []
+    for old_id, new_id in replacements.items():
+        old_model = fresh_by_id.get(old_id) or cached_before_refresh.get(old_id)
+        new_model = fresh_by_id[new_id]
+        updated.append(
+            {
+                "old_id": old_id,
+                "new_id": new_id,
+                "references": sorted(reference_names.get(old_id, ())),
+                "price_change": model_updater.compare_prices(old_model, new_model),
+            }
+        )
+
+    if "telegram_model" in changed_keys:
+        telegram_bot = getattr(request.app.state, "telegram_bot", None)
+        if telegram_bot is not None:
+            await telegram_bot.reconfigure()
+
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "mapper_model": mapper_model,
+        "settings": {
+            "model_whitelist": updated_settings.get("model_whitelist", whitelist),
+            "model_aliases": updated_settings.get("model_aliases", settings_input["model_aliases"]),
+            **{key: updated_settings.get(key, value) for key, value in setting_refs.items()},
+        },
+        "models": fresh_models,
+    }
+
+
+def _read_json_setting(key: str, default):
+    raw = get_setting(key, "")
+    if not raw:
+        return default
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+    return value if isinstance(value, type(default)) else default
 
 
 # --- Users ---

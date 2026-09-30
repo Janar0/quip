@@ -10,8 +10,10 @@
 
   let open = $state(false);
   let rootEl: HTMLDivElement;
+  let menuEl = $state<HTMLDivElement | undefined>(undefined);
   let triggerEl = $state<HTMLButtonElement | undefined>();
   let menuStyle = $state('');
+  let searchQuery = $state('');
 
   function portal(node: HTMLElement) {
     document.body.appendChild(node);
@@ -21,13 +23,17 @@
   function placeMenu() {
     if (!triggerEl) return;
     const r = triggerEl.getBoundingClientRect();
-    const menuW = 320;
     const vw = window.innerWidth;
-    // Always center the menu under the trigger — both pill and picker variants.
-    let left = r.left + r.width / 2 - menuW / 2;
-    left = Math.max(8, Math.min(vw - menuW - 8, left));
-    const top = r.bottom + 10;
-    menuStyle = `top: ${top}px; left: ${left}px; width: ${menuW}px;`;
+    const menuW = Math.max(0, Math.min(320, vw - 16));
+    const left = Math.max(8, Math.min(vw - menuW - 8, r.left + r.width / 2 - menuW / 2));
+    const gap = 8;
+    const spaceAbove = Math.max(0, r.top - gap - 8);
+    const spaceBelow = Math.max(0, window.innerHeight - r.bottom - gap - 8);
+    const opensAbove = spaceAbove > spaceBelow;
+    const available = opensAbove ? spaceAbove : spaceBelow;
+    const maxHeight = Math.min(420, available);
+    const top = opensAbove ? r.top - gap - maxHeight : r.bottom + gap;
+    menuStyle = `top: ${Math.round(top)}px; left: ${Math.round(left)}px; width: ${Math.round(menuW)}px; max-height: ${Math.round(maxHeight)}px;`;
   }
 
   let models = $derived($modelList);
@@ -41,6 +47,20 @@
       (groups[provider] ??= []).push(m);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  });
+
+  let filteredGrouped = $derived.by(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return grouped
+      .map(([group, items]) => [
+        group,
+        items.filter((model) => {
+          if (!query) return true;
+          const searchable = `${model.id} ${model.name} ${model.display_name ?? ''} ${model.provider}`;
+          return searchable.toLocaleLowerCase().includes(query);
+        }),
+      ] as [string, ModelItem[]])
+      .filter(([, items]) => items.length > 0);
   });
 
   let selectedInfo = $derived(models.find((m) => m.id === $selectedModel));
@@ -128,7 +148,17 @@
 
   function pick(id: string) {
     $selectedModel = id;
+    searchQuery = '';
     open = false;
+  }
+
+  function toggleMenu() {
+    if (open) {
+      open = false;
+      return;
+    }
+    searchQuery = '';
+    open = true;
   }
 
   $effect(() => {
@@ -150,8 +180,7 @@
       const t = e.target as Node;
       if (rootEl && !rootEl.contains(t)) {
         // menu is a portal-ish fixed element outside rootEl — check too
-        const menu = document.querySelector('.quip-model-menu');
-        if (menu && menu.contains(t)) return;
+        if (menuEl?.contains(t)) return;
         open = false;
       }
     }
@@ -184,8 +213,8 @@
         type="button"
         class="quip-model-picker"
         bind:this={triggerEl}
-        onclick={() => (open = !open)}
-        aria-haspopup="listbox"
+        onclick={toggleMenu}
+        aria-haspopup="dialog"
         aria-expanded={open}
       >
         {#if iconUrl}
@@ -200,28 +229,6 @@
           <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
-      {#if open}
-        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal transition:fly={{ y: -10, duration: D2 }}>
-          {#each grouped as [p, items]}
-            <div class="group-lbl">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
-            {#each items as m (m.id)}
-              <button
-                type="button"
-                class="opt {m.id === $selectedModel ? 'sel' : ''}"
-                role="option"
-                aria-selected={m.id === $selectedModel}
-                onclick={() => pick(m.id)}
-              >
-                <span class="l">
-                  <span class="name">{shortName(m)}</span>
-                  <span class="meta">{fmtCtx(m.context_length)}</span>
-                </span>
-                <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-              </button>
-            {/each}
-          {/each}
-        </div>
-      {/if}
     </div>
   {:else}
     <!-- Compact pill (chat header) -->
@@ -230,8 +237,8 @@
         type="button"
         class="quip-model-pill"
         bind:this={triggerEl}
-        onclick={() => (open = !open)}
-        aria-haspopup="listbox"
+        onclick={toggleMenu}
+        aria-haspopup="dialog"
         aria-expanded={open}
       >
         {#if iconUrl}
@@ -246,28 +253,6 @@
           <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
-      {#if open}
-        <div class="quip-model-menu" style={menuStyle} role="listbox" use:portal transition:fly={{ y: -10, duration: D2 }}>
-          {#each grouped as [p, items]}
-            <div class="group-lbl">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
-            {#each items as m (m.id)}
-              <button
-                type="button"
-                class="opt {m.id === $selectedModel ? 'sel' : ''}"
-                role="option"
-                aria-selected={m.id === $selectedModel}
-                onclick={() => pick(m.id)}
-              >
-                <span class="l">
-                  <span class="name">{shortName(m)}</span>
-                  <span class="meta">{fmtCtx(m.context_length)}</span>
-                </span>
-                <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-              </button>
-            {/each}
-          {/each}
-        </div>
-      {/if}
     </div>
     {#if !isDefault}
       <button
@@ -279,5 +264,55 @@
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
       </button>
     {/if}
+  {/if}
+
+  {#if open}
+    <div
+      class="quip-model-menu"
+      bind:this={menuEl}
+      style={menuStyle}
+      role="dialog"
+      aria-label={$t('models.search')}
+      use:portal
+      transition:fly={{ y: -10, duration: D2 }}
+    >
+      <label class="quip-model-search">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input
+          type="search"
+          class="quip-model-search-input"
+          bind:value={searchQuery}
+          placeholder={$t('models.search')}
+          aria-label={$t('models.search')}
+        />
+      </label>
+      <p class="quip-model-next-response">{$t('models.nextResponse')}</p>
+      <div class="quip-model-list" role="listbox" aria-label={$t('models.search')}>
+        {#if filteredGrouped.length === 0}
+          <p class="quip-model-empty" role="status">{$t('models.noSearchResults')}</p>
+        {:else}
+          {#each filteredGrouped as [p, items]}
+            <div role="group" aria-label={p}>
+              <div class="group-lbl">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
+              {#each items as m (m.id)}
+                <button
+                  type="button"
+                  class="opt {m.id === $selectedModel ? 'sel' : ''}"
+                  role="option"
+                  aria-selected={m.id === $selectedModel}
+                  onclick={() => pick(m.id)}
+                >
+                  <span class="l">
+                    <span class="name">{shortName(m)}</span>
+                    <span class="meta">{fmtCtx(m.context_length)}</span>
+                  </span>
+                  <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              {/each}
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </div>
   {/if}
 </div>

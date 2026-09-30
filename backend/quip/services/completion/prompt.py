@@ -68,25 +68,38 @@ class PromptBuilder:
             role = (
                 "You are QUIP, a helpful AI assistant. "
                 "The `load_skill` tool is always available — use it to get detailed instructions "
-                "for any skill. Some capabilities (web_search, sandbox, image_generation, "
-                "music_generation) require you to call `load_skill` first — their tools appear "
-                "only after you load the skill and read its instructions. "
-                "Artifacts, widgets, and read_url are available directly. "
+                "for any skill. "
+            )
+            gated_capabilities = ["sandbox", "image_generation", "music_generation"]
+            if search_enabled:
+                gated_capabilities.insert(0, "web_search")
+            role += (
+                f"Some capabilities ({', '.join(gated_capabilities)}) require you to call "
+                "`load_skill` first — their tools appear only after you load the skill and "
+                "read its instructions. Artifacts, widgets, and read_url are available directly. "
                 "When the user's message contains an http/https URL, call `read_url` on it "
                 "to fetch its content before answering."
             )
         else:
+            skill_examples = "how to format a plot artifact or use the sandbox"
+            if search_enabled:
+                skill_examples += " or the web search answer style"
             role = (
                 "You are QUIP, a helpful AI assistant. "
                 "You have named skills you can load on demand with the `load_skill` tool. "
-                "When you need details for a capability you don't remember (e.g. how to "
-                "format a plot artifact, how to use the sandbox, or the web search "
-                "answer style), call `load_skill` with its name before using it. "
+                f"When you need details for a capability you don't remember (e.g. {skill_examples}), "
+                "call `load_skill` with its name before using it. "
                 "When the user's message contains an http/https URL, call `read_url` on it "
                 "to fetch its content before answering."
             )
 
         parts: list[str] = [role]
+
+        if not search_enabled:
+            parts.append(
+                "Web search is disabled for this request. Do not claim or imply that you searched "
+                "the web or verified current information."
+            )
 
         rt_lines = [f"Current date: {datetime.now(UTC).date().isoformat()}."]
         if locale:
@@ -113,7 +126,15 @@ class PromptBuilder:
         if index:
             parts.append("Available skills:\n" + index)
 
-        if "web_search" in enabled_skills or "fast_search" in enabled_skills:
+        if search_mode:
+            parts.append(
+                "SEARCH CITATIONS: Cite only claims supported by returned search results, using inline "
+                "numeric markers [1], [2], etc. in the order unique result URLs first appear. Search result "
+                "links are evidence to evaluate, not proof of every claim; do not imply every returned page "
+                "was opened or read. Do not write a Sources/Источники block or list source URLs yourself. "
+                "Quip appends a Sources footer from validated search-result metadata."
+            )
+        elif "web_search" in enabled_skills or "fast_search" in enabled_skills:
             parts.append(
                 "SEARCH CITATION RULE: Cite every non-obvious claim inline with [1], [2], etc. "
                 "End your answer with a Sources block — strict format, one source per line:\n"

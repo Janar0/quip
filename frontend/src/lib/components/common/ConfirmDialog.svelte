@@ -42,7 +42,7 @@
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+    class="quip-theme-scrim fixed inset-0 backdrop-blur-sm z-40"
     transition:fade={{ duration: D1 }}
     onclick={onCancel}
     onkeydown={handleKeydown}
@@ -67,7 +67,7 @@
         <button bind:this={cancelBtn} class="px-3 py-1.5 text-sm rounded-lg border border-outline text-muted hover:text-foreground transition-all active:scale-[0.97]" onclick={onCancel}>
           {$t('common.cancel')}
         </button>
-        <button class="px-3 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-500 transition-all active:scale-[0.97]" onclick={onConfirm}>
+        <button class="px-3 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition-all active:scale-[0.97]" onclick={onConfirm}>
           {confirmLabel || $t('confirm.delete')}
         </button>
       </div>

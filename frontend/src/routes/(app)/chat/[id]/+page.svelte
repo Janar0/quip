@@ -31,7 +31,7 @@
     return () => clearInterval(timer);
   });
 
-  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = []) {
+  async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = [], modeHint?: 'search') {
     await streamChat(
       text,
       chatId,
@@ -39,6 +39,7 @@
       uploadedFiles.length ? uploadedFiles : undefined,
       undefined,
       workspaceId,
+      modeHint,
     );
   }
 

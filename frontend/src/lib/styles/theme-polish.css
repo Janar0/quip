@@ -1,0 +1,53 @@
+/* Semantic states for controls and overlays that need to read clearly in both themes. */
+[data-theme='quip-dark'] {
+	--quip-hover-strong: rgba(255, 255, 255, 0.08);
+	--quip-modal-scrim: rgba(0, 0, 0, 0.62);
+	--quip-error: #f87171;
+	--quip-error-bg: rgba(127, 29, 29, 0.4);
+}
+
+[data-theme='quip-light'] {
+	--quip-hover-strong: rgba(10, 10, 14, 0.075);
+	--quip-modal-scrim: rgba(10, 10, 14, 0.32);
+	--quip-error: #b91c1c;
+	--quip-error-bg: rgba(185, 28, 28, 0.08);
+	--quip-success: #166534;
+}
+
+.quip-theme-hover:hover {
+	background-color: var(--quip-hover);
+}
+
+.quip-theme-selected {
+	background-color: var(--quip-hover-strong);
+}
+
+.quip-theme-scrim {
+	background: var(--quip-modal-scrim);
+}
+
+/* Opaque menus keep labels legible over either light or dark chat content. */
+.quip-model-menu,
+.quip-export-menu,
+[data-theme='quip-light'] .quip-model-menu,
+[data-theme='quip-light'] .quip-export-menu {
+	background: var(--quip-bg);
+}
+
+.quip-model-menu .opt.sel,
+[data-theme='quip-light'] .quip-model-menu .opt.sel {
+	background: var(--quip-hover-strong);
+}
+
+.quip-model-search:focus-within {
+	outline: 2px solid var(--quip-link);
+	outline-offset: 2px;
+}
+
+/* Artifact captions and icon-only actions used to rely on low-opacity text. */
+.quip-artifact-panel [class~='opacity-40'],
+.quip-artifact-panel [class~='opacity-50'],
+.quip-artifact-panel [class~='opacity-70'] {
+	opacity: 1;
+	color: var(--quip-text-muted);
+}

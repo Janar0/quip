@@ -149,7 +149,7 @@ def build_enabled_skills(
     Single pass over `_skills_cache` — earlier versions iterated 4-5 times.
     """
     if search_mode:
-        return {"fast_search"} if _skills_cache.get("fast_search") else set()
+        return {"fast_search"} if search_enabled and _skills_cache.get("fast_search") else set()
 
     enabled: set[str] = set()
     for sid, sk in _skills_cache.items():
@@ -192,7 +192,8 @@ def build_tools_for_api(
     if music and music.enabled:
         tools.append(music_tool)
     if search_mode:
-        tools.extend(search_tools)
+        if search_enabled:
+            tools.extend(search_tools)
     else:
         sb = _skills_cache.get("sandbox")
         if sb and sb.enabled and sandbox_available:

@@ -29,3 +29,11 @@ it('preserves text following a loose sources section', () => {
   const result = extractSources('Answer\nSources:\nSource https://example.com\n\nImportant conclusion');
   expect(result.cleanContent).toContain('Important conclusion');
 });
+
+it('does not extract source entries from fenced code examples', () => {
+  const content = 'Example:\n\n```md\n**Sources:**\n[1] Fake - https://evil.example\n```';
+  const result = extractSources(content);
+
+  expect(result.sources).toEqual([]);
+  expect(result.cleanContent).toBe(content);
+});

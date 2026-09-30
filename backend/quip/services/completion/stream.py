@@ -1,4 +1,5 @@
 """SSE streaming orchestrator for chat completions."""
+import json
 import logging
 from collections.abc import AsyncGenerator
 
@@ -12,6 +13,7 @@ from quip.services.completion.prompt import PromptBuilder
 from quip.services.completion.tool_executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
+_SEARCH_TOOL_LIMITS = {"web_search": 5, "read_url": 2}
 
 
 class StreamOrchestrator:
@@ -53,6 +55,17 @@ class StreamOrchestrator:
             search_enabled=self.search_enabled,
             sandbox_available=self.sandbox_available,
         )
+
+    @staticmethod
+    def _filter_search_tools(
+        tools: list[dict], searches_used: int, reads_used: int
+    ) -> list[dict]:
+        remaining = {"web_search": searches_used < 5, "read_url": reads_used < 2}
+        return [
+            tool
+            for tool in tools
+            if remaining.get((tool.get("function") or {}).get("name"), True)
+        ]
 
     def _call_provider(self, tools: list[dict]):
         if self.model.startswith("ollama/"):
@@ -123,9 +136,15 @@ class StreamOrchestrator:
         accumulated_images: dict[str, dict] = {}
         accumulated_sources: list[dict] = []
         emitted_image_count = 0
+        searches_used = 0
+        reads_used = 0
+        force_synthesis = False
 
-        for _round_num in range(max_rounds):
-            tools = self._build_tools()
+        for round_num in range(max_rounds):
+            final_round = round_num == max_rounds - 1 or force_synthesis
+            tools = [] if final_round else self._build_tools()
+            if self.search_mode and not final_round:
+                tools = self._filter_search_tools(tools, searches_used, reads_used)
             accumulated_tool_calls = []
 
             async for item in self._stream_chunks(tools):
@@ -165,6 +184,13 @@ class StreamOrchestrator:
             if not accumulated_tool_calls:
                 break
 
+            if final_round:
+                yield sse_event(
+                    "error",
+                    {"error": "Search answer requested another tool after synthesis began."},
+                )
+                return
+
             # Build assistant API message with tool_calls
             assistant_api_msg: dict = {"role": "assistant"}
             assistant_api_msg["tool_calls"] = [
@@ -191,19 +217,43 @@ class StreamOrchestrator:
                     },
                 )
 
-            # Execute tool calls
-            sandbox, tool_results = await ToolExecutor.execute(
-                accumulated_tool_calls,
-                sandbox,
-                chat_id,
-                self.loaded_skills,
-                user_id,
-            )
+            # Enforce limits even when one provider response batches too many
+            # search/read calls. Excess calls receive error tool results only.
+            allowed_calls = []
+            allowed_indexes = []
+            blocked_results: dict[int, tuple[str, dict, str]] = {}
+            for index, tc in enumerate(accumulated_tool_calls):
+                tool_name = tc.function_name
+                limit = _SEARCH_TOOL_LIMITS.get(tool_name) if self.search_mode else None
+                used = searches_used if tool_name == "web_search" else reads_used
+                if limit is not None and used >= limit:
+                    message = f"The per-answer limit of {limit} {tool_name} calls has been reached."
+                    raw = json.dumps({"error": message})
+                    blocked_results[index] = (tool_name, {"error": message}, raw)
+                    continue
+                if self.search_mode and tool_name == "web_search":
+                    searches_used += 1
+                elif self.search_mode and tool_name == "read_url":
+                    reads_used += 1
+                allowed_calls.append(tc)
+                allowed_indexes.append(index)
+
+            if allowed_calls:
+                sandbox, executed_results = await ToolExecutor.execute(
+                    allowed_calls,
+                    sandbox,
+                    chat_id,
+                    self.loaded_skills,
+                    user_id,
+                )
+            else:
+                executed_results = []
+            results_by_index = dict(blocked_results)
+            results_by_index.update(zip(allowed_indexes, executed_results))
 
             # Emit tool_results and build tool messages
-            for tc, (name, parsed, raw) in zip(
-                accumulated_tool_calls, tool_results
-            ):
+            for index, tc in enumerate(accumulated_tool_calls):
+                name, parsed, raw = results_by_index[index]
                 is_error = bool(
                     parsed.get("error") or parsed.get("exit_code", 0) != 0
                 )
@@ -221,11 +271,17 @@ class StreamOrchestrator:
                     {"role": "tool", "tool_call_id": tc.id, "content": raw}
                 )
 
+            force_synthesis = (
+                self.search_mode and searches_used >= 5 and reads_used >= 2
+            )
+
             # Accumulate search data for image grid / sources
             if self.search_mode:
                 accumulated_images, accumulated_sources = (
                     ToolExecutor.accumulate_search_data(
-                        tool_results, accumulated_images, accumulated_sources
+                        [results_by_index[index] for index in range(len(accumulated_tool_calls))],
+                        accumulated_images,
+                        accumulated_sources,
                     )
                 )
                 new_imgs = list(accumulated_images.values())[

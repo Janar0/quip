@@ -13,16 +13,21 @@
   interface Props {
     chatId: string | undefined;
     workspaceId?: string;
-    onSend: (text: string, fileIds?: string[], uploadedFiles?: UploadedFile[]) => void | Promise<void>;
+    onSend: (text: string, fileIds?: string[], uploadedFiles?: UploadedFile[], modeHint?: 'search') => void | Promise<void>;
     onRegenerate?: (messageId: string) => void;
     onEdit?: (messageId: string, content: string) => void;
     loading?: boolean;
   }
   let { chatId, workspaceId, onSend, onRegenerate, onEdit, loading = false }: Props = $props();
 
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && ($activeDrawer === 'artifacts' || $activeDrawer === 'files')) closeDrawer();
+  }
 </script>
 
-<div class="flex flex-1 min-h-0 overflow-hidden">
+<svelte:window onkeydown={handleWindowKeydown} />
+
+<div class="relative flex flex-1 min-h-0 overflow-hidden">
   <div class="relative flex flex-col flex-1 min-w-0">
     {#if loading}
       <div class="flex-1 flex items-center justify-center">
@@ -39,25 +44,18 @@
     </div>
   </div>
   {#if $activeDrawer === 'artifacts'}
-    <div class="border-l border-outline/50 w-[480px] min-w-[320px] max-w-[60vw] flex-col hidden md:flex">
+    <aside
+      class="quip-chat-drawer absolute inset-y-0 right-0 z-30 flex w-full md:w-[min(480px,100%)] max-w-full flex-col"
+      aria-label={$t('artifacts.panelLabel')}
+    >
       <ArtifactPanel />
-    </div>
-    <div class="fixed inset-0 z-50 bg-canvas flex flex-col md:hidden">
-      <button
-        class="absolute top-3 right-3 z-10 p-2 rounded-lg bg-elevated/50 hover:bg-elevated"
-        onclick={closeDrawer}
-        aria-label={$t('artifacts.close')}
-      >
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-      <ArtifactPanel />
-    </div>
+    </aside>
   {:else if $activeDrawer === 'files' && workspaceId}
-    <div class="border-l w-[380px] min-w-[300px] max-w-[50vw] flex-col hidden md:flex" style="border-color: var(--quip-border)">
+    <aside
+      class="quip-chat-drawer absolute inset-y-0 right-0 z-30 flex w-full md:w-[min(380px,100%)] max-w-full flex-col"
+      aria-label={$t('workspace.files')}
+    >
       <WorkspaceFilesPanel {workspaceId} />
-    </div>
-    <div class="fixed inset-0 z-50 flex flex-col md:hidden" style="background: var(--quip-bg)">
-      <WorkspaceFilesPanel {workspaceId} />
-    </div>
+    </aside>
   {/if}
 </div>

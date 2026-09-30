@@ -26,7 +26,7 @@
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+    class="quip-theme-scrim fixed inset-0 backdrop-blur-sm z-40"
     transition:fade={{ duration: D1 }}
     onclick={onClose}
     onkeydown={handleKeydown}

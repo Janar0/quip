@@ -48,7 +48,7 @@
 </script>
 
 {#if artifact}
-  <div class="flex flex-col h-full" transition:fly={{ x: 480, duration: D3, easing: easeOut }}>
+  <div class="quip-artifact-panel flex flex-col h-full" transition:fly={{ x: 480, duration: D3, easing: easeOut }}>
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-outline">
       <div class="flex items-center gap-2 min-w-0">
@@ -66,9 +66,10 @@
         {/if}
       </div>
       <button
-        class="p-1 rounded hover:bg-elevated opacity-50 hover:opacity-100 transition-opacity"
+        class="quip-theme-hover p-1 rounded transition-colors"
         onclick={closeArtifactPanel}
         title={$t('artifacts.close')}
+        aria-label={$t('artifacts.close')}
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

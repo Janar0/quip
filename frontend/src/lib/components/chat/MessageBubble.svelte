@@ -275,7 +275,7 @@
       {/if}
 
       {#if hasSearchExecs}
-        <SearchProgress executions={searchExecs} />
+        <SearchProgress executions={searchExecs} showSourceLinks={sources.length === 0} />
       {/if}
 
       {#if primarySource}

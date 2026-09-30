@@ -20,6 +20,7 @@ from quip.routers.models import get_cached_model, get_default_model
 from quip.schemas.chat import CompletionRequest, RegenerateRequest
 from quip.services.completion.history import HistoryService
 from quip.services.completion.prompt import PromptBuilder
+from quip.services.completion.search_sources import append_retrieved_sources
 from quip.services.completion.stream import StreamOrchestrator, fetch_generation_cost
 from quip.services.messages_persist import save_assistant_message
 from quip.services.multimodal import build_multimodal_message
@@ -593,7 +594,9 @@ class CompletionService:
                 supports_tools=model_supports_tools,
                 context_length=model_info.get("context_length", 0),
             )
-            max_rounds = 3 if search_mode else 12
+            # fast_search permits up to five searches plus two page reads;
+            # reserve one final provider round for the synthesized answer.
+            max_rounds = 8 if search_mode else 12
             async for sse_frame in orchestrator.run(
                 chat_id=chat_id_str, user_id=user_id, max_rounds=max_rounds
             ):
@@ -634,6 +637,11 @@ class CompletionService:
                         )
                     search_images = search_images[:10]
                 elif ev_type == "error":
+                    if search_mode and full_content:
+                        full_content = append_retrieved_sources(
+                            full_content, tool_executions, locale
+                        )
+                        yield sse_event("content", {"text": full_content})
                     yield sse_frame
                     if full_content:
                         await save_assistant_message(
@@ -644,12 +652,21 @@ class CompletionService:
                             search_images=search_images,
                         )
                     return
-                yield sse_frame
+                if not (search_mode and ev_type == "content"):
+                    yield sse_frame
 
             if not full_content and full_reasoning:
                 full_content = full_reasoning
                 full_reasoning = ""
-                yield sse_event("content", {"text": full_content})
+                if not search_mode:
+                    yield sse_event("content", {"text": full_content})
+
+            if search_mode:
+                full_content = append_retrieved_sources(
+                    full_content, tool_executions, locale
+                )
+                if full_content:
+                    yield sse_event("content", {"text": full_content})
 
             # Cost fetch for OpenRouter
             if last_usage:

@@ -56,6 +56,11 @@ def _set_cached(key: str, data: list) -> None:
     _cache[key] = (time.time(), data)
 
 
+def invalidate_openrouter_models_cache() -> None:
+    """Force the next model-list request to load the current OpenRouter catalog."""
+    _cache.pop("openrouter", None)
+
+
 def get_cached_models() -> list[dict]:
     """Return all currently cached models (from both OpenRouter and Ollama).
 

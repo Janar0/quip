@@ -189,6 +189,7 @@ export async function streamChat(
   uploadedFiles?: UploadedFile[],
   branchFromMessageId?: string,
   workspaceId?: string,
+  modeHint?: 'search',
 ): Promise<string | undefined> {
   if (get(isStreaming)) return;
   const model = get(selectedModel);
@@ -243,6 +244,7 @@ export async function streamChat(
     if (fileIds?.length) body.file_ids = fileIds;
     if (workspaceId) body.workspace_id = workspaceId;
     if (branchFromMessageId) body.branch_from_message_id = branchFromMessageId;
+    if (modeHint === 'search' && get(searchEnabled)) body.mode_hint = 'search';
 
     const res = await api('/api/chat/completions', {
       method: 'POST',
