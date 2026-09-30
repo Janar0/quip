@@ -14,11 +14,11 @@ import time
 from fastapi import APIRouter, Depends, Header, Response
 from fastapi.responses import JSONResponse
 
+from quip.core.config import get_bool_setting, get_setting
 from quip.models.user import User
-from quip.services.permissions import get_current_user
-from quip.core.config import get_setting, get_bool_setting
-from quip.providers.openrouter import list_models as or_list_models
 from quip.providers.ollama import list_models as ollama_list_models
+from quip.providers.openrouter import list_models as or_list_models
+from quip.services.permissions import get_current_user
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -185,7 +185,14 @@ async def get_available_models(
 @router.get("/features")
 async def get_features(user: User = Depends(get_current_user)):
     """Return feature flags visible to all authenticated users."""
+    from quip.core.config import get_setting as _get_setting
+
+    research_enabled = (
+        get_bool_setting("research_enabled", False)
+        and _get_setting("research_runner_mode", "disabled").strip().lower() == "single_process"
+    )
     return {
         "search_enabled": get_bool_setting("search_enabled", False),
+        "research_enabled": research_enabled,
         "tool_gating_enabled": get_bool_setting("tool_gating_enabled", True),
     }

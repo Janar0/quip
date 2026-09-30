@@ -389,6 +389,16 @@ class CompletionService:
         from fastapi import HTTPException
         from fastapi.responses import StreamingResponse
 
+        research_mode = req.mode_hint == "research"
+        research_manager = None
+        if research_mode:
+            if not get_bool_setting("research_enabled", False):
+                raise HTTPException(status_code=403, detail="Deep Research is disabled by an administrator")
+            runner_mode = get_setting("research_runner_mode", "disabled").strip().lower()
+            research_manager = getattr(request.app.state, "research_run_manager", None)
+            if runner_mode != "single_process" or research_manager is None:
+                raise HTTPException(status_code=503, detail="Deep Research runner is not enabled")
+
         await _check_budget(user, db)
 
         is_new_chat = False
@@ -548,9 +558,22 @@ class CompletionService:
             chat_id=chat.id,
             user_id=user.id,
             assistant_message_id=assistant_msg.id,
-            status="running",
+            status="queued" if research_mode else "running",
             model=effective_model,
-            started_at=datetime.now(UTC),
+            started_at=None if research_mode else datetime.now(UTC),
+            run_metadata=(
+                {
+                    "schema_version": 1,
+                    "task_kind": "research",
+                    "revision": 0,
+                    "context_version": 1,
+                    "cancel_requested": False,
+                    "steering": [],
+                    "snapshot": {"progress": [], "subagents": {}, "errors": [], "sources": [], "usage": {}},
+                }
+                if research_mode
+                else {}
+            ),
         )
         db.add(run)
         await db.flush()
@@ -566,6 +589,61 @@ class CompletionService:
         user_parent_id_str = str(user_msg.parent_id) if user_msg.parent_id else None
         model_supports_tools = model_info.get("supports_tools", True)
 
+        if research_mode:
+            from quip.services.chat_runs import ChatRunSpec
+            from quip.services.research.limits import ResearchLimits
+            from quip.services.research.run_manager import ResearchRunSpec
+
+            limits = ResearchLimits.from_config()
+            task_spec = ResearchRunSpec(
+                run=ChatRunSpec(
+                    run_id=run_id,
+                    chat_id=chat.id,
+                    user_id=user_id,
+                    assistant_message_id=assistant_msg.id,
+                    task_kind="research",
+                    timeout_seconds=limits.max_runtime_seconds,
+                ),
+                query=req.message,
+                model=effective_model,
+                api_key=api_key,
+                is_ollama=is_ollama,
+                ollama_url=get_setting("ollama_url", "http://localhost:11434"),
+                locale=locale,
+                location=location,
+            )
+            try:
+                subscription = await research_manager.start(task_spec)
+            except RuntimeError as exc:
+                await _set_run_status(run_id, "failed", str(exc))
+                raise HTTPException(status_code=503, detail="Deep Research runner is unavailable") from exc
+
+            async def relay_research():
+                try:
+                    yield sse_event("chat", {
+                        "chat_id": chat_id_str,
+                        "user_message_id": user_msg_id,
+                        "message_id": assistant_msg_id,
+                        "run_id": str(run_id),
+                        "task_kind": "research",
+                        "user_parent_id": user_parent_id_str,
+                    })
+                    async for event in subscription:
+                        yield sse_event(event["type"], event.get("data", {}))
+                finally:
+                    # Closing the HTTP stream only detaches this listener; the task manager owns execution.
+                    await subscription.aclose()
+
+            return StreamingResponse(
+                relay_research(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         async def generate():
             full_content = ""
             full_reasoning = ""
@@ -578,6 +656,7 @@ class CompletionService:
                 "user_message_id": user_msg_id,
                 "message_id": assistant_msg_id,
                 "run_id": str(run_id),
+                "task_kind": "chat",
                 "user_parent_id": user_parent_id_str,
             })
 
@@ -862,7 +941,12 @@ class CompletionService:
         async def generate():
             yield sse_event(
                 "chat",
-                {"chat_id": chat_id_str, "message_id": new_msg_id, "run_id": str(run_id)},
+                {
+                    "chat_id": chat_id_str,
+                    "message_id": new_msg_id,
+                    "run_id": str(run_id),
+                    "task_kind": "chat",
+                },
             )
 
             orchestrator = StreamOrchestrator(

@@ -19,7 +19,8 @@ export interface ChatInfo {
 export interface ChatRunInfo {
   id: string;
   assistant_message_id: string | null;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'cancelling' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'interrupted';
+  task_kind?: string;
   model: string | null;
   error: string | null;
   started_at: string | null;
@@ -58,6 +59,40 @@ export interface ResearchStatusInfo {
   urls_read?: number;
 }
 
+export interface ResearchSourceInfo {
+  title: string;
+  url: string;
+}
+
+export interface ResearchSnapshotInfo {
+  progress?: ResearchStatusInfo[];
+  subagents?: Record<string, { task_id: string; kind?: string; status: string; goal?: string }>;
+  errors?: { message: string }[];
+  sources?: ResearchSourceInfo[];
+  usage?: Record<string, unknown>;
+  truncated?: boolean;
+}
+
+export type ResearchRunStatus = ChatRunInfo['status'];
+
+export interface ResearchRunInfo {
+  runId: string;
+  status: ResearchRunStatus;
+  revision: number;
+  contextVersion: number;
+  cancelRequested: boolean;
+  snapshot: ResearchSnapshotInfo;
+  error?: string | null;
+  /** Last server-persisted message, used as a baseline when polling. */
+  message?: { id: string; content: string; artifacts?: Artifact[] } | null;
+  /** Current text received from the live Research SSE stream, kept client-side. */
+  streamedContent?: string;
+  /** Stream text and request order when the current persisted report was fetched. */
+  reportSyncStreamedContent?: string | null;
+  reportSyncStatusAtRequest?: ResearchRunStatus | null;
+  reportSyncRequestId?: number;
+}
+
 export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool'; executionId: string };
@@ -89,6 +124,7 @@ export interface MessageInfo {
   toolExecutions?: ToolExecution[];
   attachments?: AttachmentInfo[];
   searchImages?: SearchImageInfo[];
+  research?: ResearchRunInfo;
   contentBlocks?: ContentBlock[];
   created_at: string;
 }
@@ -108,6 +144,7 @@ export const abortController = writable<AbortController | null>(null);
 export const branchSelections = writable<Record<string, string>>({});
 
 export const searchEnabled = writable<boolean>(false);
+export const researchEnabled = writable<boolean>(false);
 export const subAgents = writable<Record<string, SubAgentHandle>>({});
 
 export function setDefaultModel(model: string): void {

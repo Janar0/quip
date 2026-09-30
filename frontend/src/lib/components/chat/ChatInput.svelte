@@ -3,7 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { fade } from 'svelte/transition';
   import { D1 } from '$lib/motion';
-  import { isStreaming, searchEnabled } from '$lib/stores/chat';
+  import { isStreaming, searchEnabled, researchEnabled } from '$lib/stores/chat';
   import { stopGeneration } from '$lib/api/chats';
   import { uploadFiles, getFileUrl, deleteFile, type UploadedFile } from '$lib/api/files';
 
@@ -13,14 +13,14 @@
     workspaceId,
     variant = 'chat',
   }: {
-    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[], modeHint?: 'search') => void;
+    onSend: (text: string, fileIds: string[], uploadedFiles: UploadedFile[], modeHint?: 'search' | 'research') => void;
     chatId?: string;
     workspaceId?: string;
     variant?: 'chat' | 'start';
   } = $props();
 
   let text = $state('');
-  let searchMode = $state(false);
+  let modeHint = $state<'auto' | 'search' | 'research'>('auto');
   let textareaEl: HTMLTextAreaElement;
   let fileInputEl: HTMLInputElement;
   let isDragOver = $state(false);
@@ -184,9 +184,13 @@
       .filter((a) => a.uploaded)
       .map((a) => a.uploaded!);
     const fileIds = uploaded.map((u) => u.id);
-    onSend(trimmed || ' ', fileIds, uploaded, searchMode && $searchEnabled ? 'search' : undefined);
-    // Search is an explicit per-response choice, so the next send returns to chat.
-    searchMode = false;
+    const enabledMode = modeHint === 'search' && $searchEnabled
+      ? 'search'
+      : modeHint === 'research' && $researchEnabled
+        ? 'research'
+        : undefined;
+    onSend(trimmed || ' ', fileIds, uploaded, enabledMode);
+    modeHint = 'auto';
 
     for (const att of attachedFiles) {
       if (att.preview) URL.revokeObjectURL(att.preview);
@@ -304,19 +308,19 @@
           <div class="quip-mode-toggle" role="group" aria-label={$t('chat.responseMode')}>
             <button
               type="button"
-              class="quip-mode-option {searchMode ? '' : 'is-active'}"
-              aria-pressed={!searchMode}
-              onclick={() => (searchMode = false)}
+              class="quip-mode-option {modeHint === 'auto' ? 'is-active' : ''}"
+              aria-pressed={modeHint === 'auto'}
+              onclick={() => (modeHint = 'auto')}
               disabled={$isStreaming}
             >
               {$t('chat.mode_auto')}
             </button>
             <button
               type="button"
-              class="quip-mode-option {searchMode ? 'is-active' : ''}"
-              aria-pressed={searchMode}
+              class="quip-mode-option {modeHint === 'search' ? 'is-active' : ''}"
+              aria-pressed={modeHint === 'search'}
               title={$t('chat.searchModeHint')}
-              onclick={() => (searchMode = true)}
+              onclick={() => (modeHint = modeHint === 'search' ? 'auto' : 'search')}
               disabled={$isStreaming}
             >
               {$t('chat.mode_search')}
@@ -336,6 +340,21 @@
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>
           </button>
+          {#if $researchEnabled}
+            <button
+              type="button"
+              class="ml-1 px-2.5 py-2 rounded-lg text-xs transition-colors active:scale-[0.96]"
+              style={modeHint === 'research'
+                ? 'background: var(--quip-hover); color: var(--quip-text); border: 1px solid var(--quip-glass-border-strong)'
+                : 'color: var(--quip-text-muted); border: 1px solid transparent'}
+              onclick={() => (modeHint = modeHint === 'research' ? 'auto' : 'research')}
+              aria-pressed={modeHint === 'research'}
+              disabled={$isStreaming}
+              title={$t('research.mode')}
+            >
+              {$t('research.mode')}
+            </button>
+          {/if}
           <input
             type="file"
             multiple

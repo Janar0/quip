@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,7 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 import quip.models  # noqa: F401 — register all models with Base
-from quip.core.config import load_settings
+from quip.core.config import get_setting, load_settings
 from quip.database import DATABASE_URL, engine
 from quip.migrations.runner import SCHEMA_REVISION, upgrade_schema
 from quip.routers.admin import router as admin_router
@@ -30,6 +31,17 @@ from quip.services.openwebui_migration import run_migration_if_needed
 from quip.services.sandbox import sandbox_cleanup_loop, sandbox_manager
 from quip.services.telegram import TelegramBotService
 
+logger = logging.getLogger(__name__)
+
+
+async def _recover_stale_chat_runs(chat_run_manager) -> None:
+    while True:
+        await asyncio.sleep(10)
+        try:
+            await chat_run_manager.recover_startup()
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not recover stale ChatRuns")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,17 +51,41 @@ async def lifespan(app: FastAPI):
     await run_migration_if_needed()
     await load_settings()
     from quip.database import async_session
+    from quip.services.chat_runs import ChatRunManager
+    from quip.services.research.limits import ResearchLimits
+    from quip.services.research.run_manager import ResearchRunManager
     from quip.services.skill_store import seed_builtin_skills
+
     async with async_session() as db:
         await seed_builtin_skills(db)
+    runner_mode = get_setting("research_runner_mode", "disabled").strip().lower()
+    limits = ResearchLimits.from_config()
+    chat_run_manager = ChatRunManager(
+        async_session,
+        runner_mode=runner_mode,
+        max_concurrent_runs=limits.max_concurrent_runs,
+    )
+    app.state.chat_run_manager = chat_run_manager
+    app.state.research_run_manager = ResearchRunManager(chat_run_manager, limits=limits)
+    # Recovery is safe in every worker: only expired owner leases are interrupted.
+    # Live runs owned by another worker keep their fresh leases; legacy ownerless
+    # running rows are left alone because this process cannot prove they are dead.
+    await chat_run_manager.recover_startup()
+    recovery_task = asyncio.create_task(_recover_stale_chat_runs(chat_run_manager))
     cleanup_task = asyncio.create_task(sandbox_cleanup_loop())
     telegram_bot = TelegramBotService()
     app.state.telegram_bot = telegram_bot
-    await telegram_bot.start()
-    yield
-    await telegram_bot.stop()
-    cleanup_task.cancel()
-    await engine.dispose()
+    try:
+        await telegram_bot.start()
+        yield
+    finally:
+        await telegram_bot.stop()
+        recovery_task.cancel()
+        await asyncio.gather(recovery_task, return_exceptions=True)
+        await chat_run_manager.close()
+        cleanup_task.cancel()
+        await asyncio.gather(cleanup_task, return_exceptions=True)
+        await engine.dispose()
 
 
 app = FastAPI(

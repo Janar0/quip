@@ -82,11 +82,18 @@ describe('existing chat route Search mode', () => {
       event('tool_result', { id: 'search-42', status: 'completed', result: searchResult }),
       event('content', { text: 'A source-grounded answer with a partial retrieval note.' }),
     ].join('');
+    let chatReads = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const path = String(input);
       if (path === '/api/chat/completions') return new Response(stream);
       if (path.startsWith('/api/chats?')) return new Response('[]');
-      if (path === '/api/chats/chat-42') return new Response(JSON.stringify(savedChat));
+      if (path === '/api/chats/chat-42') {
+        chatReads += 1;
+        // The initial existing-chat load predates this request; only the
+        // subsequent reload should contain the newly streamed assistant turn.
+        const initialChat = { ...savedChat, messages: [] };
+        return new Response(JSON.stringify(chatReads === 1 ? initialChat : savedChat));
+      }
       throw new Error(`Unexpected request: ${path}`);
     });
     vi.stubGlobal('fetch', fetchMock);

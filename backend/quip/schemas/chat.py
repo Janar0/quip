@@ -80,6 +80,7 @@ class ChatRunResponse(BaseModel):
     chat_id: UUID
     assistant_message_id: UUID | None = None
     status: str
+    task_kind: str = "chat"
     model: str | None = None
     error: str | None = None
     started_at: datetime | None = None
@@ -99,7 +100,7 @@ class CompletionRequest(BaseModel):
     model: str
     message: str  # user's message text
     file_ids: list[UUID] = Field(default_factory=list)  # attached file IDs
-    mode_hint: str | None = None  # "auto" | "search" — fast search mode dispatch
+    mode_hint: str | None = None  # "auto" | "search" | "research"
     branch_from_message_id: UUID | None = None  # branch edit: create sibling of this message
     max_tokens: int | None = None  # optional max tokens for response generation
 

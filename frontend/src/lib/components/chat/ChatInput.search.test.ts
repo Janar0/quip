@@ -2,13 +2,14 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import ChatInput from './ChatInput.svelte';
-import { activeChat, chatList, messages, searchEnabled, selectedModel } from '$lib/stores/chat';
+import { activeChat, chatList, messages, researchEnabled, searchEnabled, selectedModel } from '$lib/stores/chat';
 import { fetchFeatures, loadChat, streamChat } from '$lib/api/chats';
 import type { UploadedFile } from '$lib/api/files';
 
 describe('ChatInput search mode', () => {
   beforeEach(() => {
     searchEnabled.set(false);
+    researchEnabled.set(false);
     selectedModel.set('test/model');
     messages.set([]);
     activeChat.set(null);
@@ -18,6 +19,7 @@ describe('ChatInput search mode', () => {
   afterEach(() => {
     cleanup();
     searchEnabled.set(false);
+    researchEnabled.set(false);
     messages.set([]);
     activeChat.set(null);
     chatList.set([]);
@@ -36,7 +38,7 @@ describe('ChatInput search mode', () => {
     vi.stubGlobal('fetch', fetchMock);
     await fetchFeatures();
     let request: Promise<string | undefined> = Promise.resolve(undefined);
-    const onSend = (text: string, fileIds: string[], uploaded: UploadedFile[], modeHint?: 'search') => {
+    const onSend = (text: string, fileIds: string[], uploaded: UploadedFile[], modeHint?: 'search' | 'research') => {
       request = streamChat(text, undefined, fileIds, uploaded, undefined, undefined, modeHint);
     };
     render(ChatInput, { props: { onSend } });
@@ -100,7 +102,7 @@ describe('ChatInput search mode', () => {
     await fetchFeatures();
 
     let request: Promise<string | undefined> = Promise.resolve(undefined);
-    const onSend = (text: string, fileIds: string[], uploaded: UploadedFile[], modeHint?: 'search') => {
+    const onSend = (text: string, fileIds: string[], uploaded: UploadedFile[], modeHint?: 'search' | 'research') => {
       request = streamChat(text, undefined, fileIds, uploaded, undefined, undefined, modeHint);
     };
     render(ChatInput, { props: { onSend } });
@@ -130,5 +132,28 @@ describe('ChatInput search mode', () => {
       content: 'A source-grounded answer with a partial retrieval note.',
       toolExecutions: [{ status: 'completed', result: { status: 'partial' } }],
     });
+  });
+
+  it('keeps Research and Search mutually exclusive and forwards Research from the composer', async () => {
+    searchEnabled.set(true);
+    researchEnabled.set(true);
+    const onSend = vi.fn();
+    render(ChatInput, { props: { onSend } });
+
+    const researchButton = screen.getByRole('button', { name: 'research.mode' });
+    const searchButton = screen.getByRole('button', { name: 'chat.mode_search' });
+    await fireEvent.click(researchButton);
+    expect(researchButton.getAttribute('aria-pressed')).toBe('true');
+    expect(searchButton.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(searchButton);
+    expect(researchButton.getAttribute('aria-pressed')).toBe('false');
+    expect(searchButton.getAttribute('aria-pressed')).toBe('true');
+
+    await fireEvent.click(researchButton);
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Investigate this' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'chat.sendMessage' }));
+    expect(onSend).toHaveBeenCalledWith('Investigate this', [], [], 'research');
+    expect(researchButton.getAttribute('aria-pressed')).toBe('false');
   });
 });

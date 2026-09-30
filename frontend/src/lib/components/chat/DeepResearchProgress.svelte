@@ -1,21 +1,39 @@
 <script lang="ts">
-  import type { ResearchStatusInfo } from '$lib/stores/chat';
-  import { isStreaming } from '$lib/stores/chat';
+  import type { ResearchRunStatus, ResearchStatusInfo } from '$lib/stores/chat';
   import { t } from 'svelte-i18n';
 
   let {
     history,
     current,
+    status = 'running',
+    errors = [],
+    truncated = false,
+    onStop,
   }: {
     history: ResearchStatusInfo[];
     current: ResearchStatusInfo;
+    status?: ResearchRunStatus;
+    errors?: { message: string }[];
+    truncated?: boolean;
+    onStop?: () => void;
   } = $props();
 
   let manualToggle = $state<boolean | null>(null);
-  let isDone = $derived(current.phase === 'synthesizing' || !$isStreaming);
+  let isRunning = $derived(status === 'queued' || status === 'running' || status === 'cancelling');
+  let isDone = $derived(!isRunning);
   let isSynthesizing = $derived(current.phase === 'synthesizing');
-  let expanded = $derived(manualToggle !== null ? manualToggle : $isStreaming);
-  let showTimeline = $derived(expanded || $isStreaming);
+  let expanded = $derived(manualToggle !== null ? manualToggle : isRunning);
+  let showTimeline = $derived(expanded || isRunning);
+  const statusLabels: Record<ResearchRunStatus, string> = {
+    queued: 'research.status.queued',
+    running: 'research.status.running',
+    cancelling: 'research.status.cancelling',
+    completed: 'research.status.completed',
+    partial: 'research.status.partial',
+    failed: 'research.status.failed',
+    cancelled: 'research.status.cancelled',
+    interrupted: 'research.status.interrupted',
+  };
 
   function domainFromUrl(url: string): string {
     try {
@@ -30,7 +48,7 @@
   <button
     class="flex items-center gap-2 text-xs w-full text-left cursor-pointer"
     style="color: var(--quip-text-muted)"
-    onclick={() => (manualToggle = manualToggle === null ? !$isStreaming : !manualToggle)}
+    onclick={() => (manualToggle = manualToggle === null ? isRunning : !manualToggle)}
     onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-dim)' }}
     onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--quip-text-muted)' }}
   >
@@ -42,9 +60,9 @@
 
     <span>
       {#if isSynthesizing || isDone}
-        {$t('chat.deepResearch')}
+        {$t(statusLabels[status])}
       {:else}
-        {$t('chat.deepResearch')} — {current.detail || current.phase}
+        {$t(statusLabels[status])}{#if current.detail} — {current.detail}{/if}
       {/if}
     </span>
 
@@ -57,10 +75,16 @@
     </svg>
   </button>
 
+  {#if isRunning && onStop}
+    <button type="button" class="ml-5 text-[11px] underline underline-offset-2 opacity-70 hover:opacity-100" onclick={onStop}>
+      {$t(status === 'cancelling' ? 'research.stopRequested' : 'chat.stopGeneration')}
+    </button>
+  {/if}
+
   {#if showTimeline}
     <div class="space-y-0.5">
       {#each history as step, i}
-        {@const isActive = i === history.length - 1 && $isStreaming && step.phase !== 'synthesizing'}
+        {@const isActive = i === history.length - 1 && isRunning && step.phase !== 'synthesizing'}
 
         {#if step.phase === 'decomposing'}
           <div class="flex items-center gap-1.5 text-[11px]" style="color: var(--quip-text-muted)">
@@ -124,7 +148,7 @@
 
         {:else if step.phase === 'synthesizing'}
           <div class="flex items-center gap-1.5 text-[11px]" style="color: var(--quip-text-muted)">
-            {#if $isStreaming}
+            {#if isRunning}
               <span class="spinner-ring flex-shrink-0" style="width: 9px; height: 9px; border-width: 1.5px"></span>
             {:else}
               <svg class="w-2.5 h-2.5 flex-shrink-0 opacity-50" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
@@ -134,5 +158,14 @@
         {/if}
       {/each}
     </div>
+  {/if}
+
+  {#if errors.length > 0}
+    <ul class="mt-1 pl-4 list-disc text-[11px] space-y-0.5" style="color: #f59e0b">
+      {#each errors as item, i}<li>{item.message}</li>{/each}
+    </ul>
+  {/if}
+  {#if truncated}
+    <p class="mt-1 text-[11px] opacity-50" style="color: var(--quip-text-muted)">{$t('research.snapshotTruncated')}</p>
   {/if}
 </div>

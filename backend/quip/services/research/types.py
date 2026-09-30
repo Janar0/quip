@@ -1,16 +1,16 @@
 import asyncio
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from quip.providers.openrouter import UsageInfo
 
 
-# --- Orchestrator limits ---
-ORCHESTRATOR_MAX_ROUNDS = 20
-SUB_AGENT_MAX_ROUNDS = 15
-SESSION_WEB_SEARCH_BUDGET = 100
+class ResearchLimitReached(RuntimeError):
+    """Raised before a new provider/tool call would cross a run bound."""
 
 
 # --- Events ---
@@ -48,6 +48,14 @@ class ResearchSession:
     ollama_url: str
     locale: Optional[str] = None
     location: Optional[str] = None
+    max_child_agents: int = 8
+    max_concurrent_agents: int = 3
+    max_runtime_seconds: int = 600
+    max_cost_usd: float = 1.0
+    max_orchestrator_rounds: int = 20
+    max_subagent_rounds: int = 15
+    max_web_searches: int = 100
+    steering_reader: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None
 
     handles: dict[str, SubAgentHandle] = field(default_factory=dict)
     result_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
@@ -56,6 +64,34 @@ class ResearchSession:
     subagent_generations: list[str] = field(default_factory=list)
     web_search_count: int = 0
     loaded_skills: set[str] = field(default_factory=set)
+    spawned_children: int = 0
+    started_at: float = field(default_factory=time.monotonic)
+    child_slots: asyncio.Semaphore = field(init=False)
+    provider_call_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+
+    def __post_init__(self) -> None:
+        self.child_slots = asyncio.Semaphore(max(1, self.max_concurrent_agents))
+
+    def ensure_can_start_call(self) -> None:
+        if self.cancel_scope.is_set():
+            raise asyncio.CancelledError
+        if time.monotonic() - self.started_at >= self.max_runtime_seconds:
+            raise ResearchLimitReached("research runtime limit reached")
+        if self.total_usage.cost >= self.max_cost_usd:
+            raise ResearchLimitReached("research known-cost limit reached")
+
+    @asynccontextmanager
+    async def admit_provider_call(self) -> AsyncIterator[None]:
+        """Serialize provider streams so reported cost is refreshed before admission."""
+        async with self.provider_call_lock:
+            self.ensure_can_start_call()
+            yield
+
+    def reserve_child(self) -> bool:
+        if self.cancel_scope.is_set() or self.spawned_children >= self.max_child_agents:
+            return False
+        self.spawned_children += 1
+        return True
 
     def next_task_id(self, kind: str) -> str:
         return f"{kind}-{uuid.uuid4().hex[:8]}"

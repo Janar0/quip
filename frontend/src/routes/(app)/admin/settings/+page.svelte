@@ -49,7 +49,7 @@
     publicAppUrl = settings.public_app_url ?? '';
     systemPrompt = settings.system_prompt ?? '';
     searchEnabled = settings.search_enabled ?? false;
-    researchEnabled = settings.research_enabled ?? true;
+    researchEnabled = settings.research_enabled ?? false;
     toolGatingEnabled = settings.tool_gating_enabled ?? true;
     ragEnabled = settings.rag_enabled ?? true;
     embeddingProvider = settings.embedding_provider ?? 'openrouter';

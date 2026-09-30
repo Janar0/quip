@@ -88,7 +88,7 @@ class SettingsResponse(BaseModel):
     model_whitelist: list[str] = []
     rag_enabled: bool = True
     search_enabled: bool = False
-    research_enabled: bool = True
+    research_enabled: bool = False
     embedding_provider: str = "openrouter"
     embedding_model: str = "openai/text-embedding-3-small"
     rag_chunk_size: int = 512
@@ -127,7 +127,7 @@ async def get_settings(user: User = Depends(get_admin_user)):
         model_whitelist=whitelist,
         rag_enabled=get_bool_setting("rag_enabled", True),
         search_enabled=get_bool_setting("search_enabled", False),
-        research_enabled=get_bool_setting("research_enabled", True),
+        research_enabled=get_bool_setting("research_enabled", False),
         embedding_provider=get_setting("embedding_provider", "openrouter"),
         embedding_model=get_setting("embedding_model", "openai/text-embedding-3-small"),
         rag_chunk_size=int(get_setting("rag_chunk_size", "512")),

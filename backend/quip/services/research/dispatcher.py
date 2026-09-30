@@ -2,7 +2,12 @@ import asyncio
 import json
 import logging
 
-from quip.services.research.types import ResearchEvent, ResearchSession, SubAgentHandle
+from quip.services.research.types import (
+    ResearchEvent,
+    ResearchLimitReached,
+    ResearchSession,
+    SubAgentHandle,
+)
 from quip.services.research.sub_agents import (
     _run_artifact_sub_agent,
     _run_sandbox_sub_agent,
@@ -11,6 +16,27 @@ from quip.services.research.sub_agents import (
 from quip.services.skill_store import get_skill_def as get_skill
 
 logger = logging.getLogger(__name__)
+
+
+def _spawn_bounded(session: ResearchSession, factory):
+    async def run():
+        async with session.child_slots:
+            await factory()
+
+    return asyncio.create_task(run())
+
+
+async def _child_limit_error(session: ResearchSession) -> str | None:
+    try:
+        session.ensure_can_start_call()
+    except ResearchLimitReached as exc:
+        await session.emit(ResearchEvent("error", {"message": str(exc)}))
+        return str(exc)
+    if not session.reserve_child():
+        message = "research child-agent limit exhausted"
+        await session.emit(ResearchEvent("error", {"message": message}))
+        return message
+    return None
 
 
 # --- Research tool dispatcher ---
@@ -34,10 +60,16 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         goal = args.get("goal", "")
         if not goal:
             return json.dumps({"error": "goal required"})
+        limit_error = await _child_limit_error(session)
+        if limit_error:
+            return json.dumps({"error": limit_error})
+        try:
+            max_queries = int(args.get("max_queries", 30))
+        except (TypeError, ValueError):
+            max_queries = 30
+        max_queries = max(1, min(max_queries, session.max_web_searches))
         tid = session.next_task_id("search")
-        task = asyncio.create_task(
-            _run_search_sub_agent(session, tid, goal, int(args.get("max_queries", 30)))
-        )
+        task = _spawn_bounded(session, lambda: _run_search_sub_agent(session, tid, goal, max_queries))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="search", task=task)
         await session.emit(ResearchEvent("subagent_spawned", {
             "task_id": tid, "kind": "search", "agent_type": "search", "goal": goal,
@@ -53,8 +85,11 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         task_desc = args.get("task", "")
         if not task_desc:
             return json.dumps({"error": "task required"})
+        limit_error = await _child_limit_error(session)
+        if limit_error:
+            return json.dumps({"error": limit_error})
         tid = session.next_task_id("sandbox")
-        task = asyncio.create_task(_run_sandbox_sub_agent(session, tid, task_desc))
+        task = _spawn_bounded(session, lambda: _run_sandbox_sub_agent(session, tid, task_desc))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="sandbox", task=task)
         await session.emit(ResearchEvent("subagent_spawned", {
             "task_id": tid, "kind": "sandbox", "agent_type": "sandbox",
@@ -67,8 +102,11 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         spec = args.get("spec", "")
         if not kind or not spec:
             return json.dumps({"error": "kind and spec required"})
+        limit_error = await _child_limit_error(session)
+        if limit_error:
+            return json.dumps({"error": limit_error})
         tid = session.next_task_id("artifact")
-        task = asyncio.create_task(_run_artifact_sub_agent(session, tid, kind, spec))
+        task = _spawn_bounded(session, lambda: _run_artifact_sub_agent(session, tid, kind, spec))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="artifact", task=task)
         await session.emit(ResearchEvent("subagent_spawned", {
             "task_id": tid, "kind": "artifact", "agent_type": "artifact",
