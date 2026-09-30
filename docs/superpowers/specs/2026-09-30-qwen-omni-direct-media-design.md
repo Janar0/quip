@@ -28,8 +28,8 @@ Let a signed-in user speak Russian with Qwen Omni Realtime in Quip, interrupt/mu
 
 Voice may expose only these functions:
 
-- `read_url(url)`: reuse `quip.services.scraper.read_url` and its existing safe direct-fetch checks, fallback, timeouts, and 15,000-character output cap. Keep it available wherever Quip's existing base tool is available.
-- `web_search(query)`: reuse `quip.services.search.web_search` and its configured Tavily/SearXNG provider, server credentials, caching, and five-result cap. Expose and execute it only when Quip's existing `search_enabled` setting and enabled `web_search` skill permit it.
+- `read_url(url)`: reuse `quip.services.scraper.read_url`, its existing fallback/timeouts, `validate_outbound_url` before fetch, and `safe_get` redirect checks; accept only public HTTP(S) URLs without embedded credentials, capped at 2,048 URL characters and 15,000 output characters. Keep it available wherever Quip's existing base tool is available.
+- `web_search(query)`: reuse `quip.services.search.web_search` and its configured Tavily/SearXNG provider, server credentials, caching, and five-result cap. Limit the query to 500 characters. Expose and execute it only when Quip's existing `search_enabled` setting and enabled `web_search` skill permit it.
 
 Do not call Qwen's own web search or duplicate provider-search logic. The browser submits `response.function_call_arguments.done` data (`call_id`, name, arguments) to an authenticated Quip tool endpoint. The endpoint ignores client-supplied user, chat, workspace, model, URL-base, and permission fields; it resolves the active call and owner from the database and accepts only the exact allowlisted function names. It independently validates JSON/schema, limits, search gate, URL safety, and chat ownership. A provider event is not proof of authorization: a modified client can fabricate one, so every request is treated as a user-originated read request under existing Quip gates.
 
