@@ -1,6 +1,7 @@
 """End-to-end mocked coverage for deterministic search sources and budgets."""
 import base64
 import json
+import socket
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
@@ -135,6 +136,9 @@ async def test_search_mode_caps_tool_calls_and_persists_deduplicated_retrieved_s
     save_session = _save_with_request_session()
 
     with patch(
+        "quip.services.url_security.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ), patch(
         "quip.services.completion.stream.openrouter.stream_completion",
         new=mock_stream,
     ), patch("quip.services.search.web_search", new=mock_search), patch(

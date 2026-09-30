@@ -7,6 +7,7 @@ from quip.models.sandbox import Sandbox
 from quip.models.skill import Skill
 from quip.models.usage import UsageLog
 from quip.models.user import ApiKey, Auth, TelegramLinkToken, TelegramUpdate, User
+from quip.models.voice import VoiceCall, VoiceToolCall
 from quip.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     "BootstrapState",
     "Chat",
     "ChatRun",
+    "VoiceCall",
+    "VoiceToolCall",
     "Config",
     "DocumentChunk",
     "DocumentImage",

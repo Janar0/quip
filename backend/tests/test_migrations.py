@@ -5,23 +5,27 @@ from alembic import command
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from quip.migrations.runner import _alembic_config, upgrade_schema
+from quip.migrations.runner import SCHEMA_REVISION, _alembic_config, upgrade_schema
 
 
 async def _schema_snapshot(database_url: str):
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
-            tables, chat_columns, file_columns, token_columns = await connection.run_sync(
+            tables, chat_columns, file_columns, token_columns, tool_columns = await connection.run_sync(
                 lambda sync_connection: (
-                    set(inspect(sync_connection).get_table_names()),
+                    (tables := set(inspect(sync_connection).get_table_names())),
                     {column["name"] for column in inspect(sync_connection).get_columns("chats")},
                     {column["name"] for column in inspect(sync_connection).get_columns("files")},
                     {column["name"] for column in inspect(sync_connection).get_columns("telegram_link_tokens")},
+                    (
+                        {column["name"] for column in inspect(sync_connection).get_columns("voice_tool_calls")}
+                        if "voice_tool_calls" in tables else set()
+                    ),
                 )
             )
             revision = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-            return tables, chat_columns, file_columns, token_columns, revision
+            return tables, chat_columns, file_columns, token_columns, tool_columns, revision
     finally:
         await engine.dispose()
 
@@ -33,14 +37,37 @@ def test_fresh_database_migrates_to_workspace_head(tmp_path):
     # A second boot must be an idempotent no-op.
     upgrade_schema(database_url)
 
-    tables, chat_columns, file_columns, token_columns, revision = asyncio.run(
+    tables, chat_columns, file_columns, token_columns, tool_columns, revision = asyncio.run(
         _schema_snapshot(database_url)
     )
-    assert {"workspaces", "workspace_members", "chat_runs", "telegram_link_tokens", "telegram_updates"}.issubset(tables)
+    assert {
+        "workspaces", "workspace_members", "chat_runs", "telegram_link_tokens", "telegram_updates",
+        "voice_calls", "voice_tool_calls",
+    }.issubset(tables)
     assert "workspace_id" in chat_columns
     assert "workspace_id" in file_columns
     assert {"user_id", "telegram_user_id"}.issubset(token_columns)
+    assert "execution_started" in tool_columns
+    assert revision == SCHEMA_REVISION == "0010"
+
+
+def test_voice_migration_can_downgrade_and_upgrade(tmp_path):
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'voice-migrations.db'}"
+    config = _alembic_config(database_url)
+
+    upgrade_schema(database_url)
+    command.downgrade(config, "0007")
+    tables, *_rest, revision = asyncio.run(_schema_snapshot(database_url))
+    assert "voice_calls" not in tables
+    assert "voice_tool_calls" not in tables
     assert revision == "0007"
+
+    command.upgrade(config, "head")
+    tables, *_rest, revision = asyncio.run(_schema_snapshot(database_url))
+    assert {"voice_calls", "voice_tool_calls"}.issubset(tables)
+    assert revision == SCHEMA_REVISION == "0010"
+    tool_columns = _rest[-1]
+    assert "execution_started" in tool_columns
 
 
 async def _seed_unversioned_baseline(database_url: str):
@@ -116,4 +143,4 @@ def test_unversioned_database_is_stamped_and_backfilled(tmp_path, monkeypatch):
     assert workspace_count == 1
     assert chat_workspace
     assert file_workspace == chat_workspace
-    assert revision == "0007"
+    assert revision == "0010"

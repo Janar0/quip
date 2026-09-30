@@ -1,5 +1,6 @@
 """Tests for web search and scraper services."""
 import json
+import socket
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -115,7 +116,10 @@ async def test_jina_reader():
     mock_response.raise_for_status = MagicMock()
     mock_response.text = content
 
-    with patch("quip.services.scraper.httpx.AsyncClient") as MockClient:
+    with patch(
+        "quip.services.url_security.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ), patch("quip.services.scraper.httpx.AsyncClient") as MockClient:
         instance = AsyncMock()
         instance.get.return_value = mock_response
         instance.__aenter__ = AsyncMock(return_value=instance)
@@ -131,7 +135,10 @@ async def test_jina_reader():
 @pytest.mark.asyncio
 async def test_jina_fallback():
     """When Jina fails, falls back to direct fetch."""
-    with patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=Exception("Jina down")), \
+    with patch(
+        "quip.services.url_security.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ), patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=Exception("Jina down")), \
          patch("quip.services.scraper._direct_fetch", new_callable=AsyncMock, return_value="Fallback content") as mock_direct:
 
         result = await read_url("https://example.com")
@@ -480,7 +487,10 @@ async def test_fast_search_completes_five_mocked_queries_and_persists_sources(cl
         finally:
             await session_generator.aclose()
 
-    with patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream), \
+    with patch(
+        "quip.services.url_security.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ), patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream), \
          patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])) as mock_search, \
          patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=RuntimeError("Jina unavailable")), \
          patch("quip.services.scraper._direct_fetch", new_callable=AsyncMock, side_effect=RuntimeError("origin unavailable")), \

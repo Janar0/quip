@@ -27,6 +27,7 @@ async def setup_db():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.test_session_factory = session_factory
 
     yield
 
@@ -35,6 +36,7 @@ async def setup_db():
 
     await engine.dispose()
     app.dependency_overrides.clear()
+    del app.state.test_session_factory
 
 
 @pytest.fixture
@@ -65,6 +67,11 @@ async def db_session():
     session = await anext(gen)
     yield session
     await session.close()
+
+
+@pytest.fixture
+def app_session_factory():
+    return app.state.test_session_factory
 
 
 @pytest.fixture
