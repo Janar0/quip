@@ -49,7 +49,7 @@ jobs:
 
       - name: Audit backend runtime dependencies
         working-directory: backend
-        run: uvx pip-audit --path .venv/lib/python3.12/site-packages
+        run: uvx pip-audit --path .venv/lib/python3.12/site-packages --skip-editable
 
       - name: Test backend
         working-directory: backend
@@ -74,9 +74,9 @@ jobs:
         working-directory: frontend
         run: npm test
 
-      - name: Audit frontend runtime dependencies
+      - name: Audit frontend dependencies
         working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=low
 
       - name: Build frontend
         working-directory: frontend
