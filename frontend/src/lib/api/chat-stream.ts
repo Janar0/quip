@@ -1,7 +1,8 @@
 /** Translate completion events into chat state; transport framing lives in sse.ts. */
-import { messages, chatList, activeChat, type ContentBlock, type SearchImageInfo, type ResearchRunInfo } from '$lib/stores/chat';
+import { messages, chatList, activeChat, type ContentBlock, type MessageInfo, type SearchImageInfo, type ResearchRunInfo } from '$lib/stores/chat';
 import { extractStreamingArtifacts } from '$lib/utils/artifacts';
 import { readSSE } from './sse';
+import type { Writable } from 'svelte/store';
 
 /** Parse SSE stream, update the streaming message, return real message IDs */
 type ChatReadyIds = {
@@ -15,6 +16,7 @@ type ChatReadyIds = {
 export async function processSSEStream(
   response: Response,
   onChatReady?: (ids: ChatReadyIds) => void | Promise<void>,
+  streamMessages: Writable<MessageInfo[]> = messages,
 ): Promise<{ chatId?: string; userMessageId?: string; messageId?: string }> {
   let fullContent = '';
   let fullReasoning = '';
@@ -35,7 +37,7 @@ export async function processSSEStream(
         // appearing as false roots in the branch tree builder.
         // For regenerate flow, userMessageId is undefined and the streaming
         // placeholder already has its parent_id set — preserve it.
-        messages.update((msgs) =>
+        streamMessages.update((msgs) =>
           msgs.map((m) => {
             if (m.id === 'streaming') {
               return {
@@ -68,7 +70,7 @@ export async function processSSEStream(
         });
       } else if (currentEvent === 'reasoning') {
         fullReasoning += data.text;
-        updateStreamingContent(messageId, fullContent, fullReasoning);
+        updateStreamingContent(messageId, fullContent, fullReasoning, undefined, streamMessages);
       } else if (currentEvent === 'content') {
         fullContent += data.text;
         // Track text in content blocks
@@ -78,7 +80,7 @@ export async function processSSEStream(
         } else {
           contentBlocks = [...contentBlocks, { type: 'text', content: data.text }];
         }
-        updateStreamingContent(messageId, fullContent, fullReasoning, contentBlocks);
+        updateStreamingContent(messageId, fullContent, fullReasoning, contentBlocks, streamMessages);
         // Detect completed artifact tags during streaming
         const streamArtifacts = extractStreamingArtifacts(fullContent);
         const completed = streamArtifacts.filter((a) => a.isComplete);
@@ -93,7 +95,7 @@ export async function processSSEStream(
             version: 1,
           }));
           const targetId = messageId || 'streaming';
-          messages.update((msgs) =>
+          streamMessages.update((msgs) =>
             msgs.map((m) => (m.id === targetId ? { ...m, artifacts } : m)),
           );
         }
@@ -101,7 +103,7 @@ export async function processSSEStream(
         // Add tool block to content blocks (before any subsequent text)
         contentBlocks = [...contentBlocks, { type: 'tool', executionId: data.id }];
         const targetId = messageId || 'streaming';
-        messages.update((msgs) =>
+        streamMessages.update((msgs) =>
           msgs.map((m) => {
             if (m.id !== targetId) return m;
             const execs = [...(m.toolExecutions ?? [])];
@@ -123,7 +125,7 @@ export async function processSSEStream(
           parsedResult = { stdout: String(data.result), stderr: '', exit_code: 0, files_created: [] };
         }
         const toolStatus = data.status === 'error' ? 'error' as const : 'completed' as const;
-        messages.update((msgs) =>
+        streamMessages.update((msgs) =>
           msgs.map((m) => {
             if (m.id !== targetId) return m;
             const execs = (m.toolExecutions ?? []).map((e) =>
@@ -136,7 +138,7 @@ export async function processSSEStream(
         const targetId = messageId || 'streaming';
         const imgs = (data.images ?? []) as SearchImageInfo[];
         const append = data.append === true;
-        messages.update((msgs) =>
+        streamMessages.update((msgs) =>
           msgs.map((m) => {
             if (m.id !== targetId) return m;
             if (append && m.searchImages?.length) {
@@ -152,24 +154,24 @@ export async function processSSEStream(
         );
       } else if (currentEvent === 'usage') {
         const targetId = messageId || 'streaming';
-        messages.update((msgs) =>
+        streamMessages.update((msgs) =>
           msgs.map((m) =>
             m.id === targetId
               ? { ...m, cost: data.cost ?? m.cost, provider: data.provider ?? m.provider }
               : m,
           ),
         );
-        updateResearchSnapshot(targetId, { usage: data });
+        updateResearchSnapshot(targetId, { usage: data }, streamMessages);
       } else if (currentEvent === 'status') {
         const targetId = messageId || 'streaming';
-        messages.update((msgs) => msgs.map((m) => {
+        streamMessages.update((msgs) => msgs.map((m) => {
           if (m.id !== targetId || !m.research) return m;
           const progress = [...(m.research.snapshot.progress ?? []), data].slice(-40);
           return { ...m, research: { ...m.research, snapshot: { ...m.research.snapshot, progress } } };
         }));
       } else if (currentEvent === 'subagent_spawned' || currentEvent === 'subagent_result' || currentEvent === 'subagent_error') {
         const targetId = messageId || 'streaming';
-        messages.update((msgs) => msgs.map((m) => {
+        streamMessages.update((msgs) => msgs.map((m) => {
           if (m.id !== targetId || !m.research) return m;
           const subagents = { ...(m.research.snapshot.subagents ?? {}) };
           const taskId = String(data.task_id ?? '');
@@ -185,22 +187,22 @@ export async function processSSEStream(
         }));
       } else if (currentEvent === 'sources') {
         const targetId = messageId || 'streaming';
-        updateResearchSnapshot(targetId, { sources: data.sources ?? [] });
+        updateResearchSnapshot(targetId, { sources: data.sources ?? [] }, streamMessages);
       } else if (currentEvent === 'research_snapshot') {
         const targetId = messageId || 'streaming';
-        messages.update((msgs) => msgs.map((m) => m.id === targetId && m.research
+        streamMessages.update((msgs) => msgs.map((m) => m.id === targetId && m.research
           ? { ...m, research: { ...m.research, snapshot: data.snapshot ?? {} } }
           : m));
       } else if (currentEvent === 'run_status') {
         const targetId = messageId || 'streaming';
-        messages.update((msgs) => msgs.map((m) => m.id === targetId && m.research
+        streamMessages.update((msgs) => msgs.map((m) => m.id === targetId && m.research
           ? { ...m, research: { ...m.research, status: data.status ?? m.research.status, error: data.error ?? null } }
           : m));
       } else if (currentEvent === 'error') {
-        setStreamError(messageId, data.message ?? data.error ?? 'Generation failed');
+        setStreamError(messageId, data.message ?? data.error ?? 'Generation failed', streamMessages);
         updateResearchSnapshot(messageId || 'streaming', {
           errors: [{ message: String(data.message ?? data.error ?? 'Research encountered an error') }],
-        });
+        }, streamMessages);
       } else if (currentEvent === 'title') {
         const realId = chatId;
         if (realId && data.title) {
@@ -213,7 +215,7 @@ export async function processSSEStream(
     }
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      setStreamError(messageId, e instanceof Error ? e.message : String(e));
+      setStreamError(messageId, e instanceof Error ? e.message : String(e), streamMessages);
     }
   }
 
@@ -221,14 +223,18 @@ export async function processSSEStream(
   if (!fullContent && fullReasoning) {
     fullContent = fullReasoning;
     fullReasoning = '';
-    updateStreamingContent(messageId, fullContent, undefined);
+    updateStreamingContent(messageId, fullContent, undefined, undefined, streamMessages);
   }
 
   return { chatId, userMessageId, messageId };
 }
 
-function updateResearchSnapshot(messageId: string, patch: Partial<ResearchRunInfo['snapshot']>) {
-  messages.update((msgs) => msgs.map((m) => {
+function updateResearchSnapshot(
+  messageId: string,
+  patch: Partial<ResearchRunInfo['snapshot']>,
+  streamMessages: Writable<MessageInfo[]> = messages,
+) {
+  streamMessages.update((msgs) => msgs.map((m) => {
     if (m.id !== messageId || !m.research) return m;
     const snapshot = { ...m.research.snapshot, ...patch };
     if (patch.errors) snapshot.errors = [...(m.research.snapshot.errors ?? []), ...patch.errors].slice(-20);
@@ -246,9 +252,10 @@ export function updateStreamingContent(
   content: string,
   reasoning?: string,
   contentBlocks?: ContentBlock[],
+  streamMessages: Writable<MessageInfo[]> = messages,
 ) {
   const targetId = messageId || 'streaming';
-  messages.update((msgs) =>
+  streamMessages.update((msgs) =>
     msgs.map((m) => {
       if (m.id !== targetId) return m;
       const updated = contentBlocks !== undefined
@@ -263,7 +270,11 @@ export function updateStreamingContent(
 }
 
 
-export function setStreamError(messageId: string | undefined, error: string): void {
+export function setStreamError(
+  messageId: string | undefined,
+  error: string,
+  streamMessages: Writable<MessageInfo[]> = messages,
+): void {
   const targetId = messageId || 'streaming';
-  messages.update((msgs) => msgs.map((m) => m.id === targetId ? { ...m, error } : m));
+  streamMessages.update((msgs) => msgs.map((m) => m.id === targetId ? { ...m, error } : m));
 }

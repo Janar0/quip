@@ -150,17 +150,6 @@
     </div>
   </div>
 
-  <p class="mt-2 text-xs text-muted" role="note">{$t('voice.costNotice')}</p>
-  {#if callState.status === 'idle' || callState.status === 'ended' || callState.status === 'error'}
-    {#if cameraSupported}
-      <p class="mt-2 text-xs text-muted">{$t('voice.cameraChoiceHint')}</p>
-    {:else}
-      <p class="mt-2 text-xs text-muted">{$t('voice.cameraModelUnsupported')}</p>
-    {/if}
-  {/if}
-  {#if callState.status === 'active' && !callState.cameraEnabled}
-    <p class="mt-2 text-xs text-muted">{$t('voice.cameraRestartHint')}</p>
-  {/if}
   {#if callState.cameraError}
     <p class="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">{$t(`voice.${callState.cameraError}`)}</p>
   {/if}

@@ -138,6 +138,61 @@ export const isStreaming = writable<boolean>(false);
 export const isLoading = writable<boolean>(false);
 export const selectedModel = writable<string>(_storedModel ?? '');
 export const abortController = writable<AbortController | null>(null);
+export const activeChatId = writable<string | null>(null);
+
+export const NEW_CHAT_STREAM_KEY = '__new_chat__';
+
+const activeStreamKeys = new Set<string>();
+const streamControllers = new Map<string, AbortController>();
+
+export function chatStreamKey(chatId: string | null | undefined): string {
+  return chatId || NEW_CHAT_STREAM_KEY;
+}
+
+export function setActiveChatId(chatId: string | null): void {
+  activeChatId.set(chatId);
+  const key = chatStreamKey(chatId);
+  isStreaming.set(activeStreamKeys.has(key));
+  abortController.set(streamControllers.get(key) ?? null);
+}
+
+export function setChatStreamState(
+  key: string,
+  active: boolean,
+  controller?: AbortController | null,
+): void {
+  if (active) activeStreamKeys.add(key);
+  else activeStreamKeys.delete(key);
+
+  if (controller !== undefined) {
+    if (controller) streamControllers.set(key, controller);
+    else streamControllers.delete(key);
+  }
+
+  if (chatStreamKey(get(activeChatId)) === key) {
+    isStreaming.set(active);
+    abortController.set(active ? streamControllers.get(key) ?? null : null);
+  }
+}
+
+export function remapChatStreamState(fromKey: string, toKey: string): void {
+  if (fromKey === toKey) return;
+
+  const wasActive = activeStreamKeys.delete(fromKey);
+  if (wasActive) activeStreamKeys.add(toKey);
+
+  const controller = streamControllers.get(fromKey);
+  if (controller) {
+    streamControllers.delete(fromKey);
+    streamControllers.set(toKey, controller);
+  }
+
+  const currentKey = chatStreamKey(get(activeChatId));
+  if (currentKey === fromKey || currentKey === toKey) {
+    isStreaming.set(activeStreamKeys.has(currentKey));
+    abortController.set(streamControllers.get(currentKey) ?? null);
+  }
+}
 
 // Branch selections: parent_id → selected child id. Lifted to store so non-component
 // code (streamChat) can compute the current thread tail when adding optimistic messages.

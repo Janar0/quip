@@ -28,6 +28,12 @@ export interface SettingsPayload {
   telegram_model?: string | null;
   telegram_login_redirect_uri?: string | null;
   public_app_url?: string | null;
+  qwen_voice_enabled?: boolean;
+  qwen_realtime_endpoint?: string;
+  qwen_realtime_api_key?: string;
+  qwen_realtime_model?: string;
+  qwen_realtime_video_enabled?: boolean;
+  voice_delegation_model_id?: string;
 }
 
 export interface SettingsResponse extends SettingsPayload {
@@ -39,6 +45,12 @@ export interface SettingsResponse extends SettingsPayload {
   telegram_model?: string | null;
   telegram_login_redirect_uri?: string | null;
   public_app_url?: string | null;
+  qwen_voice_enabled?: boolean;
+  qwen_realtime_endpoint?: string;
+  qwen_realtime_api_key_set?: boolean;
+  qwen_realtime_model?: string;
+  qwen_realtime_video_enabled?: boolean;
+  voice_delegation_model_id?: string;
 }
 
 export const getSettings = (): Promise<SettingsResponse> =>
@@ -124,6 +136,7 @@ export interface ModelInfo {
   provider?: string;
   context_length?: number;
   pricing?: { prompt: string; completion: string };
+  supports_tools?: boolean;
 }
 
 export async function getModels(): Promise<ModelInfo[]> {

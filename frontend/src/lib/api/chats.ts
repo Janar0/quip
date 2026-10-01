@@ -1,8 +1,8 @@
 import { processSSEStream, setStreamError } from './chat-stream';
 import { api } from '$lib/api/client';
-import { chatList, activeChat, messages, isStreaming, selectedModel, abortController, isLoading, searchEnabled, researchEnabled, branchSelections, type AttachmentInfo, type MessageInfo, type ResearchRunInfo, type ResearchRunStatus, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
+import { chatList, activeChat, activeChatId, messages, selectedModel, isLoading, searchEnabled, researchEnabled, branchSelections, chatStreamKey, setActiveChatId, setChatStreamState, remapChatStreamState, type AttachmentInfo, type MessageInfo, type ResearchRunInfo, type ResearchRunStatus, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
 import { buildThread } from '$lib/utils/thread';
-import { get } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { UploadedFile } from '$lib/api/files';
 import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
@@ -11,15 +11,91 @@ import { cancelChatRun, ChatRunRequestError, getChatRun } from '$lib/api/chat-ru
 let researchPollTimer: ReturnType<typeof setInterval> | null = null;
 let researchPollChatId: string | null = null;
 let researchReportRequestSequence = 0;
-let activeStreamMessageId: string | null = null;
-let activeStreamUserMessageId: string | null = null;
 type PendingResearchRequest = {
   chatId?: string;
   runId?: string;
   stopRequested: boolean;
   cancelSent: boolean;
 };
-let pendingResearchRequest: PendingResearchRequest | null = null;
+
+type ChatStreamContext = {
+  key: string;
+  chatId?: string;
+  messages: Writable<MessageInfo[]>;
+  controller: AbortController;
+  messageId: string | null;
+  userMessageId: string | null;
+  pendingResearchRequest: PendingResearchRequest | null;
+  unsubscribe?: () => void;
+};
+
+const chatStreams = new Map<string, ChatStreamContext>();
+
+function streamContextForChat(chatId: string | null | undefined): ChatStreamContext | undefined {
+  return chatStreams.get(chatStreamKey(chatId));
+}
+
+function currentStreamContext(): ChatStreamContext | undefined {
+  return streamContextForChat(get(activeChatId));
+}
+
+function createStreamContext(
+  chatId: string | undefined,
+  initialMessages: MessageInfo[],
+): ChatStreamContext | null {
+  const key = chatStreamKey(chatId);
+  if (chatStreams.has(key)) return null;
+
+  const context: ChatStreamContext = {
+    key,
+    chatId,
+    messages: writable([...initialMessages]),
+    controller: new AbortController(),
+    messageId: null,
+    userMessageId: null,
+    pendingResearchRequest: null,
+  };
+  context.unsubscribe = context.messages.subscribe((items) => {
+    if (chatStreamKey(get(activeChatId)) === context.key) messages.set(items);
+  });
+  chatStreams.set(key, context);
+  setChatStreamState(key, true, context.controller);
+  return context;
+}
+
+function remapStreamContext(context: ChatStreamContext, chatId: string): void {
+  const nextKey = chatStreamKey(chatId);
+  if (context.key === nextKey) return;
+  if (chatStreams.has(nextKey)) return;
+  const previousKey = context.key;
+  chatStreams.delete(previousKey);
+  context.key = nextKey;
+  context.chatId = chatId;
+  chatStreams.set(nextKey, context);
+  remapChatStreamState(previousKey, nextKey);
+}
+
+function releaseStreamContext(context: ChatStreamContext): void {
+  if (chatStreams.get(context.key) === context) chatStreams.delete(context.key);
+  context.unsubscribe?.();
+  setChatStreamState(context.key, false, null);
+}
+
+function activeStreamMessageId(chatId: string | null | undefined): string | null {
+  return streamContextForChat(chatId)?.messageId ?? null;
+}
+
+export function enterNewChatView(): void {
+  const previousDraft = chatStreams.get(chatStreamKey(null));
+  if (previousDraft) remapStreamContext(previousDraft, `__background_draft__${crypto.randomUUID()}`);
+  chatVersion += 1;
+  setActiveChatId(null);
+  activeChat.set(null);
+  messages.set([]);
+  branchSelections.set({});
+  isLoading.set(false);
+  stopResearchPolling();
+}
 
 function isActiveResearch(status: ResearchRunStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'cancelling';
@@ -44,14 +120,21 @@ function newResearchReportFreshness(
   };
 }
 
+function messageStoreForRun(runId: string): Writable<MessageInfo[]> {
+  for (const context of chatStreams.values()) {
+    if (get(context.messages).some((message) => message.research?.runId === runId)) return context.messages;
+  }
+  return messages;
+}
+
 function applyResearchRun(runId: string, run: ResearchRunInfo, freshness: ResearchReportFreshness): void {
-  messages.update((items) => items.map((message) => {
+  messageStoreForRun(runId).update((items) => items.map((message) => {
     if (
       message.research?.runId !== runId
       || message.research.revision > run.revision
       || (message.research.reportSyncRequestId ?? 0) > freshness.requestId
     ) return message;
-    return projectResearchRun(message, run, activeStreamMessageId, freshness);
+    return projectResearchRun(message, run, activeStreamMessageId(message.chat_id), freshness);
   }));
 }
 
@@ -98,8 +181,10 @@ function projectResearchRun(
     : { ...message, research: projectedResearch };
 }
 
-function syncPendingResearchReports(): void {
-  messages.update((items) => items.map((message) => {
+function syncPendingResearchReports(
+  targetMessages: Writable<MessageInfo[]> = messages,
+): void {
+  targetMessages.update((items) => items.map((message) => {
     if (!message.research) return message;
     const freshness = {
       requestId: message.research.reportSyncRequestId ?? 0,
@@ -111,7 +196,12 @@ function syncPendingResearchReports(): void {
         : message.research.status,
       contentAtRequest: message.content,
     };
-    return projectResearchRun(message, message.research, null, freshness);
+    return projectResearchRun(
+      message,
+      message.research,
+      activeStreamMessageId(message.chat_id),
+      freshness,
+    );
   }));
 }
 
@@ -203,6 +293,7 @@ export async function loadMoreChats(): Promise<void> {
 }
 
 export async function loadChat(chatId: string, options: { background?: boolean } = {}): Promise<void> {
+  if (!options.background) setActiveChatId(chatId);
   const version = ++chatVersion;
   if (!options.background) isLoading.set(true);
   try {
@@ -235,11 +326,12 @@ export async function loadChat(chatId: string, options: { background?: boolean }
           if (message) message.error = run.error;
         }
       }
-      if (get(isStreaming)) {
-        const localMessages = get(messages);
+      const streamContext = streamContextForChat(chatId);
+      if (streamContext) {
+        const localMessages = get(streamContext.messages);
         const localById = new Map(localMessages.map((message) => [message.id, message]));
         const liveMessageIds = new Set(
-          ['temp-user', 'streaming', activeStreamUserMessageId, activeStreamMessageId]
+          ['temp-user', 'streaming', streamContext.userMessageId, streamContext.messageId]
             .filter((id): id is string => typeof id === 'string'),
         );
         for (let i = 0; i < msgs.length; i++) {
@@ -266,7 +358,8 @@ export async function loadChat(chatId: string, options: { background?: boolean }
         run.task_kind === 'research' && msgs.some((message: { id: string }) => message.id === run.assistant_message_id),
       );
       const runStates = await Promise.all(researchRuns.map(async (run: { id: string; assistant_message_id: string; status: ResearchRunStatus }) => {
-        const storedMessage = get(messages).find((message) => message.id === run.assistant_message_id);
+        const storedMessage = (streamContext ? get(streamContext.messages) : get(messages))
+          .find((message) => message.id === run.assistant_message_id);
         const localMessage = storedMessage?.chat_id === chatId ? storedMessage : undefined;
         const loadedMessage = msgs.find((message: { id: string }) => message.id === run.assistant_message_id) as MessageInfo | undefined;
         const freshness = newResearchReportFreshness(localMessage ?? loadedMessage, localMessage?.research?.status ?? run.status);
@@ -283,7 +376,8 @@ export async function loadChat(chatId: string, options: { background?: boolean }
         const message = msgs.find((item: { research?: ResearchRunInfo }) => item.research?.runId === runId)
           ?? msgs.find((item: { id: string }) => item.id === assistantMessageId);
         if (!message) continue;
-        const latestLocal = get(messages).find((item) => item.id === assistantMessageId && item.chat_id === chatId);
+        const latestLocal = (streamContext ? get(streamContext.messages) : get(messages))
+          .find((item) => item.id === assistantMessageId && item.chat_id === chatId);
         let projectionBase = message as MessageInfo;
         if (latestLocal && latestLocal.research && latestLocal.research.runId === runId) {
           const latestResearch = latestLocal.research;
@@ -294,9 +388,15 @@ export async function loadChat(chatId: string, options: { background?: boolean }
           );
           if (localChangedWhileLoading) projectionBase = latestLocal;
         }
-        Object.assign(message, projectResearchRun(projectionBase, state, activeStreamMessageId, freshness));
+        Object.assign(message, projectResearchRun(
+          projectionBase,
+          state,
+          streamContext?.messageId ?? null,
+          freshness,
+        ));
       }
-      if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
+      if (streamContext) streamContext.messages.set(msgs);
+      else if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
       syncResearchPolling(chatId);
       if (!options.background) restoreBranchSelections(chatId);
     }
@@ -373,7 +473,8 @@ function formatError(err: { detail: unknown }, status: number): string {
 
 /** Stop the current generation */
 export async function stopResearchRun(chatId: string, runId: string): Promise<void> {
-  const initialMessage = get(messages).find((message) => message.research?.runId === runId);
+  const targetMessages = messageStoreForRun(runId);
+  const initialMessage = get(targetMessages).find((message) => message.research?.runId === runId);
   const freshness = newResearchReportFreshness(initialMessage);
   try {
     const state = await cancelChatRun(chatId, runId);
@@ -385,7 +486,7 @@ export async function stopResearchRun(chatId: string, runId: string): Promise<vo
     }
     const status = error instanceof ChatRunRequestError ? ` (HTTP ${error.status})` : '';
     const detail = error instanceof Error ? error.message : String(error);
-    messages.update((items) => items.map((message) => message.research?.runId === runId
+    targetMessages.update((items) => items.map((message) => message.research?.runId === runId
       ? { ...message, error: `Stop request failed${status}: ${detail}` }
       : message));
   }
@@ -393,6 +494,8 @@ export async function stopResearchRun(chatId: string, runId: string): Promise<vo
 
 /** Stop active research durably; ordinary streams keep their abort behavior. */
 export async function stopGeneration(): Promise<void> {
+  const context = currentStreamContext();
+  const pendingResearchRequest = context?.pendingResearchRequest;
   if (pendingResearchRequest) {
     // Keep the SSE handshake alive. The first `chat` event identifies the
     // durable run, after which this pending Stop is sent through the API.
@@ -407,8 +510,8 @@ export async function stopGeneration(): Promise<void> {
     }
     return;
   }
-  if (get(isStreaming)) {
-    get(abortController)?.abort();
+  if (context) {
+    context.controller.abort();
     return;
   }
   const activeResearch = [...get(messages)].reverse().find((message) =>
@@ -420,12 +523,12 @@ export async function stopGeneration(): Promise<void> {
 }
 
 /** Failed/aborted requests still need unique keys before the next send. */
-function finalizeOptimisticMessages(): void {
+function finalizeOptimisticMessages(targetMessages: Writable<MessageInfo[]>): void {
   const ids = new Map([
     ['temp-user', `local-${crypto.randomUUID()}`],
     ['streaming', `local-${crypto.randomUUID()}`],
   ]);
-  messages.update((items) => items.map((message) => ({
+  targetMessages.update((items) => items.map((message) => ({
     ...message,
     id: ids.get(message.id) ?? message.id,
     parent_id: message.parent_id ? ids.get(message.parent_id) ?? message.parent_id : message.parent_id,
@@ -442,9 +545,11 @@ export async function streamChat(
   modeHint?: 'search' | 'research',
   onChatReady?: (ids: { chatId?: string; userMessageId?: string; messageId?: string; runId?: string; taskKind?: string }) => void,
 ): Promise<string | undefined> {
-  if (get(isStreaming)) return;
+  const streamMessages = get(messages);
+  const context = createStreamContext(chatId, streamMessages);
+  if (!context) return;
   const model = get(selectedModel);
-  const ctrl = new AbortController();
+  const ctrl = context.controller;
   const effectiveModeHint = modeHint === 'search' && get(searchEnabled)
     ? 'search'
     : modeHint === 'research' && get(researchEnabled)
@@ -453,11 +558,7 @@ export async function streamChat(
   const researchRequest: PendingResearchRequest | null = effectiveModeHint === 'research'
     ? { stopRequested: false, cancelSent: false }
     : null;
-  if (researchRequest) pendingResearchRequest = researchRequest;
-  abortController.set(ctrl);
-  isStreaming.set(true);
-  activeStreamMessageId = 'streaming';
-  activeStreamUserMessageId = 'temp-user';
+  context.pendingResearchRequest = researchRequest;
 
   // Build attachment info for the temp user message
   const attachments: AttachmentInfo[] | undefined = uploadedFiles?.length
@@ -466,12 +567,12 @@ export async function streamChat(
 
   // Compute current thread tail so optimistic temps attach as a continuation
   // rather than appearing as new root branches in the tree builder.
-  const currentMsgs = get(messages);
+  const currentMsgs = get(context.messages);
   const currentThread = buildThread(currentMsgs, get(branchSelections));
   const tailId = currentThread.length ? currentThread[currentThread.length - 1].id : null;
 
   // Add user message with temp ID
-  messages.update((msgs) => [
+  context.messages.update((msgs) => [
     ...msgs,
     {
       id: 'temp-user',
@@ -485,7 +586,7 @@ export async function streamChat(
   ]);
 
   // Add streaming assistant placeholder, chained to the temp user message
-  messages.update((msgs) => [
+  context.messages.update((msgs) => [
     ...msgs,
     {
       id: 'streaming',
@@ -519,15 +620,20 @@ export async function streamChat(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-      setStreamError(undefined, formatError(err, res.status));
+      setStreamError(undefined, formatError(err, res.status), context.messages);
       return;
     }
 
     const ids = await processSSEStream(res, async (readyIds) => {
-      if (readyIds.messageId) activeStreamMessageId = readyIds.messageId;
-      if (readyIds.userMessageId) activeStreamUserMessageId = readyIds.userMessageId;
-      if (readyIds.chatId) syncResearchPolling(readyIds.chatId);
-      onChatReady?.(readyIds);
+      const wasForegroundStream = chatStreamKey(get(activeChatId)) === context.key;
+      if (readyIds.messageId) context.messageId = readyIds.messageId;
+      if (readyIds.userMessageId) context.userMessageId = readyIds.userMessageId;
+      if (readyIds.chatId) {
+        if (wasForegroundStream) setActiveChatId(readyIds.chatId);
+        remapStreamContext(context, readyIds.chatId);
+        if (get(activeChatId) === readyIds.chatId) syncResearchPolling(readyIds.chatId);
+      }
+      if (wasForegroundStream) onChatReady?.(readyIds);
       if (researchRequest && readyIds.taskKind === 'research' && readyIds.chatId && readyIds.runId) {
         researchRequest.chatId = readyIds.chatId;
         researchRequest.runId = readyIds.runId;
@@ -536,43 +642,39 @@ export async function streamChat(
           await stopResearchRun(readyIds.chatId, readyIds.runId);
         }
       }
-    });
-    if (ids.chatId) syncResearchPolling(ids.chatId);
+    }, context.messages);
+    if (ids.chatId && get(activeChatId) === ids.chatId) syncResearchPolling(ids.chatId);
     return ids.chatId;
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      setStreamError(undefined, e instanceof Error ? e.message : String(e));
+      setStreamError(undefined, e instanceof Error ? e.message : String(e), context.messages);
     }
   } finally {
-    if (pendingResearchRequest === researchRequest) pendingResearchRequest = null;
-    activeStreamMessageId = null;
-    activeStreamUserMessageId = null;
-    finalizeOptimisticMessages();
-    isStreaming.set(false);
-    syncPendingResearchReports();
-    abortController.set(null);
+    context.pendingResearchRequest = null;
+    finalizeOptimisticMessages(context.messages);
+    syncPendingResearchReports(context.messages);
+    const completedChatId = context.chatId;
+    releaseStreamContext(context);
+    if (completedChatId && get(activeChatId) === completedChatId) syncResearchPolling(completedChatId);
     await loadChats().catch(() => {});
   }
 }
 
 export async function regenerateMessage(chatId: string, messageId: string, model?: string): Promise<void> {
-  if (get(isStreaming)) return;
+  const context = createStreamContext(chatId, get(messages));
+  if (!context) return;
   const selectedMdl = model || get(selectedModel);
-  const ctrl = new AbortController();
-  abortController.set(ctrl);
-  isStreaming.set(true);
-  activeStreamMessageId = 'streaming';
-  activeStreamUserMessageId = null;
+  const ctrl = context.controller;
 
   // Find the old message to inherit its parent_id — the new regenerated response
   // must be a sibling of it (same parent = the user message that triggered both).
-  const allMsgs = get(messages);
+  const allMsgs = get(context.messages);
   const oldMsg = allMsgs.find((m) => m.id === messageId);
   const parentId = oldMsg?.parent_id;
 
   // Add a new streaming placeholder as a sibling. The old message stays in the
   // store, so the user can still navigate back to it via the branch navigator.
-  messages.update((msgs) => [
+  context.messages.update((msgs) => [
     ...msgs,
     {
       id: 'streaming',
@@ -597,24 +699,23 @@ export async function regenerateMessage(chatId: string, messageId: string, model
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Regenerate failed' }));
-      setStreamError(undefined, formatError(err, res.status));
+      setStreamError(undefined, formatError(err, res.status), context.messages);
       return;
     }
 
     await processSSEStream(res, (readyIds) => {
-      if (readyIds.messageId) activeStreamMessageId = readyIds.messageId;
-    });
+      if (readyIds.messageId) context.messageId = readyIds.messageId;
+    }, context.messages);
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
-      setStreamError(undefined, e instanceof Error ? e.message : String(e));
+      setStreamError(undefined, e instanceof Error ? e.message : String(e), context.messages);
     }
   } finally {
-    activeStreamMessageId = null;
-    activeStreamUserMessageId = null;
-    finalizeOptimisticMessages();
-    isStreaming.set(false);
-    syncPendingResearchReports();
-    abortController.set(null);
+    finalizeOptimisticMessages(context.messages);
+    syncPendingResearchReports(context.messages);
+    const completedChatId = context.chatId;
+    releaseStreamContext(context);
+    if (completedChatId && get(activeChatId) === completedChatId) syncResearchPolling(completedChatId);
   }
 }
 

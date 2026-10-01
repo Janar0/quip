@@ -8,7 +8,7 @@
   import { t } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import { logout } from '$lib/api/auth';
-  import { loadChats, loadMoreChats, canLoadMoreChats, deleteChat, renameChat, togglePin, searchChats, fetchFeatures, type SearchResult } from '$lib/api/chats';
+  import { loadChats, loadMoreChats, canLoadMoreChats, deleteChat, renameChat, togglePin, searchChats, fetchFeatures, enterNewChatView, type SearchResult } from '$lib/api/chats';
   import { fetchModels } from '$lib/stores/models';
   import { getTimeGroup } from '$lib/utils/time';
   import type { ChatInfo } from '$lib/stores/chat';
@@ -196,6 +196,7 @@
     }
     if (e.key === 'N' && e.ctrlKey && e.shiftKey) {
       e.preventDefault();
+      enterNewChatView();
       goto('/chat');
     }
     if (e.key === 'Escape' && isMobile && $showSidebar) {
@@ -262,7 +263,7 @@
             href={$selectedWorkspaceId ? `/chat?workspace=${$selectedWorkspaceId}` : '/chat'}
             class="flex items-center justify-between w-full px-3 py-2.5 rounded-[11px] transition-all active:scale-[0.98] group text-[13.5px] font-medium hover:bg-white/[.06]"
             style="background: rgba(255,255,255,.03); border: 1px solid var(--quip-border-strong); color: var(--quip-text); backdrop-filter: blur(6px);"
-            onclick={clearSearch}
+            onclick={() => { clearSearch(); enterNewChatView(); }}
           >
             <span class="flex items-center gap-2.5">
               <svg class="w-4 h-4 text-muted group-hover:text-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>

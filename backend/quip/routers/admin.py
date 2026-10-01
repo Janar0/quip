@@ -78,6 +78,12 @@ class SettingsUpdate(BaseModel):
     telegram_model: str | None = None
     telegram_login_redirect_uri: str | None = None
     public_app_url: str | None = None
+    qwen_voice_enabled: bool | None = None
+    qwen_realtime_endpoint: str | None = None
+    qwen_realtime_api_key: str | None = None
+    qwen_realtime_model: str | None = None
+    qwen_realtime_video_enabled: bool | None = None
+    voice_delegation_model_id: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -109,6 +115,12 @@ class SettingsResponse(BaseModel):
     telegram_model: Optional[str] = None
     telegram_login_redirect_uri: Optional[str] = None
     public_app_url: Optional[str] = None
+    qwen_voice_enabled: bool = False
+    qwen_realtime_endpoint: str = "https://maas.qwencloudapi.com/api/v1/webrtc/realtime"
+    qwen_realtime_api_key_set: bool = False
+    qwen_realtime_model: str = "qwen-audio-3.1-realtime-plus"
+    qwen_realtime_video_enabled: bool = False
+    voice_delegation_model_id: str = ""
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -148,11 +160,22 @@ async def get_settings(user: User = Depends(get_admin_user)):
         telegram_model=get_setting("telegram_model") or None,
         telegram_login_redirect_uri=get_setting("telegram_login_redirect_uri") or None,
         public_app_url=get_setting("public_app_url") or None,
+        qwen_voice_enabled=get_bool_setting("qwen_voice_enabled", False),
+        qwen_realtime_endpoint=get_setting(
+            "qwen_realtime_endpoint", "https://maas.qwencloudapi.com/api/v1/webrtc/realtime"
+        ),
+        qwen_realtime_api_key_set=bool(get_setting("qwen_realtime_api_key")),
+        qwen_realtime_model=get_setting("qwen_realtime_model", "qwen-audio-3.1-realtime-plus"),
+        qwen_realtime_video_enabled=get_bool_setting("qwen_realtime_video_enabled", False),
+        voice_delegation_model_id=get_setting("voice_delegation_model_id"),
     )
 
 
 _JSON_SETTING_FIELDS = {"model_whitelist", "model_aliases"}
-_BOOL_SETTING_FIELDS = {"rag_enabled", "search_enabled", "research_enabled", "tool_gating_enabled"}
+_BOOL_SETTING_FIELDS = {
+    "rag_enabled", "search_enabled", "research_enabled", "tool_gating_enabled",
+    "qwen_voice_enabled", "qwen_realtime_video_enabled",
+}
 
 
 @router.put("/settings")

@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import { fly } from 'svelte/transition';
   import { D2 } from '$lib/motion';
-  import { getSettings, updateSettings } from '$lib/api/admin';
+  import { getModels, getSettings, updateSettings, type ModelInfo } from '$lib/api/admin';
   import AdminPageHeader from '$lib/components/admin/AdminPageHeader.svelte';
 
   let apiKey = $state('');
@@ -33,12 +33,20 @@
   let ocrProvider = $state('auto');
   let ocrTesseractLangs = $state('eng+rus');
   let archiveMaxMb = $state(150);
+  let qwenVoiceEnabled = $state(false);
+  let qwenRealtimeEndpoint = $state('https://maas.qwencloudapi.com/api/v1/webrtc/realtime');
+  let qwenRealtimeModel = $state('qwen-audio-3.1-realtime-plus');
+  let qwenRealtimeApiKey = $state('');
+  let qwenRealtimeApiKeyIsSet = $state(false);
+  let qwenRealtimeVideoEnabled = $state(false);
+  let voiceDelegationModelId = $state('');
+  let voiceModelOptions = $state<ModelInfo[]>([]);
   let saving = $state(false);
   let loading = $state(true);
-  let activeTab = $state<'api' | 'system' | 'tools'>('api');
+  let activeTab = $state<'api' | 'system' | 'tools' | 'voice'>('api');
 
   onMount(async () => {
-    const settings = await getSettings();
+    const [settings, models] = await Promise.all([getSettings(), getModels().catch(() => [])]);
     keyIsSet = settings.openrouter_api_key_set;
     keyInfo = settings.openrouter_key_info;
     ollamaUrl = settings.ollama_url ?? 'http://localhost:11434';
@@ -61,6 +69,24 @@
     ocrProvider = settings.ocr_provider ?? 'auto';
     ocrTesseractLangs = settings.ocr_tesseract_langs ?? 'eng+rus';
     archiveMaxMb = settings.archive_max_mb ?? 150;
+    qwenVoiceEnabled = settings.qwen_voice_enabled ?? false;
+    qwenRealtimeEndpoint = settings.qwen_realtime_endpoint ?? 'https://maas.qwencloudapi.com/api/v1/webrtc/realtime';
+    qwenRealtimeModel = settings.qwen_realtime_model ?? 'qwen-audio-3.1-realtime-plus';
+    qwenRealtimeApiKeyIsSet = settings.qwen_realtime_api_key_set ?? false;
+    qwenRealtimeVideoEnabled = settings.qwen_realtime_video_enabled ?? false;
+    voiceDelegationModelId = settings.voice_delegation_model_id ?? '';
+    const allowedModels = new Set(settings.model_whitelist ?? []);
+    voiceModelOptions = models.filter((model) =>
+      model.provider === 'openrouter'
+      && model.supports_tools !== false
+      && (!allowedModels.size || allowedModels.has(model.id)),
+    );
+    if (voiceDelegationModelId && !voiceModelOptions.some((model) => model.id === voiceDelegationModelId)) {
+      voiceModelOptions = [
+        { id: voiceDelegationModelId, name: voiceDelegationModelId, provider: 'openrouter' },
+        ...voiceModelOptions,
+      ];
+    }
     loading = false;
   });
 
@@ -189,6 +215,36 @@
     toast[ok ? 'success' : 'error'](ok ? $t('toast.settingsSaved') : $t('admin.failedToSave'));
     saving = false;
   }
+
+  async function saveVoiceSettings() {
+    const endpoint = qwenRealtimeEndpoint.trim();
+    if (!endpoint.startsWith('https://')) {
+      toast.error($t('admin.voice.endpointHttps'));
+      return;
+    }
+    if (!qwenRealtimeModel.trim()) {
+      toast.error($t('admin.voice.modelRequired'));
+      return;
+    }
+    saving = true;
+    const payload = {
+      qwen_voice_enabled: qwenVoiceEnabled,
+      qwen_realtime_endpoint: endpoint,
+      qwen_realtime_model: qwenRealtimeModel.trim(),
+      qwen_realtime_video_enabled: qwenRealtimeVideoEnabled,
+      voice_delegation_model_id: voiceDelegationModelId,
+      ...(qwenRealtimeApiKey.trim() ? { qwen_realtime_api_key: qwenRealtimeApiKey.trim() } : {}),
+    };
+    const ok = await updateSettings(payload);
+    if (ok) {
+      qwenRealtimeApiKeyIsSet = qwenRealtimeApiKeyIsSet || Boolean(qwenRealtimeApiKey.trim());
+      qwenRealtimeApiKey = '';
+      toast.success($t('toast.settingsSaved'));
+    } else {
+      toast.error($t('admin.failedToSave'));
+    }
+    saving = false;
+  }
 </script>
 
 <div class="admin-page" in:fly={{ y: 8, duration: D2 }}>
@@ -199,6 +255,7 @@
   <div class="flex gap-1 border-b overflow-x-auto admin-tabstrip" style="border-color: var(--quip-border)">
     {#each [
       { id: 'api', label: $t('admin.tabApi') },
+      { id: 'voice', label: $t('admin.tabVoice') },
       { id: 'system', label: $t('admin.tabSystem') },
       { id: 'tools', label: $t('admin.tabTools') },
     ] as tab}
@@ -378,6 +435,59 @@
         <p class="text-sm opacity-40">{$t('admin.systemPromptDesc')}</p>
         <textarea class="textarea w-full" rows="8" placeholder={$t('admin.systemPromptPlaceholder')} bind:value={systemPrompt}></textarea>
         <button class="btn preset-filled-primary-500" onclick={savePrompt} disabled={saving}>
+          {saving ? '...' : $t('common.save')}
+        </button>
+      </section>
+    </div>
+
+  {:else if activeTab === 'voice'}
+    <div class="space-y-5">
+      <section class="card p-4 sm:p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.37a16 16 0 0 0 6 6l.91-.91a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62a2 2 0 0 1 1.72 2.29z"/></svg>
+          <h2 class="text-lg font-semibold">{$t('admin.voice.title')}</h2>
+        </div>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" class="checkbox" bind:checked={qwenVoiceEnabled} />
+          <span class="text-sm">{$t('admin.voice.enabled')}</span>
+        </label>
+        <div class="grid grid-cols-1 gap-4">
+          <label class="space-y-1">
+            <span class="text-xs opacity-70">{$t('admin.voice.endpoint')}</span>
+            <input type="url" class="input w-full" bind:value={qwenRealtimeEndpoint} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs opacity-70">{$t('admin.voice.model')}</span>
+            <input type="text" class="input w-full" bind:value={qwenRealtimeModel} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs opacity-70">{$t('admin.voice.apiKey')}</span>
+            <input
+              type="password"
+              class="input w-full"
+              placeholder={qwenRealtimeApiKeyIsSet ? $t('admin.enterNewKey') : 'Qwen API key'}
+              autocomplete="new-password"
+              bind:value={qwenRealtimeApiKey}
+            />
+            {#if qwenRealtimeApiKeyIsSet}
+              <span class="text-xs text-success-400">{$t('admin.connected')}</span>
+            {/if}
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs opacity-70">{$t('admin.voice.delegationModel')}</span>
+            <select class="select w-full" bind:value={voiceDelegationModelId}>
+              <option value="">{$t('admin.voice.delegationAuto')}</option>
+              {#each voiceModelOptions as model (model.id)}
+                <option value={model.id}>{model.name} · {model.id}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" class="checkbox" bind:checked={qwenRealtimeVideoEnabled} />
+          <span class="text-sm">{$t('admin.voice.videoEnabled')}</span>
+        </label>
+        <button class="btn preset-filled-primary-500" onclick={saveVoiceSettings} disabled={saving}>
           {saving ? '...' : $t('common.save')}
         </button>
       </section>

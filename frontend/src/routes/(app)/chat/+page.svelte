@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { fade, fly } from 'svelte/transition';
   import { goto } from '$app/navigation';
@@ -8,7 +8,7 @@
   import { getRandomBackronym, getBackronyms, getHeadlineName } from '$lib/quip/backronyms';
   import { D2, D3, easeOut } from '$lib/motion';
   import { messages } from '$lib/stores/chat';
-  import { streamChat, regenerateMessage, editMessage } from '$lib/api/chats';
+  import { enterNewChatView, streamChat, regenerateMessage, editMessage } from '$lib/api/chats';
   import type { UploadedFile } from '$lib/api/files';
   import ModelSelector from '$lib/components/chat/ModelSelector.svelte';
   import ChatInput from '$lib/components/chat/ChatInput.svelte';
@@ -18,6 +18,7 @@
   // ChatPane (and its heavy deps: MessageList, MessageBubble, markdown, katex, hljs,
   // ArtifactPanel) is never needed on the home screen — load it asynchronously.
   let ChatPane = $state<any>(null);
+  let routeActive = true;
 
   let backronym = $state('');
   let headline = $state('QUIP');
@@ -42,8 +43,9 @@
       toast.success($t('settings.telegramConnected'));
       goto('/chat', { replaceState: true });
     }
-    messages.set([]);
+    enterNewChatView();
     chatId = undefined;
+    routeActive = true;
     mounted = true;
     // Preload chat pane (MessageList + composer + artifacts) off the critical path
     import('$lib/components/chat/ChatPane.svelte').then(m => { ChatPane = m.default; });
@@ -57,6 +59,8 @@
     return () => clearInterval(id);
   });
 
+  onDestroy(() => { routeActive = false; });
+
   async function handleSend(text: string, fileIds: string[] = [], uploadedFiles: UploadedFile[] = [], modeHint?: 'search' | 'research') {
     const newChatId = await streamChat(
       text,
@@ -67,7 +71,7 @@
       workspaceId,
       modeHint,
       (ids) => {
-        if (ids.chatId && !chatId) {
+        if (ids.chatId && !chatId && routeActive) {
           chatId = ids.chatId;
           goto(`/chat/${ids.chatId}`, { replaceState: true });
         }
