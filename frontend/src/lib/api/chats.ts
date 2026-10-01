@@ -183,6 +183,7 @@ function projectResearchRun(
 
 function syncPendingResearchReports(
   targetMessages: Writable<MessageInfo[]> = messages,
+  streamingMessageIdOverride?: string | null,
 ): void {
   targetMessages.update((items) => items.map((message) => {
     if (!message.research) return message;
@@ -199,7 +200,9 @@ function syncPendingResearchReports(
     return projectResearchRun(
       message,
       message.research,
-      activeStreamMessageId(message.chat_id),
+      streamingMessageIdOverride === undefined
+        ? activeStreamMessageId(message.chat_id)
+        : streamingMessageIdOverride,
       freshness,
     );
   }));
@@ -545,6 +548,7 @@ export async function streamChat(
   modeHint?: 'search' | 'research',
   onChatReady?: (ids: { chatId?: string; userMessageId?: string; messageId?: string; runId?: string; taskKind?: string }) => void,
 ): Promise<string | undefined> {
+  setActiveChatId(chatId ?? null);
   const streamMessages = get(messages);
   const context = createStreamContext(chatId, streamMessages);
   if (!context) return;
@@ -652,7 +656,7 @@ export async function streamChat(
   } finally {
     context.pendingResearchRequest = null;
     finalizeOptimisticMessages(context.messages);
-    syncPendingResearchReports(context.messages);
+    syncPendingResearchReports(context.messages, null);
     const completedChatId = context.chatId;
     releaseStreamContext(context);
     if (completedChatId && get(activeChatId) === completedChatId) syncResearchPolling(completedChatId);
@@ -661,6 +665,7 @@ export async function streamChat(
 }
 
 export async function regenerateMessage(chatId: string, messageId: string, model?: string): Promise<void> {
+  setActiveChatId(chatId);
   const context = createStreamContext(chatId, get(messages));
   if (!context) return;
   const selectedMdl = model || get(selectedModel);
@@ -712,7 +717,7 @@ export async function regenerateMessage(chatId: string, messageId: string, model
     }
   } finally {
     finalizeOptimisticMessages(context.messages);
-    syncPendingResearchReports(context.messages);
+    syncPendingResearchReports(context.messages, null);
     const completedChatId = context.chatId;
     releaseStreamContext(context);
     if (completedChatId && get(activeChatId) === completedChatId) syncResearchPolling(completedChatId);

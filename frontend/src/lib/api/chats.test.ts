@@ -1,16 +1,16 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { api } from './client';
-import { chatList, messages, activeChat, abortController, isStreaming, searchEnabled, researchEnabled } from '$lib/stores/chat';
+import { chatList, messages, activeChat, abortController, isStreaming, searchEnabled, researchEnabled, setActiveChatId } from '$lib/stores/chat';
 import { selectedWorkspaceId } from '$lib/stores/workspaces';
-import { fetchFeatures, loadChats, loadMoreChats, loadChat, stopGeneration, stopResearchPolling, streamChat } from './chats';
+import { enterNewChatView, fetchFeatures, loadChats, loadMoreChats, loadChat, stopGeneration, stopResearchPolling, streamChat } from './chats';
 
 vi.mock('./client', () => ({ api: vi.fn() }));
 const request = vi.mocked(api);
 const page = Array.from({ length: 50 }, (_, i) => ({ id: String(i) }));
 beforeEach(() => {
   stopResearchPolling();
-  request.mockReset(); chatList.set([]); messages.set([]); activeChat.set(null); selectedWorkspaceId.set(null);
+  request.mockReset(); chatList.set([]); messages.set([]); activeChat.set(null); setActiveChatId(null); selectedWorkspaceId.set(null);
   abortController.set(null); isStreaming.set(false);
   searchEnabled.set(false); researchEnabled.set(false);
 });
@@ -55,24 +55,34 @@ it('preserves live optimistic messages when an existing-chat snapshot races the 
     id: 'search-1', name: 'fast_search', arguments: '{}', status: 'completed' as const,
     result: { results: [{ title: 'Mock source', url: 'https://example.test/source' }] },
   };
-  messages.set([
-    { id: 'temp-user', chat_id: 'chat', role: 'user', content: 'Question', created_at: '' },
-    {
-      id: 'streaming', chat_id: 'chat', role: 'assistant', content: 'Partial answer', created_at: '',
-      toolExecutions: [searchExecution],
-    },
-  ]);
-  isStreaming.set(true);
-  request.mockResolvedValueOnce(Response.json({
-    id: 'chat', workspace_id: null,
-    messages: [{ id: 'previous', chat_id: 'chat', role: 'assistant', content: 'Earlier answer', created_at: '' }],
-    runs: [],
-  }));
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  request.mockImplementation(async (path) => {
+    if (path === '/api/chat/completions') return new Response(body);
+    if (path === '/api/chats/chat') return Response.json({
+      id: 'chat', workspace_id: null,
+      messages: [{ id: 'previous', chat_id: 'chat', role: 'assistant', content: 'Earlier answer', created_at: '' }],
+      runs: [],
+    });
+    return Response.json([]);
+  });
+
+  const sending = streamChat('Question', 'chat');
+  controller.enqueue(new TextEncoder().encode([
+    'event: chat\ndata: {"chat_id":"chat","user_message_id":"user-1","message_id":"answer-1"}\n\n',
+    'event: tool_executing\ndata: {"id":"search-1","name":"fast_search","arguments":"{}"}\n\n',
+    `event: tool_result\ndata: ${JSON.stringify({ id: 'search-1', status: 'completed', result: searchExecution.result })}\n\n`,
+    'event: content\ndata: {"text":"Partial answer"}\n\n',
+  ].join('')));
+  await vi.waitFor(() => expect(get(messages).find((message) => message.id === 'answer-1')?.toolExecutions)
+    .toEqual([searchExecution]));
 
   await loadChat('chat');
 
-  expect(get(messages).map((message) => message.id)).toEqual(['previous', 'temp-user', 'streaming']);
-  expect(get(messages).find((message) => message.id === 'streaming')?.toolExecutions).toEqual([searchExecution]);
+  expect(get(messages).map((message) => message.id)).toEqual(['previous', 'user-1', 'answer-1']);
+  expect(get(messages).find((message) => message.id === 'answer-1')?.toolExecutions).toEqual([searchExecution]);
+  controller.close();
+  await sending;
 });
 
 it('restores persisted run errors alongside the partial answer', async () => {
@@ -306,4 +316,47 @@ it('can retry failed requests without duplicate optimistic message keys', async 
   expect(new Set(items.map((message) => message.id)).size).toBe(4);
   expect(items[3].parent_id).toBe(items[2].id);
   expect(items[3].error).toBe('Provider unavailable');
+});
+
+it('keeps the old stream running in the background when a new chat starts', async () => {
+  let oldController!: ReadableStreamDefaultController<Uint8Array>;
+  let newController!: ReadableStreamDefaultController<Uint8Array>;
+  const oldBody = new ReadableStream<Uint8Array>({ start(value) { oldController = value; } });
+  const newBody = new ReadableStream<Uint8Array>({ start(value) { newController = value; } });
+  let completionCount = 0;
+  request.mockImplementation(async (path) => {
+    if (path === '/api/chat/completions') {
+      completionCount += 1;
+      return new Response(completionCount === 1 ? oldBody : newBody);
+    }
+    return Response.json([]);
+  });
+
+  const oldRequest = streamChat('Old question', 'old-chat');
+  oldController.enqueue(new TextEncoder().encode([
+    'event: chat\ndata: {"chat_id":"old-chat","user_message_id":"old-user","message_id":"old-answer"}\n\n',
+    'event: content\ndata: {"text":"Old response"}\n\n',
+  ].join('')));
+  await vi.waitFor(() => expect(get(messages).some((message) => message.content === 'Old response')).toBe(true));
+
+  enterNewChatView();
+  expect(get(messages)).toEqual([]);
+  const newRequest = streamChat('New question');
+  newController.enqueue(new TextEncoder().encode([
+    'event: chat\ndata: {"chat_id":"new-chat","user_message_id":"new-user","message_id":"new-answer"}\n\n',
+    'event: content\ndata: {"text":"New response"}\n\n',
+  ].join('')));
+  await vi.waitFor(() => expect(get(messages).some((message) => message.content === 'New response')).toBe(true));
+  expect(get(isStreaming)).toBe(true);
+
+  oldController.enqueue(new TextEncoder().encode('event: content\ndata: {"text":" continues"}\n\n'));
+  await Promise.resolve();
+  expect(get(messages).find((message) => message.id === 'new-answer')?.content).toBe('New response');
+
+  oldController.close();
+  await oldRequest;
+  expect(get(isStreaming)).toBe(true);
+  newController.close();
+  await newRequest;
+  expect(get(isStreaming)).toBe(false);
 });

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import ChatInput from './ChatInput.svelte';
-import { activeChat, chatList, messages, researchEnabled, searchEnabled, selectedModel } from '$lib/stores/chat';
+import { activeChat, chatList, messages, researchEnabled, searchEnabled, selectedModel, setActiveChatId } from '$lib/stores/chat';
 import { fetchFeatures, loadChat, streamChat } from '$lib/api/chats';
 import type { UploadedFile } from '$lib/api/files';
 
@@ -13,6 +13,7 @@ describe('ChatInput search mode', () => {
     selectedModel.set('test/model');
     messages.set([]);
     activeChat.set(null);
+    setActiveChatId(null);
     chatList.set([]);
   });
 
@@ -22,6 +23,7 @@ describe('ChatInput search mode', () => {
     researchEnabled.set(false);
     messages.set([]);
     activeChat.set(null);
+    setActiveChatId(null);
     chatList.set([]);
     vi.unstubAllGlobals();
   });

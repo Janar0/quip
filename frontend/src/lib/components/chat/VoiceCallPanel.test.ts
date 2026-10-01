@@ -38,7 +38,8 @@ describe('VoiceCallPanel', () => {
     });
     render(VoiceCallPanel, { props: { chatId: 'chat-1', onClose: vi.fn() } });
 
-    expect(screen.getByText('voice.costNotice')).toBeTruthy();
+    expect(screen.queryByText('voice.costNotice')).toBeNull();
+    expect(screen.queryByText('voice.cameraChoiceHint')).toBeNull();
     await waitFor(() => expect(screen.getByRole('button', { name: 'voice.chooseCamera' })).toBeTruthy());
     await fireEvent.click(screen.getByRole('button', { name: 'voice.chooseCamera' }));
     expect(getUserMedia).not.toHaveBeenCalled();
@@ -46,7 +47,7 @@ describe('VoiceCallPanel', () => {
   });
 
   it('hides camera selection when the configured Qwen Audio model is audio-only', async () => {
-    vi.spyOn(voiceApi, 'config').mockResolvedValue({
+    const config = vi.spyOn(voiceApi, 'config').mockResolvedValue({
       enabled: false, model: 'qwen-audio-3.1-realtime-plus', camera_supported: false,
     });
     const getUserMedia = vi.fn();
@@ -56,8 +57,11 @@ describe('VoiceCallPanel', () => {
     });
     render(VoiceCallPanel, { props: { chatId: 'chat-1', onClose: vi.fn() } });
 
-    await waitFor(() => expect(screen.getByText('voice.cameraModelUnsupported')).toBeTruthy());
-    expect(screen.queryByRole('button', { name: 'voice.chooseCamera' })).toBeNull();
+    await waitFor(() => expect(config).toHaveBeenCalledOnce());
+    await config.mock.results[0].value;
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'voice.chooseCamera' })).toBeNull());
+    expect(screen.queryByText('voice.cameraModelUnsupported')).toBeNull();
+    expect(screen.queryByText('voice.cameraRestartHint')).toBeNull();
     expect(screen.queryByRole('button', { name: 'voice.cameraSelected' })).toBeNull();
     expect(getUserMedia).not.toHaveBeenCalled();
   });
