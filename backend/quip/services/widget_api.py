@@ -1,6 +1,9 @@
 """External API dispatcher for API-backed widgets."""
-import httpx
+
 import re
+
+import httpx
+
 from quip.core.config import get_setting
 from quip.models.skill import Skill
 from quip.skills import HANDLERS
@@ -8,6 +11,7 @@ from quip.skills import HANDLERS
 
 def _resolve_placeholders(value: str, params: dict) -> str:
     """Resolve {{params.key}} and {{SETTING:key}} placeholders in strings."""
+
     def replacer(m):
         ref = m.group(1)
         if ref.startswith("SETTING:"):
@@ -17,6 +21,7 @@ def _resolve_placeholders(value: str, params: dict) -> str:
             param_key = ref[7:]
             return str(params.get(param_key, ""))
         return m.group(0)
+
     return re.sub(r"\{\{(.+?)\}\}", replacer, value)
 
 
@@ -80,10 +85,7 @@ async def execute_widget_api(skill: Skill, params: dict) -> dict:
             arr_path = json_path.get("_array", "")
             arr_data = _extract_jsonpath(raw, arr_path) or []
             item_map = json_path.get("_map", {})
-            result[out_key] = [
-                {k: _extract_jsonpath(item, v) for k, v in item_map.items()}
-                for item in arr_data
-            ]
+            result[out_key] = [{k: _extract_jsonpath(item, v) for k, v in item_map.items()} for item in arr_data]
         else:
             result[out_key] = json_path
     return result

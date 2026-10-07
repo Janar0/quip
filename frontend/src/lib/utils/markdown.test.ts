@@ -1,5 +1,6 @@
-import { expect, it } from 'vitest';
-import { extractSources, renderMarkdown } from './markdown';
+import { expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
+import { extractSources, katexLoaded, renderMarkdown } from './markdown';
 
 function dom(markdown: string) {
   const el = document.createElement('div');
@@ -36,4 +37,22 @@ it('does not extract source entries from fenced code examples', () => {
 
   expect(result.sources).toEqual([]);
   expect(result.cleanContent).toBe(content);
+});
+
+it('renders inline and display formulas with the actual lazy-loaded math library', async () => {
+  await vi.waitFor(() => expect(get(katexLoaded)).toBe(true));
+  const el = dom(String.raw`Euler: $e^{i\pi}+1=0$` + '\n\n' + String.raw`$$\frac{1}{2}$$`);
+
+  expect(el.querySelectorAll('.katex')).toHaveLength(2);
+  expect(el.querySelectorAll('.katex-display')).toHaveLength(1);
+  expect(el.querySelectorAll('math')).toHaveLength(2);
+  expect(el.textContent).toContain('Euler:');
+});
+
+it('keeps untrusted math commands from creating active links', async () => {
+  await vi.waitFor(() => expect(get(katexLoaded)).toBe(true));
+  const el = dom(String.raw`$\href{javascript:alert(1)}{click}$`);
+
+  expect(el.querySelector('.katex')).not.toBeNull();
+  expect(el.querySelector('a, script, [onclick], [onerror]')).toBeNull();
 });

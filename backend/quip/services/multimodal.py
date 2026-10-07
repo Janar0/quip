@@ -4,6 +4,7 @@ Files in `UPLOAD_DIR/<storage_path>` are immutable once written (file_id is uniq
 per upload). Caching the encoded form by storage_path is therefore safe and
 cheap, and avoids re-reading + re-encoding the same image on every chat turn.
 """
+
 from __future__ import annotations
 
 import base64
@@ -21,13 +22,13 @@ logger = logging.getLogger(__name__)
 # Cap the cache to avoid runaway memory growth. Each entry is one encoded file.
 # At ~2MB/image average, 64 entries ≈ 128MB worst case.
 _B64_CACHE_MAX = 64
-_b64_cache: "OrderedDict[str, str]" = OrderedDict()
+_b64_cache: OrderedDict[str, str] = OrderedDict()
 
 # Extracted-text cache. Mirrors _b64_cache: file bytes are immutable per
 # storage_path so the extraction is too. Avoids re-parsing a 5MB xlsx on every
 # follow-up turn of a long chat.
 _TEXT_CACHE_MAX = 64
-_text_cache: "OrderedDict[str, str]" = OrderedDict()
+_text_cache: OrderedDict[str, str] = OrderedDict()
 
 # Per-file inlined-text cap (~7-8k tokens). One huge spreadsheet shouldn't
 # be allowed to blow the entire context window.
@@ -60,7 +61,7 @@ def _truncate(text: str, cap: int = _DOC_INLINE_CHAR_CAP) -> str:
     return text[:cap] + f"\n…[truncated, {len(text) - cap} more chars]"
 
 
-async def _extract_document_text(att: dict, db: "AsyncSession | None") -> str:
+async def _extract_document_text(att: dict, db: AsyncSession | None) -> str:
     """Resolve attached-document text: cache → DocumentChunk rows → on-disk extract."""
     from quip.routers.files import UPLOAD_DIR
 
@@ -80,6 +81,7 @@ async def _extract_document_text(att: dict, db: "AsyncSession | None") -> str:
     if db is not None and file_id:
         try:
             from sqlalchemy import select
+
             from quip.models.file import DocumentChunk
 
             result = await db.execute(
@@ -99,6 +101,7 @@ async def _extract_document_text(att: dict, db: "AsyncSession | None") -> str:
         if full_path.exists():
             try:
                 from quip.services import documents as docs_svc
+
                 result = await docs_svc.extract(str(full_path), att.get("content_type", ""))
                 text = "\n\n".join(p.text for p in result.pages if p.text)
             except Exception as e:
@@ -122,11 +125,11 @@ def _format_doc_block(att: dict, text: str) -> str:
 
 
 _VIDEO_URL_PATTERNS = [
-    r'https?://(?:www\.)?youtube\.com/watch\S+',
-    r'https?://youtu\.be/\S+',
-    r'https?://(?:www\.)?rutube\.ru/video/\S+',
-    r'https?://(?:www\.)?vk\.com/video\S+',
-    r'https?://vkvideo\.ru/\S+',
+    r"https?://(?:www\.)?youtube\.com/watch\S+",
+    r"https?://youtu\.be/\S+",
+    r"https?://(?:www\.)?rutube\.ru/video/\S+",
+    r"https?://(?:www\.)?vk\.com/video\S+",
+    r"https?://vkvideo\.ru/\S+",
 ]
 
 
@@ -136,7 +139,7 @@ def extract_video_urls(text: str) -> tuple[str, list[str]]:
     for pattern in _VIDEO_URL_PATTERNS:
         for match in re.findall(pattern, text):
             urls.append(match)
-            text = text.replace(match, '')
+            text = text.replace(match, "")
     return text.strip(), urls
 
 
@@ -144,7 +147,7 @@ async def build_multimodal_message(
     msg: dict,
     attachments: list[dict],
     is_ollama: bool,
-    db: "AsyncSession | None" = None,
+    db: AsyncSession | None = None,
 ) -> tuple[dict, list[str]]:
     """Rewrite a message so attachments become provider-native parts.
 
@@ -181,7 +184,10 @@ async def build_multimodal_message(
     has_media = image_attachments or video_attachments or video_urls
     logger.debug(
         "build_multimodal: %d images, %d videos, %d urls, %d documents",
-        len(image_attachments), len(video_attachments), len(video_urls), len(document_attachments),
+        len(image_attachments),
+        len(video_attachments),
+        len(video_urls),
+        len(document_attachments),
     )
 
     if not has_media:
@@ -223,10 +229,12 @@ async def build_multimodal_message(
             continue
         b64 = _cached_b64(storage_path, full_path.read_bytes)
         mime = att.get("content_type", "image/png")
-        content_parts.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{b64}"},
-        })
+        content_parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"},
+            }
+        )
 
     for att in video_attachments:
         storage_path = att.get("storage_path", "")
@@ -237,16 +245,20 @@ async def build_multimodal_message(
             continue
         b64 = _cached_b64(storage_path, full_path.read_bytes)
         mime = att.get("content_type", "video/mp4")
-        content_parts.append({
-            "type": "video_url",
-            "video_url": {"url": f"data:{mime};base64,{b64}"},
-        })
+        content_parts.append(
+            {
+                "type": "video_url",
+                "video_url": {"url": f"data:{mime};base64,{b64}"},
+            }
+        )
 
     for url in video_urls:
-        content_parts.append({
-            "type": "video_url",
-            "video_url": {"url": url},
-        })
+        content_parts.append(
+            {
+                "type": "video_url",
+                "video_url": {"url": url},
+            }
+        )
 
     if len(content_parts) > 1 or (content_parts and content_parts[0].get("type") != "text"):
         return ({**msg, "content": content_parts}, inlined_file_ids)

@@ -8,6 +8,7 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit(),
 		SvelteKitPWA({
+			kit: { adapterFallback: 'index.html', spa: true },
 			registerType: 'autoUpdate',
 			strategies: 'generateSW',
 			injectRegister: 'auto',
@@ -30,7 +31,7 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff,woff2}'],
-				navigateFallback: '/',
+				navigateFallback: '/index.html',
 				navigateFallbackDenylist: [/^\/api\//],
 				cleanupOutdatedCaches: true,
 				clientsClaim: true,

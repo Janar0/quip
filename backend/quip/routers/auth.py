@@ -93,8 +93,7 @@ async def register(data: UserRegister, response: Response, db: AsyncSession = De
     state = await _get_or_create_bootstrap_state(db)
     bootstrap_claimed = False
     if not state.completed:
-        email_authorized = bool(ADMIN_EMAIL.strip()) and email == ADMIN_EMAIL.lower().strip()
-        if not email_authorized and not verify_bootstrap_token(data.bootstrap_token):
+        if not verify_bootstrap_token(data.bootstrap_token):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Administrator bootstrap token required",
@@ -253,7 +252,14 @@ async def telegram_login_callback(
     expected_state = request.cookies.get("quip_telegram_oauth_state")
     verifier = request.cookies.get("quip_telegram_oauth_verifier")
     nonce = request.cookies.get("quip_telegram_oauth_nonce")
-    if not code or not state or not expected_state or not verifier or not nonce or not secrets.compare_digest(state, expected_state):
+    if (
+        not code
+        or not state
+        or not expected_state
+        or not verifier
+        or not nonce
+        or not secrets.compare_digest(state, expected_state)
+    ):
         return redirect
 
     bot_token = telegram_bot_token()

@@ -1,6 +1,8 @@
 """Tests for admin default_model setting, /api/models exposure, and prompt caching."""
-import pytest
+
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from quip.providers.openrouter import _inject_cache_control, _should_add_cache_control
 

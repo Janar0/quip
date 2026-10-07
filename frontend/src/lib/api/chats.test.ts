@@ -360,3 +360,59 @@ it('keeps the old stream running in the background when a new chat starts', asyn
   await newRequest;
   expect(get(isStreaming)).toBe(false);
 });
+
+it('keeps assistant text when a research snapshot names a different persisted message', async () => {
+  request.mockResolvedValueOnce(Response.json({
+    id: 'chat',
+    messages: [{ id: 'answer', chat_id: 'chat', role: 'assistant', content: 'Correct report', created_at: '' }],
+    runs: [{ id: 'run-1', assistant_message_id: 'answer', status: 'completed', task_kind: 'research' }],
+  }));
+  request.mockResolvedValueOnce(Response.json({
+    run_id: 'run-1', status: 'completed', revision: 5, context_version: 1, cancel_requested: false,
+    snapshot: {}, message: { id: 'other-answer', content: 'Unrelated report', artifacts: [] },
+  }));
+  await loadChat('chat');
+  expect(get(messages)[0].content).toBe('Correct report');
+  expect(get(messages)[0].research?.status).toBe('completed');
+});
+
+it.each(['success', 'failure'] as const)('a stale chat poll %s cannot stop the selected chat from reaching its terminal report', async (outcome) => {
+  vi.useFakeTimers();
+  try {
+    let finishOldPoll!: (response: Response) => void;
+    let aRequests = 0;
+    let bRequests = 0;
+    const snapshot = (chatId: string) => ({
+      id: chatId,
+      messages: [{ id: `answer-${chatId}`, chat_id: chatId, role: 'assistant', content: `Draft ${chatId}`, created_at: '' }],
+      runs: [{ id: `run-${chatId}`, assistant_message_id: `answer-${chatId}`, status: 'running', task_kind: 'research' }],
+    });
+    const run = (chatId: string, terminal = false) => ({
+      run_id: `run-${chatId}`, status: terminal ? 'completed' : 'running', revision: terminal ? 2 : 1,
+      context_version: 1, cancel_requested: false, snapshot: {},
+      message: { id: `answer-${chatId}`, content: terminal ? `Final ${chatId}` : `Draft ${chatId}`, artifacts: [] },
+    });
+    request.mockImplementation(async (path) => {
+      if (path === '/api/chats/A') return Response.json(snapshot('A'));
+      if (path === '/api/chats/B') return Response.json(snapshot('B'));
+      if (path === '/api/chats/A/runs/run-A') {
+        if (++aRequests === 1) return Response.json(run('A'));
+        return new Promise<Response>((resolve) => { finishOldPoll = resolve; });
+      }
+      if (path === '/api/chats/B/runs/run-B') return Response.json(run('B', ++bRequests > 1));
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    await loadChat('A');
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(aRequests).toBe(2);
+    await loadChat('B');
+    finishOldPoll(outcome === 'success' ? Response.json(run('A', true)) : new Response(null, { status: 503 }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(get(activeChat)?.id).toBe('B');
+    expect(get(messages)[0]).toMatchObject({ content: 'Final B', research: { status: 'completed' } });
+    expect(bRequests).toBe(2);
+  } finally {
+    stopResearchPolling();
+    vi.useRealTimers();
+  }
+});

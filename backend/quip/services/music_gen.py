@@ -1,4 +1,5 @@
 """Music generation service — calls OpenRouter audio models (Lyria)."""
+
 import base64
 import json
 import uuid
@@ -6,8 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from quip.providers.openrouter import OPENROUTER_BASE, OPENROUTER_API_KEY
-from quip.core.config import get_setting
+from quip.providers.openrouter import OPENROUTER_API_KEY, OPENROUTER_BASE
 
 GENERATED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "generated"
 MUSIC_MODEL_DEFAULT = "google/lyria-3-clip-preview"
@@ -35,6 +35,7 @@ async def generate_music(
 
     if not model:
         from quip.services.skill_store import get_skill_setting
+
         model = get_skill_setting("music_generation", "model", "") or MUSIC_MODEL_DEFAULT
 
     headers = {

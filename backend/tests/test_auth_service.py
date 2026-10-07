@@ -1,4 +1,4 @@
-from quip.services.auth import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from quip.services.auth import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 
 
 def test_hash_and_verify_password():

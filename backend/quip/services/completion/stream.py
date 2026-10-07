@@ -1,16 +1,17 @@
 """SSE streaming orchestrator for chat completions."""
+
 import json
 import logging
 from collections.abc import AsyncGenerator
 
 from quip.providers import ollama, openrouter
-from quip.services.streaming import (
-    sse_event,
-    TextCoalescer,
-)
-from quip.services.tools import accumulate_tool_calls
 from quip.services.completion.prompt import PromptBuilder
 from quip.services.completion.tool_executor import ToolExecutor
+from quip.services.streaming import (
+    TextCoalescer,
+    sse_event,
+)
+from quip.services.tools import accumulate_tool_calls
 
 logger = logging.getLogger(__name__)
 _SEARCH_TOOL_LIMITS = {"web_search": 5, "read_url": 2}
@@ -59,15 +60,9 @@ class StreamOrchestrator:
         )
 
     @staticmethod
-    def _filter_search_tools(
-        tools: list[dict], searches_used: int, reads_used: int
-    ) -> list[dict]:
+    def _filter_search_tools(tools: list[dict], searches_used: int, reads_used: int) -> list[dict]:
         remaining = {"web_search": searches_used < 5, "read_url": reads_used < 2}
-        return [
-            tool
-            for tool in tools
-            if remaining.get((tool.get("function") or {}).get("name"), True)
-        ]
+        return [tool for tool in tools if remaining.get((tool.get("function") or {}).get("name"), True)]
 
     def _call_provider(self, tools: list[dict]):
         if self.model.startswith("ollama/"):
@@ -175,14 +170,17 @@ class StreamOrchestrator:
                     continue
 
                 if ev_type == "usage":
-                    yield sse_event("usage", {
-                        "prompt_tokens": data.prompt_tokens,
-                        "completion_tokens": data.completion_tokens,
-                        "cached_tokens": data.cached_tokens,
-                        "cost": data.cost,
-                        "provider": data.provider,
-                        "generation_id": data.generation_id,
-                    })
+                    yield sse_event(
+                        "usage",
+                        {
+                            "prompt_tokens": data.prompt_tokens,
+                            "completion_tokens": data.completion_tokens,
+                            "cached_tokens": data.cached_tokens,
+                            "cost": data.cost,
+                            "provider": data.provider,
+                            "generation_id": data.generation_id,
+                        },
+                    )
                     continue
 
                 if ev_type == "finish":
@@ -263,9 +261,7 @@ class StreamOrchestrator:
             # Emit tool_results and build tool messages
             for index, tc in enumerate(accumulated_tool_calls):
                 name, parsed, raw = results_by_index[index]
-                is_error = bool(
-                    parsed.get("error") or parsed.get("exit_code", 0) != 0
-                )
+                is_error = bool(parsed.get("error") or parsed.get("exit_code", 0) != 0)
                 status = "error" if is_error else "completed"
                 yield sse_event(
                     "tool_result",
@@ -276,30 +272,20 @@ class StreamOrchestrator:
                         "status": status,
                     },
                 )
-                self.messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": raw}
-                )
+                self.messages.append({"role": "tool", "tool_call_id": tc.id, "content": raw})
 
-            force_synthesis = (
-                self.search_mode and searches_used >= 5 and reads_used >= 2
-            )
+            force_synthesis = self.search_mode and searches_used >= 5 and reads_used >= 2
 
             # Accumulate search data for image grid / sources
             if self.search_mode:
-                accumulated_images, accumulated_sources = (
-                    ToolExecutor.accumulate_search_data(
-                        [results_by_index[index] for index in range(len(accumulated_tool_calls))],
-                        accumulated_images,
-                        accumulated_sources,
-                    )
+                accumulated_images, accumulated_sources = ToolExecutor.accumulate_search_data(
+                    [results_by_index[index] for index in range(len(accumulated_tool_calls))],
+                    accumulated_images,
+                    accumulated_sources,
                 )
-                new_imgs = list(accumulated_images.values())[
-                    emitted_image_count:10
-                ]
+                new_imgs = list(accumulated_images.values())[emitted_image_count:10]
                 if new_imgs:
-                    yield sse_event(
-                        "search_images", {"images": new_imgs, "append": True}
-                    )
+                    yield sse_event("search_images", {"images": new_imgs, "append": True})
                     emitted_image_count = min(len(accumulated_images), 10)
 
         # Emit final image grid
@@ -307,6 +293,7 @@ class StreamOrchestrator:
             top = list(accumulated_images.values())[:10]
             if top:
                 yield sse_event("search_images", {"images": top})
+
 
 async def fetch_generation_cost(api_key: str, last_usage) -> None:
     """Fetch generation cost from OpenRouter if not already in stream."""
@@ -326,7 +313,9 @@ async def fetch_generation_cost(api_key: str, last_usage) -> None:
                 if gen.get("native_tokens_prompt"):
                     last_usage["prompt_tokens"] = last_usage.get("prompt_tokens") or gen["native_tokens_prompt"]
                 if gen.get("native_tokens_completion"):
-                    last_usage["completion_tokens"] = last_usage.get("completion_tokens") or gen["native_tokens_completion"]
+                    last_usage["completion_tokens"] = (
+                        last_usage.get("completion_tokens") or gen["native_tokens_completion"]
+                    )
                 last_usage["cached_tokens"] = last_usage.get("cached_tokens") or gen.get("native_tokens_cached", 0)
                 last_usage["provider"] = last_usage.get("provider") or gen.get("provider_name", "")
             else:

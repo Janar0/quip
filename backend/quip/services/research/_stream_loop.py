@@ -1,17 +1,17 @@
 import json
 import logging
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from datetime import UTC
 
-from quip.providers import openrouter, ollama
+from quip.providers import ollama, openrouter
 from quip.providers.openrouter import UsageInfo
-
+from quip.services.research.sources import validated_search_sources
+from quip.services.sandbox import sandbox_manager
 from quip.services.tools import (
     AccumulatedToolCall,
     accumulate_tool_calls,
     execute_tool_call,
 )
-from quip.services.sandbox import sandbox_manager
-from quip.services.research.sources import validated_search_sources
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +22,23 @@ async def _stream(session, messages, tools):
     if session.is_ollama:
         ollama_model = session.model.removeprefix("ollama/")
         return ollama.stream_completion(
-            messages=messages, model=ollama_model, base_url=session.ollama_url, tools=tools,
+            messages=messages,
+            model=ollama_model,
+            base_url=session.ollama_url,
+            tools=tools,
         )
     return openrouter.stream_completion(
-        messages=messages, model=session.model, api_key=session.api_key, tools=tools,
+        messages=messages,
+        model=session.model,
+        api_key=session.api_key,
+        tools=tools,
     )
 
 
 def _build_runtime_header(session) -> str:
-    from datetime import datetime, timezone
-    lines = [f"Current date: {datetime.now(timezone.utc).date().isoformat()}."]
+    from datetime import datetime
+
+    lines = [f"Current date: {datetime.now(UTC).date().isoformat()}."]
     if session.locale:
         lines.append(
             f"User interface language: {session.locale}. Answer in this language unless the user writes in another."
@@ -51,7 +58,7 @@ async def _run_sub_stream_loop(
     tools: list[dict],
     max_rounds: int,
     progress_event_type: str,
-    on_tool_call: Optional[Callable[[str, dict], Awaitable[Optional[str]]]] = None,
+    on_tool_call: Callable[[str, dict], Awaitable[str | None]] | None = None,
 ) -> tuple[str, UsageInfo]:
     """Run a nested stream_completion loop for a sub-agent.
 
@@ -85,9 +92,15 @@ async def _run_sub_stream_loop(
                     raise RuntimeError(chunk.error)
                 if chunk.content:
                     round_content += chunk.content
-                    await session.emit(ResearchEvent(progress_event_type, {
-                        "task_id": task_id, "detail": chunk.content,
-                    }))
+                    await session.emit(
+                        ResearchEvent(
+                            progress_event_type,
+                            {
+                                "task_id": task_id,
+                                "detail": chunk.content,
+                            },
+                        )
+                    )
                 if chunk.tool_calls:
                     accumulate_tool_calls(accumulated, chunk.tool_calls)
                 if chunk.usage:
@@ -109,21 +122,29 @@ async def _run_sub_stream_loop(
             break
 
         # Append the assistant turn with tool calls, then execute them.
-        messages.append({
-            "role": "assistant",
-            "content": round_content or "",
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function_name, "arguments": tc.function_arguments},
-                }
-                for tc in accumulated
-            ],
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": round_content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function_name, "arguments": tc.function_arguments},
+                    }
+                    for tc in accumulated
+                ],
+            }
+        )
 
         # Lazy sandbox init for sandbox sub-agents.
-        _SANDBOX_TOOL_NAMES = {"sandbox_execute", "sandbox_install", "sandbox_write_file", "sandbox_read_file", "sandbox_list_files"}
+        _SANDBOX_TOOL_NAMES = {
+            "sandbox_execute",
+            "sandbox_install",
+            "sandbox_write_file",
+            "sandbox_read_file",
+            "sandbox_list_files",
+        }
         needs_sandbox = any(tc.function_name in _SANDBOX_TOOL_NAMES for tc in accumulated)
 
         for tc in accumulated:
@@ -134,7 +155,7 @@ async def _run_sub_stream_loop(
             except json.JSONDecodeError:
                 args = {}
 
-            override: Optional[str] = None
+            override: str | None = None
             if on_tool_call is not None:
                 override = await on_tool_call(tc.function_name, args)
 
@@ -145,6 +166,7 @@ async def _run_sub_stream_loop(
                 if needs_sandbox and sandbox is None and sandbox_manager.available:
                     try:
                         from quip.database import async_session
+
                         async with async_session() as sandbox_db:
                             # Research sub-agent sandbox is keyed by task_id so it doesn't
                             # collide with the user's main chat sandbox.
@@ -154,8 +176,11 @@ async def _run_sub_stream_loop(
                         logger.warning("research sub-agent sandbox init failed: %s", e)
                 try:
                     result_str = await execute_tool_call(
-                        sandbox_manager, sandbox, task_id,
-                        tc.function_name, tc.function_arguments,
+                        sandbox_manager,
+                        sandbox,
+                        task_id,
+                        tc.function_name,
+                        tc.function_arguments,
                         loaded_skills=session.loaded_skills,
                     )
                 except Exception as e:  # noqa: BLE001
@@ -166,10 +191,12 @@ async def _run_sub_stream_loop(
                 if sources:
                     await session.emit(ResearchEvent("sources", {"sources": sources}))
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result_str,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result_str,
+                }
+            )
 
     return full_content, sub_usage

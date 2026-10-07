@@ -10,6 +10,7 @@ can later request base64 via the get_document_image tool.
 Archives are NOT extracted here — they're marked sandbox_only and the model
 unpacks them itself in /workspace/files/.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,25 +25,26 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from quip.models.file import File, DocumentChunk, DocumentImage
 from quip.core.config import get_setting
+from quip.models.file import DocumentChunk, DocumentImage, File
 
 logger = logging.getLogger(__name__)
 
 
 # ---------- Result types ----------
 
+
 @dataclass
 class PageContent:
     text: str
-    page: int | None = None        # 1-based page/slide/sheet index
+    page: int | None = None  # 1-based page/slide/sheet index
     image_refs: list[str] = field(default_factory=list)
-    source: str = "text"           # "text" | "ocr"
+    source: str = "text"  # "text" | "ocr"
 
 
 @dataclass
 class ExtractedImage:
-    ref: str                       # marker like "img_1"
+    ref: str  # marker like "img_1"
     page: int | None
     mime: str
     data: bytes
@@ -52,7 +54,7 @@ class ExtractedImage:
 class ExtractionResult:
     pages: list[PageContent] = field(default_factory=list)
     images: list[ExtractedImage] = field(default_factory=list)
-    sandbox_only: bool = False     # archives — no chunks except a marker
+    sandbox_only: bool = False  # archives — no chunks except a marker
 
 
 # ---------- Mime classification ----------
@@ -74,6 +76,7 @@ def is_archive(content_type: str) -> bool:
 
 
 # ---------- Public entry ----------
+
 
 async def extract(file_path: str, content_type: str) -> ExtractionResult:
     """Dispatcher — pick extractor by mime. Returns ExtractionResult."""
@@ -120,6 +123,7 @@ async def extract(file_path: str, content_type: str) -> ExtractionResult:
 
 # ---------- PDF ----------
 
+
 async def _extract_pdf(path: Path) -> ExtractionResult:
     """PyMuPDF text + embedded images, with cloud OCR fallback for scan-like pages."""
     try:
@@ -151,12 +155,14 @@ async def _extract_pdf(path: Path) -> ExtractionResult:
                     base = doc.extract_image(xref)
                     img_counter += 1
                     ref = f"img_{img_counter}"
-                    images.append(ExtractedImage(
-                        ref=ref,
-                        page=pi + 1,
-                        mime=f"image/{base['ext']}",
-                        data=base["image"],
-                    ))
+                    images.append(
+                        ExtractedImage(
+                            ref=ref,
+                            page=pi + 1,
+                            mime=f"image/{base['ext']}",
+                            data=base["image"],
+                        )
+                    )
                     page_refs.append(ref)
                 except Exception:
                     continue
@@ -186,24 +192,26 @@ async def _extract_pdf(path: Path) -> ExtractionResult:
                     pass
 
             marker_suffix = (" " + " ".join(f"[image: {r}]" for r in page_refs)) if page_refs else ""
-            pages.append(PageContent(
-                text=text + marker_suffix,
-                page=pi + 1,
-                image_refs=page_refs,
-                source="text",
-            ))
+            pages.append(
+                PageContent(
+                    text=text + marker_suffix,
+                    page=pi + 1,
+                    image_refs=page_refs,
+                    source="text",
+                )
+            )
     finally:
         doc.close()
 
     # OCR fallback — replace text on pages that look scanned
     if ocr_pages:
         from quip.services.ocr import ocr_image
+
         for pi, png_bytes in ocr_pages:
             res = await ocr_image(png_bytes, "image/png")
             if res.text:
                 pages[pi].text = res.text + (
-                    " " + " ".join(f"[image: {r}]" for r in pages[pi].image_refs)
-                    if pages[pi].image_refs else ""
+                    " " + " ".join(f"[image: {r}]" for r in pages[pi].image_refs) if pages[pi].image_refs else ""
                 )
                 pages[pi].source = "ocr"
 
@@ -211,6 +219,7 @@ async def _extract_pdf(path: Path) -> ExtractionResult:
 
 
 # ---------- DOCX ----------
+
 
 def _extract_docx(path: Path) -> ExtractionResult:
     try:
@@ -334,12 +343,13 @@ def _column_summary(rows: list[tuple]) -> str:
                 nums.append(r[col])
         if nums and len(nums) >= 5:
             summaries.append(
-                f"col {col}: n={len(nums)}, min={min(nums)}, max={max(nums)}, mean={sum(nums)/len(nums):.2f}"
+                f"col {col}: n={len(nums)}, min={min(nums)}, max={max(nums)}, mean={sum(nums) / len(nums):.2f}"
             )
     return "[column stats]\n" + "\n".join(summaries) if summaries else ""
 
 
 # ---------- PPTX ----------
+
 
 def _extract_pptx(path: Path) -> ExtractionResult:
     try:
@@ -373,9 +383,14 @@ def _extract_pptx(path: Path) -> ExtractionResult:
                     img = shape.image
                     img_counter += 1
                     ref = f"img_{img_counter}"
-                    images.append(ExtractedImage(
-                        ref=ref, page=si, mime=img.content_type, data=img.blob,
-                    ))
+                    images.append(
+                        ExtractedImage(
+                            ref=ref,
+                            page=si,
+                            mime=img.content_type,
+                            data=img.blob,
+                        )
+                    )
                     slide_refs.append(ref)
                 except Exception:
                     continue
@@ -399,10 +414,11 @@ def _extract_pptx(path: Path) -> ExtractionResult:
 
 # ---------- EPUB ----------
 
+
 def _extract_epub(path: Path) -> ExtractionResult:
     try:
-        from ebooklib import epub, ITEM_DOCUMENT
         from bs4 import BeautifulSoup
+        from ebooklib import ITEM_DOCUMENT, epub
     except ImportError:
         logger.warning("ebooklib/beautifulsoup4 not installed")
         return ExtractionResult()
@@ -432,6 +448,7 @@ def _extract_epub(path: Path) -> ExtractionResult:
 
 # ---------- Standalone image ----------
 
+
 async def _extract_image(path: Path, mime: str) -> ExtractionResult:
     """OCR a standalone uploaded image into RAG chunks."""
     try:
@@ -441,6 +458,7 @@ async def _extract_image(path: Path, mime: str) -> ExtractionResult:
         return ExtractionResult()
 
     from quip.services.ocr import ocr_image
+
     res = await ocr_image(data, mime)
     if not res.text or not res.text.strip():
         return ExtractionResult()
@@ -449,6 +467,7 @@ async def _extract_image(path: Path, mime: str) -> ExtractionResult:
 
 
 # ---------- Chunking (preserves page provenance) ----------
+
 
 def chunk_pages(
     pages: list[PageContent],
@@ -465,10 +484,15 @@ def chunk_pages(
 
     try:
         import tiktoken
+
         enc = tiktoken.get_encoding("cl100k_base")
-        count_tokens = lambda t: len(enc.encode(t))
+
+        def count_tokens(text: str) -> int:
+            return len(enc.encode(text))
     except ImportError:
-        count_tokens = lambda t: len(t) // 4
+
+        def count_tokens(text: str) -> int:
+            return len(text) // 4
 
     out: list[tuple[str, dict, str]] = []
     for page in pages:
@@ -487,8 +511,8 @@ def chunk_pages(
     return out
 
 
-_HEADING_RE = re.compile(r'^#{1,4}\s+.+$', re.MULTILINE)
-_SECTION_BREAK_RE = re.compile(r'\n{2,}')
+_HEADING_RE = re.compile(r"^#{1,4}\s+.+$", re.MULTILINE)
+_SECTION_BREAK_RE = re.compile(r"\n{2,}")
 
 
 def _chunk_one(text: str, max_tokens: int, overlap_tokens: int, count_tokens) -> list[str]:
@@ -531,7 +555,7 @@ def _chunk_one(text: str, max_tokens: int, overlap_tokens: int, count_tokens) ->
         if tok <= max_tokens:
             fine_segments.append(seg)
         else:
-            parts = re.split(r'(\.\s|!\s|\?\s|;\s|:\s)', seg)
+            parts = re.split(r"(\.\s|!\s|\?\s|;\s|:\s)", seg)
             for i in range(0, len(parts), 2):
                 s = parts[i]
                 if i + 1 < len(parts):
@@ -540,7 +564,7 @@ def _chunk_one(text: str, max_tokens: int, overlap_tokens: int, count_tokens) ->
                     fine_segments.append(s)
 
     if not fine_segments:
-        return [text[:max_tokens * 4]] if text.strip() else []
+        return [text[: max_tokens * 4]] if text.strip() else []
 
     chunks: list[str] = []
     cur: list[str] = []
@@ -557,7 +581,7 @@ def _chunk_one(text: str, max_tokens: int, overlap_tokens: int, count_tokens) ->
             char_per_token = len(seg) / st if st > 0 else 4
             chunk_chars = int(max_tokens * char_per_token)
             for offset in range(0, len(seg), chunk_chars - int(overlap_tokens * char_per_token)):
-                sub = seg[offset:offset + chunk_chars].strip()
+                sub = seg[offset : offset + chunk_chars].strip()
                 if sub:
                     chunks.append(sub)
             continue
@@ -584,6 +608,7 @@ def _chunk_one(text: str, max_tokens: int, overlap_tokens: int, count_tokens) ->
 
 
 # ---------- Orchestration ----------
+
 
 async def process_file(file_id: UUID, db: AsyncSession) -> None:
     """Extract → chunk → embed → save (chunks + DocumentImage rows)."""
@@ -646,6 +671,7 @@ async def process_file(file_id: UUID, db: AsyncSession) -> None:
 
         # Embed
         from quip.services.embeddings import get_embeddings
+
         texts = [c[0] for c in chunks_with_meta]
         embeddings = await get_embeddings(texts)
 
@@ -656,22 +682,29 @@ async def process_file(file_id: UUID, db: AsyncSession) -> None:
 
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
-            count_tokens = lambda t: len(enc.encode(t))
+
+            def count_tokens(text: str) -> int:
+                return len(enc.encode(text))
         except ImportError:
-            count_tokens = lambda t: len(t) // 4
+
+            def count_tokens(text: str) -> int:
+                return len(text) // 4
 
         for i, ((text, meta, chash), embedding) in enumerate(zip(chunks_with_meta, embeddings)):
-            db.add(DocumentChunk(
-                file_id=file_id,
-                chat_id=file_record.chat_id,
-                chunk_index=i,
-                content=text,
-                embedding=embedding,
-                token_count=count_tokens(text),
-                chunk_metadata=meta,
-                content_hash=chash,
-            ))
+            db.add(
+                DocumentChunk(
+                    file_id=file_id,
+                    chat_id=file_record.chat_id,
+                    chunk_index=i,
+                    content=text,
+                    embedding=embedding,
+                    token_count=count_tokens(text),
+                    chunk_metadata=meta,
+                    content_hash=chash,
+                )
+            )
 
         file_record.embedding_status = "completed"
         await db.commit()
@@ -713,17 +746,20 @@ async def _save_images(file_record: File, images: list[ExtractedImage], db: Asyn
             logger.warning(f"failed to write extracted image {img.ref}: {e}")
             continue
         storage_path = f"{file_record.user_id}/extracted/{file_record.id}/{fname}"
-        db.add(DocumentImage(
-            id=_uuid.uuid4(),
-            file_id=file_record.id,
-            ref=img.ref,
-            page=img.page,
-            storage_path=storage_path,
-            mime=img.mime,
-        ))
+        db.add(
+            DocumentImage(
+                id=_uuid.uuid4(),
+                file_id=file_record.id,
+                ref=img.ref,
+                page=img.page,
+                storage_path=storage_path,
+                mime=img.mime,
+            )
+        )
 
 
 # ---------- Backwards compat shim ----------
+
 
 async def extract_text(file_path: str, content_type: str) -> str:
     """Async text-only entrypoint. Returns concatenated page text."""

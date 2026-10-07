@@ -2,16 +2,16 @@ import asyncio
 import json
 import logging
 
+from quip.services.research.sub_agents import (
+    _run_artifact_sub_agent,
+    _run_sandbox_sub_agent,
+    _run_search_sub_agent,
+)
 from quip.services.research.types import (
     ResearchEvent,
     ResearchLimitReached,
     ResearchSession,
     SubAgentHandle,
-)
-from quip.services.research.sub_agents import (
-    _run_artifact_sub_agent,
-    _run_sandbox_sub_agent,
-    _run_search_sub_agent,
 )
 from quip.services.skill_store import get_skill_def as get_skill
 
@@ -40,6 +40,7 @@ async def _child_limit_error(session: ResearchSession) -> str | None:
 
 
 # --- Research tool dispatcher ---
+
 
 async def execute_research_tool(session: ResearchSession, name: str, arguments_json: str) -> str:
     try:
@@ -71,14 +72,27 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         tid = session.next_task_id("search")
         task = _spawn_bounded(session, lambda: _run_search_sub_agent(session, tid, goal, max_queries))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="search", task=task)
-        await session.emit(ResearchEvent("subagent_spawned", {
-            "task_id": tid, "kind": "search", "agent_type": "search", "goal": goal,
-        }))
-        await session.emit(ResearchEvent("status", {
-            "phase": "searching",
-            "detail": "Searching web sources...",
-            "sub_queries": [goal],
-        }))
+        await session.emit(
+            ResearchEvent(
+                "subagent_spawned",
+                {
+                    "task_id": tid,
+                    "kind": "search",
+                    "agent_type": "search",
+                    "goal": goal,
+                },
+            )
+        )
+        await session.emit(
+            ResearchEvent(
+                "status",
+                {
+                    "phase": "searching",
+                    "detail": "Searching web sources...",
+                    "sub_queries": [goal],
+                },
+            )
+        )
         return json.dumps({"task_id": tid, "status": "running"})
 
     if name == "spawn_sandbox_agent":
@@ -91,10 +105,17 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         tid = session.next_task_id("sandbox")
         task = _spawn_bounded(session, lambda: _run_sandbox_sub_agent(session, tid, task_desc))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="sandbox", task=task)
-        await session.emit(ResearchEvent("subagent_spawned", {
-            "task_id": tid, "kind": "sandbox", "agent_type": "sandbox",
-            "goal": task_desc,
-        }))
+        await session.emit(
+            ResearchEvent(
+                "subagent_spawned",
+                {
+                    "task_id": tid,
+                    "kind": "sandbox",
+                    "agent_type": "sandbox",
+                    "goal": task_desc,
+                },
+            )
+        )
         return json.dumps({"task_id": tid, "status": "running"})
 
     if name == "spawn_artifact_agent":
@@ -108,11 +129,18 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         tid = session.next_task_id("artifact")
         task = _spawn_bounded(session, lambda: _run_artifact_sub_agent(session, tid, kind, spec))
         session.handles[tid] = SubAgentHandle(task_id=tid, kind="artifact", task=task)
-        await session.emit(ResearchEvent("subagent_spawned", {
-            "task_id": tid, "kind": "artifact", "agent_type": "artifact",
-            "goal": f"{kind}: {spec[:80]}",
-            "artifact_kind": kind,
-        }))
+        await session.emit(
+            ResearchEvent(
+                "subagent_spawned",
+                {
+                    "task_id": tid,
+                    "kind": "artifact",
+                    "agent_type": "artifact",
+                    "goal": f"{kind}: {spec[:80]}",
+                    "artifact_kind": kind,
+                },
+            )
+        )
         return json.dumps({"task_id": tid, "status": "running"})
 
     if name == "wait_for_any_result":
@@ -132,11 +160,12 @@ async def execute_research_tool(session: ResearchSession, name: str, arguments_j
         return json.dumps({"task_id": h.task_id, "status": h.status, "result": h.result})
 
     if name == "list_agents":
-        return json.dumps({
-            "agents": [
-                {"task_id": h.task_id, "kind": h.kind, "status": h.status}
-                for h in session.handles.values()
-            ],
-        })
+        return json.dumps(
+            {
+                "agents": [
+                    {"task_id": h.task_id, "kind": h.kind, "status": h.status} for h in session.handles.values()
+                ],
+            }
+        )
 
     return json.dumps({"error": f"unknown orchestrator tool: {name}"})

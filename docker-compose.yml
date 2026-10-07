@@ -8,6 +8,11 @@ services:
       # The entrypoint creates and persists a random secret when this is empty.
       JWT_SECRET: ${JWT_SECRET:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      QWEN_VOICE_ENABLED: ${QWEN_VOICE_ENABLED:-false}
+      QWEN_REALTIME_ENDPOINT: ${QWEN_REALTIME_ENDPOINT:-https://maas.qwencloudapi.com/api/v1/webrtc/realtime}
+      QWEN_REALTIME_API_KEY: ${QWEN_REALTIME_API_KEY:-}
+      QWEN_REALTIME_MODEL: ${QWEN_REALTIME_MODEL:-qwen-audio-3.1-realtime-plus}
+      QWEN_REALTIME_VIDEO_ENABLED: ${QWEN_REALTIME_VIDEO_ENABLED:-false}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

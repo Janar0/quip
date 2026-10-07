@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, DateTime, Uuid, ForeignKey, func
+from sqlalchemy import Column, DateTime, ForeignKey, String, Uuid, func
 
 from quip.database import Base
 

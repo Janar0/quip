@@ -1,4 +1,5 @@
 """System prompt assembly: skills index, RAG context, locale, geo."""
+
 import logging
 from datetime import UTC, datetime
 
@@ -20,10 +21,10 @@ from quip.services.tools import (
     GENERATE_IMAGE_TOOL,
     GENERATE_MUSIC_TOOL,
     GET_DOCUMENT_IMAGE_TOOL,
-    SEARCH_TOOLS,
     LOAD_SKILL_TOOL,
     READ_URL_TOOL,
     SANDBOX_TOOLS,
+    SEARCH_TOOLS,
     WIDGET_TOOL,
 )
 
@@ -178,11 +179,7 @@ class PromptBuilder:
                 workspace_id=workspace_id,
             )
             if inlined_doc_file_ids:
-                rag_chunks = [
-                    c
-                    for c in rag_chunks
-                    if c.get("file_id") not in inlined_doc_file_ids
-                ]
+                rag_chunks = [c for c in rag_chunks if c.get("file_id") not in inlined_doc_file_ids]
             if rag_chunks:
                 rag_context = format_rag_context(rag_chunks)
                 prompt = (system_prompt + "\n\n" + rag_context).strip()

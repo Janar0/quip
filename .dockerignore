@@ -5,6 +5,8 @@
 .vscode
 .idea
 .codex
+.superpowers
+docs/superpowers
 
 # Local secrets and credentials
 .env

@@ -4,6 +4,78 @@ from httpx import ASGITransport, AsyncClient
 from quip.main import app
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("token", [None, "wrong-bootstrap-token"])
+async def test_configured_admin_email_cannot_bypass_bootstrap_token(client, monkeypatch, token):
+    from quip.routers import auth
+
+    monkeypatch.setattr(auth, "ADMIN_EMAIL", "owner@example.test")
+    setup = await client.get("/api/auth/setup")
+    assert setup.json() == {"required": True, "admin_email_configured": True}
+    data = {
+        "email": "owner@example.test",
+        "username": "owner",
+        "name": "Owner",
+        "password": "password123",
+    }
+    if token is not None:
+        data["bootstrap_token"] = token
+    denied = await client.post("/api/auth/register", json=data)
+    assert denied.status_code == 403
+    assert (await client.get("/api/auth/setup")).json()["required"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("email", ["owner@example.test", "different@example.test"])
+async def test_valid_bootstrap_token_grants_admin_independent_of_configured_email(client, monkeypatch, email):
+    from quip.routers import auth
+
+    monkeypatch.setattr(auth, "ADMIN_EMAIL", "owner@example.test")
+    claimed = await client.post(
+        "/api/auth/register",
+        json={
+            "email": email,
+            "username": "owner",
+            "name": "Owner",
+            "password": "password123",
+            "bootstrap_token": "test-bootstrap-token",
+        },
+    )
+    assert claimed.status_code == 201
+    assert (await client.get("/api/auth/me")).json()["role"] == "admin"
+    assert (await client.get("/api/auth/setup")).json()["required"] is False
+
+
+@pytest.mark.asyncio
+async def test_registration_after_bootstrap_stays_pending_even_for_configured_email(client, monkeypatch):
+    from quip.routers import auth
+
+    monkeypatch.setattr(auth, "ADMIN_EMAIL", "later@example.test")
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "owner@example.test",
+            "username": "owner",
+            "name": "Owner",
+            "password": "password123",
+            "bootstrap_token": "test-bootstrap-token",
+        },
+    )
+    pending = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "later@example.test",
+            "username": "later",
+            "name": "Later",
+            "password": "password123",
+        },
+    )
+    assert pending.status_code == 201
+    login = await client.post("/api/auth/login", json={"email": "later@example.test", "password": "password123"})
+    assert login.status_code == 403
+    assert login.json()["detail"] == "Account pending approval"
+
+
 @pytest.fixture
 async def client():
     transport = ASGITransport(app=app)

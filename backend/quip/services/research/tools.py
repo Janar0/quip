@@ -1,10 +1,6 @@
 from quip.services.tools import (
     LOAD_SKILL_TOOL,
-    READ_URL_TOOL,
-    SEARCH_TOOLS,
-    SANDBOX_TOOLS,
 )
-
 
 # --- Spawn tool specs ---
 
@@ -40,8 +36,7 @@ SPAWN_SANDBOX_TOOL = {
     "function": {
         "name": "spawn_sandbox_agent",
         "description": (
-            "Launch a sandbox sub-agent to run code / build charts / process data. "
-            "Returns a task_id immediately."
+            "Launch a sandbox sub-agent to run code / build charts / process data. Returns a task_id immediately."
         ),
         "parameters": {
             "type": "object",
@@ -87,8 +82,7 @@ WAIT_FOR_ANY_RESULT_TOOL = {
     "function": {
         "name": "wait_for_any_result",
         "description": (
-            "Block until the next pending sub-agent finishes and return its result. "
-            "Does not block the event loop."
+            "Block until the next pending sub-agent finishes and return its result. Does not block the event loop."
         ),
         "parameters": {"type": "object", "properties": {}},
     },

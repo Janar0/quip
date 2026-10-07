@@ -1,12 +1,13 @@
 """SSE streaming endpoint for chat completions — routes to OpenRouter or Ollama."""
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.database import get_db
 from quip.models.user import User
 from quip.schemas.chat import CompletionRequest, RegenerateRequest
-from quip.services.permissions import get_current_user
 from quip.services.completion import CompletionService
+from quip.services.permissions import get_current_user
 
 router = APIRouter(prefix="/api", tags=["completion"])
 

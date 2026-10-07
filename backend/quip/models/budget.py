@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, DateTime, Numeric, Uuid, ForeignKey, func
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String, Uuid, func
 
 from quip.database import Base
 
@@ -11,6 +11,7 @@ class Budget(Base):
     user_id=null → global limit for all users.
     period: 'daily', 'monthly'
     """
+
     __tablename__ = "budgets"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)

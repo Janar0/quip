@@ -1,4 +1,5 @@
 """Admin CRUD for skills + public templates endpoint + AI draft generator."""
+
 import hashlib
 import json
 import re
@@ -8,12 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from quip.core.config import get_setting
 from quip.database import get_db
 from quip.models.user import User
-from quip.core.config import get_setting
 from quip.services.permissions import get_admin_user, get_current_user
 from quip.services.skill_store import (
-    get_all_skills, create_skill, update_skill, delete_skill, get_widget_skills,
+    create_skill,
+    delete_skill,
+    get_all_skills,
+    get_widget_skills,
+    update_skill,
 )
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])

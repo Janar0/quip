@@ -434,3 +434,320 @@ describe('VoiceSession WebRTC controller', () => {
     expect(s.tones.oscillator.stop).toHaveBeenCalled();
   });
 });
+
+it('ignores malformed provider payloads and normalizes final usage without losing transcript attribution', async () => {
+  const s = setup();
+  await s.session.start();
+  s.pc.connect();
+  s.pc.channel.emit({ type: 'session.created', session: {} });
+  await s.session.whenProviderEventsIdle();
+  for (const data of ['broken json', 'null', '42', '{}']) {
+    s.pc.channel.onmessage?.({ data } as MessageEvent);
+  }
+  s.pc.channel.emit({ type: 'response.done', response: { usage: { input_tokens: '12', output_tokens: 'invalid' } } });
+  s.pc.channel.emit({ type: 'conversation.item.input_audio_transcription.completed', transcript: 'User words' });
+  s.pc.channel.emit({ type: 'response.audio_transcript.done', transcript: 'Assistant words' });
+  await s.session.whenProviderEventsIdle();
+  expect(s.session.state.usage).toEqual({ input_tokens: 12, output_tokens: 0, total_tokens: 0 });
+  expect(s.transcripts).toEqual([{ role: 'user', text: 'User words' }, { role: 'assistant', text: 'Assistant words' }]);
+  expect(s.api.event).toHaveBeenLastCalledWith('call-1', {
+    type: 'response.audio_transcript.done', transcript: 'Assistant words',
+  });
+  expect(s.session.state.status).toBe('active');
+  await s.session.end();
+});
+
+it('waits for ICE completion and removes its listener before signaling the gathered offer', async () => {
+  const s = setup();
+  const events = new EventTarget();
+  Object.assign(s.pc, {
+    iceGatheringState: 'gathering',
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: vi.fn(events.removeEventListener.bind(events)),
+  });
+  const starting = s.session.start();
+  await vi.waitFor(() => expect(s.pc.setLocalDescription).toHaveBeenCalled());
+  expect(s.api.start).not.toHaveBeenCalled();
+  s.pc.localDescription = { type: 'offer', sdp: 'v=0 gathered candidates' };
+  s.pc.iceGatheringState = 'complete';
+  events.dispatchEvent(new Event('icegatheringstatechange'));
+  await starting;
+  expect(s.api.start).toHaveBeenCalledWith('chat-1', 'v=0 gathered candidates', false);
+  expect((s.pc as any).removeEventListener).toHaveBeenCalledWith('icegatheringstatechange', expect.any(Function));
+  await s.session.end();
+});
+
+it('ending during ICE gathering releases the listener and settles startup immediately', async () => {
+  const s = setup();
+  const events = new EventTarget();
+  Object.assign(s.pc, {
+    iceGatheringState: 'gathering',
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: vi.fn(events.removeEventListener.bind(events)),
+  });
+  const starting = s.session.start();
+  await vi.waitFor(() => expect(s.pc.setLocalDescription).toHaveBeenCalled());
+  await s.session.end();
+  const detached = (s.pc as any).removeEventListener.mock.calls.length;
+  // Complete the test fixture even if cancellation leaked the listener.
+  s.pc.iceGatheringState = 'complete';
+  events.dispatchEvent(new Event('icegatheringstatechange'));
+  await starting;
+  expect(detached).toBe(1);
+  expect(s.api.start).not.toHaveBeenCalled();
+  expect(s.session.state.status).toBe('ended');
+});
+
+it('old channel events cannot be attributed to a replacement call', async () => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  vi.mocked(s.api.start).mockResolvedValueOnce({ call_id: 'old-call', sdp: 'fixture' })
+    .mockResolvedValueOnce({ call_id: 'new-call', sdp: 'fixture' });
+  await s.session.start();
+  await s.session.end();
+  await s.session.start();
+  replacementPeer.connect();
+  replacementPeer.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  s.pc.channel.emit({ type: 'response.audio_transcript.done', transcript: 'Old channel words' });
+  await Promise.resolve();
+  await Promise.resolve();
+  const transcripts = [...s.transcripts];
+  const forwardedOld = vi.mocked(s.api.event).mock.calls.some(([callId, event]) =>
+    callId === 'new-call' && event.transcript === 'Old channel words');
+  await s.session.end();
+  expect(transcripts).toEqual([]);
+  expect(forwardedOld).toBe(false);
+});
+
+it('a persisted old transcript completing late cannot update the replacement call UI', async () => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  await s.session.start();
+  let finish!: (value: Record<string, unknown>) => void;
+  vi.mocked(s.api.event).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  s.pc.channel.emit({ type: 'response.audio_transcript.done', transcript: 'Old persisted words' });
+  await vi.waitFor(() => expect(s.api.event).toHaveBeenCalledOnce());
+  await s.session.end();
+  await s.session.start();
+  finish({});
+  await Promise.resolve();
+  await Promise.resolve();
+  const transcripts = [...s.transcripts];
+  await s.session.end();
+  expect(transcripts).toEqual([]);
+});
+
+it('late context from a cancelled startup cannot configure the replacement call', async () => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  let finish!: (value: VoiceContextPacket) => void;
+  vi.mocked(s.api.context).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }))
+    .mockResolvedValueOnce({ ...contextPacket(), task_goal: 'Current call context' });
+  const oldStarting = s.session.start();
+  await vi.waitFor(() => expect(s.pc.setRemoteDescription).toHaveBeenCalledOnce());
+  await s.session.end();
+  await s.session.start();
+  finish({ ...contextPacket(), task_goal: 'Stale call context' });
+  await oldStarting;
+  replacementPeer.connect();
+  replacementPeer.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  const update = replacementPeer.channel.sent.find((event: any) => event.type === 'session.update') as any;
+  await s.session.end();
+  expect(update.session.instructions).toContain('Current call context');
+  expect(update.session.instructions).not.toContain('Stale call context');
+});
+
+it('idle synchronization still waits for received provider events after the call ends', async () => {
+  const s = setup();
+  await s.session.start();
+  let finish!: (value: Record<string, unknown>) => void;
+  vi.mocked(s.api.event).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  s.pc.channel.emit({ type: 'response.audio_transcript.done', transcript: 'Ending call words' });
+  await vi.waitFor(() => expect(s.api.event).toHaveBeenCalledOnce());
+  await s.session.end();
+  let settled = false;
+  const idle = s.session.whenProviderEventsIdle().then(() => { settled = true; });
+  await Promise.resolve();
+  await Promise.resolve();
+  const settledBeforePersistence = settled;
+  finish({});
+  await idle;
+  expect(settledBeforePersistence).toBe(false);
+  expect(settled).toBe(true);
+  expect(s.transcripts).toEqual([]);
+});
+
+it.each(['steer', 'cancel'] as const)('a late %s action cannot replace the new call task or its polling', async (action) => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  vi.mocked(s.api.start).mockResolvedValueOnce({ call_id: 'old-call', sdp: 'fixture' })
+    .mockResolvedValueOnce({ call_id: 'new-call', sdp: 'fixture' });
+  vi.mocked(s.api.startTask).mockResolvedValueOnce({ task_id: 'old-task', status: 'running', model: 'luna', replayed: false, steered: false })
+    .mockResolvedValueOnce({ task_id: 'new-task', status: 'running', model: 'luna', replayed: false, steered: false });
+  vi.mocked(s.api.task).mockReturnValue(new Promise(() => {}));
+  await s.session.start();
+  s.pc.channel.emit({ type: 'response.function_call_arguments.done', call_id: 'delegate-old', name: 'delegate_to_text_model', arguments: '{"goal":"Old task"}' });
+  await s.session.whenProviderEventsIdle();
+  let finish!: (value: any) => void;
+  if (action === 'steer') vi.mocked(s.api.steerTask).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  else vi.mocked(s.api.cancelTask).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  const acting = action === 'steer' ? s.session.steerTask('Clarification') : s.session.cancelTask();
+  await s.session.end();
+  await s.session.start();
+  replacementPeer.channel.emit({ type: 'response.function_call_arguments.done', call_id: 'delegate-new', name: 'delegate_to_text_model', arguments: '{"goal":"New task"}' });
+  await s.session.whenProviderEventsIdle();
+  finish({ task_id: 'old-task', status: action === 'steer' ? 'running' : 'cancelling', revision: 4, context_version: 2, replayed: false });
+  await acting;
+  const task = s.session.state.task;
+  vi.mocked(s.api.task).mockClear();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const polled = vi.mocked(s.api.task).mock.calls;
+  await s.session.end();
+  expect(task?.taskId).toBe('new-task');
+  expect(polled.some(([callId, taskId]) => callId === 'new-call' && taskId === 'new-task')).toBe(true);
+  expect(polled.some(([callId]) => callId === 'old-call')).toBe(false);
+});
+
+it.each(['steer', 'cancel'] as const)('%s remains available for a task kept visible after End', async (action) => {
+  const s = setup();
+  vi.mocked(s.api.task).mockReturnValue(new Promise(() => {}));
+  await s.session.start();
+  s.pc.channel.emit({ type: 'response.function_call_arguments.done', call_id: 'delegate', name: 'delegate_to_text_model', arguments: '{"goal":"Keep working"}' });
+  await s.session.whenProviderEventsIdle();
+  await s.session.end({ keepTaskVisible: true });
+  if (action === 'steer') await s.session.steerTask('Use recent sources');
+  else await s.session.cancelTask();
+  expect(s.session.state.status).toBe('ended');
+  expect(s.session.state.task?.progress).toBe(action === 'steer' ? 'steered' : 'cancelling');
+  await s.session.end();
+});
+
+it.each(['end notification', 'audio context close'] as const)('retry during a delayed failure %s retains the replacement call and audio context', async (delay) => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  vi.mocked(s.api.start).mockResolvedValueOnce({ call_id: 'old-call', sdp: 'fixture' })
+    .mockResolvedValueOnce({ call_id: 'new-call', sdp: 'fixture' });
+  await s.session.start();
+  let finish!: () => void;
+  if (delay === 'end notification') {
+    vi.mocked(s.api.end).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve({}); }));
+  } else {
+    s.tones.context.close.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+  }
+  s.pc.fail();
+  await vi.waitFor(() => expect(delay === 'end notification' ? s.api.end : s.tones.context.close).toHaveBeenCalledOnce());
+  const replacementTones = makeAudioContext();
+  s.tones.context = replacementTones.context;
+  s.getUserMedia.mockResolvedValueOnce(mediaStream([track('audio')]));
+  await s.session.start();
+  replacementPeer.connect();
+  replacementPeer.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  finish();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(s.session.state.status).toBe('active');
+  await s.session.end();
+  expect(s.api.end).toHaveBeenCalledWith('new-call');
+  expect(replacementTones.context.close).toHaveBeenCalledOnce();
+});
+
+it('a camera-off continuation cannot stop or hide the replacement call camera', async () => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  s.session.chooseCamera(true);
+  await s.session.start();
+  const oldVideoSender = s.pc.senders.find((sender) => s.pc.added[s.pc.senders.indexOf(sender)].track.kind === 'video');
+  let finish!: () => void;
+  oldVideoSender.replaceTrack.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+  const switchingOff = s.session.setCamera(false);
+  await s.session.end();
+  const newCamera = track('video');
+  const newOutbound = track('video');
+  const newMedia = mediaStream([track('audio')], [newCamera]);
+  const dispose = vi.fn(() => newOutbound.stop());
+  s.getUserMedia.mockResolvedValueOnce(newMedia);
+  (s.session as any).options.createVideoPipeline = async () => ({
+    stream: mediaStream([], [newOutbound]), track: newOutbound, dispose,
+  });
+  await s.session.start();
+  replacementPeer.connect();
+  replacementPeer.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  finish();
+  await switchingOff;
+  const observed = {
+    enabled: s.session.state.cameraEnabled,
+    cameraState: newCamera.readyState,
+    outboundState: newOutbound.readyState,
+    disposed: dispose.mock.calls.length,
+    preview: s.localStreams.at(-1),
+  };
+  await s.session.end();
+  expect(observed.enabled).toBe(true);
+  expect(observed.cameraState).toBe('live');
+  expect(observed.outboundState).toBe('live');
+  expect(observed.disposed).toBe(0);
+  expect(observed.preview).toBe(newMedia);
+});
+
+it('an old playback rejection cannot add an error to successfully playing replacement audio', async () => {
+  const s = setup();
+  const replacementPeer = new FakePeerConnection();
+  (s.session as any).options.createPeerConnection = vi.fn().mockReturnValueOnce(s.pc).mockReturnValueOnce(replacementPeer);
+  let rejectOld!: (error: Error) => void;
+  const element = {
+    autoplay: false, srcObject: null,
+    play: vi.fn<() => Promise<void>>().mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectOld = reject; }))
+      .mockResolvedValue(undefined),
+    pause: vi.fn(),
+  };
+  s.session.attachRemoteAudio(element as unknown as HTMLAudioElement);
+  await s.session.start();
+  s.pc.ontrack?.({ streams: [mediaStream([track('audio')])] });
+  await s.session.end();
+  await s.session.start();
+  replacementPeer.connect();
+  replacementPeer.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  const replacementAudio = mediaStream([track('audio')]);
+  replacementPeer.ontrack?.({ streams: [replacementAudio] });
+  await Promise.resolve();
+  expect(s.session.state).toMatchObject({ status: 'active', error: null });
+  rejectOld(new DOMException('Old playback was interrupted', 'AbortError'));
+  await Promise.resolve();
+  const observed = s.session.state;
+  expect(element.srcObject).toBe(replacementAudio);
+  await s.session.end();
+  expect(observed).toMatchObject({ status: 'active', error: null });
+});
+
+it.each(['success', 'failure'] as const)('current remote playback %s reports only a real playback error', async (outcome) => {
+  const s = setup();
+  const element = {
+    autoplay: false, srcObject: null,
+    play: vi.fn(async () => {
+      if (outcome === 'failure') throw new DOMException('Playback permission required', 'NotAllowedError');
+    }),
+    pause: vi.fn(),
+  };
+  s.session.attachRemoteAudio(element as unknown as HTMLAudioElement);
+  await s.session.start();
+  s.pc.connect();
+  s.pc.channel.emit({ type: 'session.created' });
+  await s.session.whenProviderEventsIdle();
+  const remoteAudio = mediaStream([track('audio')]);
+  s.pc.ontrack?.({ streams: [remoteAudio] });
+  await Promise.resolve();
+  const observed = s.session.state;
+  expect(element.srcObject).toBe(remoteAudio);
+  await s.session.end();
+  expect(observed).toMatchObject({ status: 'active', error: outcome === 'failure' ? 'audio_playback_blocked' : null });
+});

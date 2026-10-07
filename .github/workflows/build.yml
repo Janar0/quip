@@ -43,9 +43,13 @@ jobs:
         working-directory: backend
         run: uv sync --frozen --extra dev
 
-      - name: Lint backend for correctness errors
+      - name: Lint backend
         working-directory: backend
-        run: .venv/bin/ruff check --select E9,F63,F7,F82 quip tests
+        run: .venv/bin/ruff check quip tests
+
+      - name: Check backend formatting
+        working-directory: backend
+        run: .venv/bin/ruff format --check quip tests
 
       - name: Audit backend runtime dependencies
         working-directory: backend

@@ -1,16 +1,14 @@
 import { processSSEStream, setStreamError } from './chat-stream';
 import { api } from '$lib/api/client';
-import { chatList, activeChat, activeChatId, messages, selectedModel, isLoading, searchEnabled, researchEnabled, branchSelections, chatStreamKey, setActiveChatId, setChatStreamState, remapChatStreamState, type AttachmentInfo, type MessageInfo, type ResearchRunInfo, type ResearchRunStatus, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
+import { chatList, activeChat, activeChatId, messages, selectedModel, isLoading, searchEnabled, researchEnabled, branchSelections, chatStreamKey, setActiveChatId, setChatStreamState, remapChatStreamState, type AttachmentInfo, type MessageInfo, restoreBranchSelections, clearBranchSelections, persistBranchSelections } from '$lib/stores/chat';
 import { buildThread } from '$lib/utils/thread';
 import { get, writable, type Writable } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { UploadedFile } from '$lib/api/files';
 import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
-import { cancelChatRun, ChatRunRequestError, getChatRun } from '$lib/api/chat-runs';
+import { isActiveResearch } from './research-projection';
+import { createResearchSync } from './research-sync';
 
-let researchPollTimer: ReturnType<typeof setInterval> | null = null;
-let researchPollChatId: string | null = null;
-let researchReportRequestSequence = 0;
 type PendingResearchRequest = {
   chatId?: string;
   runId?: string;
@@ -30,6 +28,9 @@ type ChatStreamContext = {
 };
 
 const chatStreams = new Map<string, ChatStreamContext>();
+const research = createResearchSync(messageStoreForRun, activeStreamMessageId);
+const { syncResearchPolling, syncPendingResearchReports } = research;
+export const { stopResearchPolling, stopResearchRun } = research;
 
 function streamContextForChat(chatId: string | null | undefined): ChatStreamContext | undefined {
   return chatStreams.get(chatStreamKey(chatId));
@@ -97,154 +98,11 @@ export function enterNewChatView(): void {
   stopResearchPolling();
 }
 
-function isActiveResearch(status: ResearchRunStatus): boolean {
-  return status === 'queued' || status === 'running' || status === 'cancelling';
-}
-
-type ResearchReportFreshness = {
-  requestId: number;
-  streamedContentAtRequest: string | null;
-  statusAtRequest: ResearchRunStatus | null;
-  contentAtRequest: string | null;
-};
-
-function newResearchReportFreshness(
-  message: Pick<MessageInfo, 'content' | 'research'> | undefined,
-  fallbackStatus: ResearchRunStatus | null = null,
-): ResearchReportFreshness {
-  return {
-    requestId: ++researchReportRequestSequence,
-    streamedContentAtRequest: message?.research?.streamedContent ?? null,
-    statusAtRequest: message?.research?.status ?? fallbackStatus,
-    contentAtRequest: message?.content ?? null,
-  };
-}
-
 function messageStoreForRun(runId: string): Writable<MessageInfo[]> {
   for (const context of chatStreams.values()) {
     if (get(context.messages).some((message) => message.research?.runId === runId)) return context.messages;
   }
   return messages;
-}
-
-function applyResearchRun(runId: string, run: ResearchRunInfo, freshness: ResearchReportFreshness): void {
-  messageStoreForRun(runId).update((items) => items.map((message) => {
-    if (
-      message.research?.runId !== runId
-      || message.research.revision > run.revision
-      || (message.research.reportSyncRequestId ?? 0) > freshness.requestId
-    ) return message;
-    return projectResearchRun(message, run, activeStreamMessageId(message.chat_id), freshness);
-  }));
-}
-
-function projectResearchRun(
-  message: MessageInfo,
-  run: ResearchRunInfo,
-  streamingMessageId: string | null,
-  freshness: ResearchReportFreshness,
-): MessageInfo {
-  if (
-    message.research?.runId === run.runId
-    && (
-      message.research.revision > run.revision
-      || (message.research.reportSyncRequestId ?? 0) > freshness.requestId
-    )
-  ) return message;
-  const saved = run.message;
-  const previousSaved = message.research?.message;
-  const localTextCameFromStream = message.research?.streamedContent === message.content;
-  const sameMessageStreaming = streamingMessageId === message.id;
-  const currentStatus = message.research?.status ?? freshness.statusAtRequest;
-  const streamUnchangedSinceRequest = freshness.streamedContentAtRequest === (message.research?.streamedContent ?? null);
-  const statusUnchangedSinceRequest = freshness.statusAtRequest === currentStatus;
-  const responseIsCurrent = freshness.requestId >= (message.research?.reportSyncRequestId ?? 0);
-  const canSyncReport = streamUnchangedSinceRequest
-    && statusUnchangedSinceRequest
-    && responseIsCurrent
-    && (!sameMessageStreaming || !isActiveResearch(run.status))
-    && message.role === 'assistant'
-    && saved?.id === message.id
-    && (!previousSaved || message.content === previousSaved.content || localTextCameFromStream);
-  const projectedResearch: ResearchRunInfo = {
-    ...run,
-    status: statusUnchangedSinceRequest ? run.status : currentStatus ?? run.status,
-    reportSyncStreamedContent: freshness.streamedContentAtRequest,
-    reportSyncStatusAtRequest: freshness.statusAtRequest,
-    reportSyncRequestId: freshness.requestId,
-    ...(message.research?.streamedContent !== undefined
-      ? { streamedContent: message.research.streamedContent }
-      : {}),
-  };
-  return canSyncReport
-    ? { ...message, content: saved.content, artifacts: saved.artifacts ?? message.artifacts, research: projectedResearch }
-    : { ...message, research: projectedResearch };
-}
-
-function syncPendingResearchReports(
-  targetMessages: Writable<MessageInfo[]> = messages,
-  streamingMessageIdOverride?: string | null,
-): void {
-  targetMessages.update((items) => items.map((message) => {
-    if (!message.research) return message;
-    const freshness = {
-      requestId: message.research.reportSyncRequestId ?? 0,
-      streamedContentAtRequest: Object.prototype.hasOwnProperty.call(message.research, 'reportSyncStreamedContent')
-        ? message.research.reportSyncStreamedContent ?? null
-        : message.research.streamedContent ?? null,
-      statusAtRequest: Object.prototype.hasOwnProperty.call(message.research, 'reportSyncStatusAtRequest')
-        ? message.research.reportSyncStatusAtRequest ?? null
-        : message.research.status,
-      contentAtRequest: message.content,
-    };
-    return projectResearchRun(
-      message,
-      message.research,
-      streamingMessageIdOverride === undefined
-        ? activeStreamMessageId(message.chat_id)
-        : streamingMessageIdOverride,
-      freshness,
-    );
-  }));
-}
-
-function syncResearchPolling(chatId: string): void {
-  const hasActive = get(messages).some((message) => message.research && isActiveResearch(message.research.status));
-  if (!hasActive) {
-    stopResearchPolling();
-    return;
-  }
-  if (researchPollTimer && researchPollChatId === chatId) return;
-  stopResearchPolling();
-  researchPollChatId = chatId;
-  researchPollTimer = setInterval(() => { void refreshResearchRunStates(chatId); }, 2500);
-}
-
-export function stopResearchPolling(chatId?: string): void {
-  if (chatId && researchPollChatId !== chatId) return;
-  if (researchPollTimer) clearInterval(researchPollTimer);
-  researchPollTimer = null;
-  researchPollChatId = null;
-}
-
-async function refreshResearchRunStates(chatId: string): Promise<void> {
-  if (get(activeChat)?.id !== chatId) {
-    stopResearchPolling(chatId);
-    return;
-  }
-  const running = get(messages).filter((message) => message.research && isActiveResearch(message.research.status));
-  if (!running.length) {
-    stopResearchPolling(chatId);
-    return;
-  }
-  await Promise.all(running.map(async (message) => {
-    const run = message.research;
-    if (!run) return;
-    const freshness = newResearchReportFreshness(message);
-    const fresh = await getChatRun(chatId, run.runId).catch(() => null);
-    if (fresh && get(activeChat)?.id === chatId) applyResearchRun(run.runId, fresh, freshness);
-  }));
-  syncResearchPolling(chatId);
 }
 
 const CHAT_PAGE_SIZE = 50;
@@ -357,47 +215,11 @@ export async function loadChat(chatId: string, options: { background?: boolean }
           }
         }
       }
-      const researchRuns = (data.runs ?? []).filter((run: { task_kind?: string; assistant_message_id?: string; status?: ResearchRunStatus }) =>
-        run.task_kind === 'research' && msgs.some((message: { id: string }) => message.id === run.assistant_message_id),
+      await research.hydrateResearchRuns(
+        chatId, msgs, data.runs ?? [], streamContext?.messages ?? messages,
+        () => streamContext?.messageId ?? null, () => version === chatVersion,
       );
-      const runStates = await Promise.all(researchRuns.map(async (run: { id: string; assistant_message_id: string; status: ResearchRunStatus }) => {
-        const storedMessage = (streamContext ? get(streamContext.messages) : get(messages))
-          .find((message) => message.id === run.assistant_message_id);
-        const localMessage = storedMessage?.chat_id === chatId ? storedMessage : undefined;
-        const loadedMessage = msgs.find((message: { id: string }) => message.id === run.assistant_message_id) as MessageInfo | undefined;
-        const freshness = newResearchReportFreshness(localMessage ?? loadedMessage, localMessage?.research?.status ?? run.status);
-        return {
-          runId: run.id,
-          freshness,
-          state: await getChatRun(chatId, run.id).catch(() => null),
-        };
-      }));
       if (version !== chatVersion) return;
-      for (const { runId, state, freshness } of runStates) {
-        if (!state) continue;
-        const assistantMessageId = researchRuns.find((run: { id: string; assistant_message_id: string }) => run.id === runId)?.assistant_message_id;
-        const message = msgs.find((item: { research?: ResearchRunInfo }) => item.research?.runId === runId)
-          ?? msgs.find((item: { id: string }) => item.id === assistantMessageId);
-        if (!message) continue;
-        const latestLocal = (streamContext ? get(streamContext.messages) : get(messages))
-          .find((item) => item.id === assistantMessageId && item.chat_id === chatId);
-        let projectionBase = message as MessageInfo;
-        if (latestLocal && latestLocal.research && latestLocal.research.runId === runId) {
-          const latestResearch = latestLocal.research;
-          const localChangedWhileLoading = (
-            latestLocal.content !== freshness.contentAtRequest
-            || (latestResearch.streamedContent ?? null) !== freshness.streamedContentAtRequest
-            || latestResearch.status !== freshness.statusAtRequest
-          );
-          if (localChangedWhileLoading) projectionBase = latestLocal;
-        }
-        Object.assign(message, projectResearchRun(
-          projectionBase,
-          state,
-          streamContext?.messageId ?? null,
-          freshness,
-        ));
-      }
       if (streamContext) streamContext.messages.set(msgs);
       else if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);
       syncResearchPolling(chatId);
@@ -472,27 +294,6 @@ function formatError(err: { detail: unknown }, status: number): string {
     }
   }
   return typeof err.detail === 'string' ? err.detail : `Request failed (HTTP ${status})`;
-}
-
-/** Stop the current generation */
-export async function stopResearchRun(chatId: string, runId: string): Promise<void> {
-  const targetMessages = messageStoreForRun(runId);
-  const initialMessage = get(targetMessages).find((message) => message.research?.runId === runId);
-  const freshness = newResearchReportFreshness(initialMessage);
-  try {
-    const state = await cancelChatRun(chatId, runId);
-    applyResearchRun(runId, state, freshness);
-  } catch (error) {
-    const actualState = await getChatRun(chatId, runId).catch(() => null);
-    if (actualState) {
-      applyResearchRun(runId, actualState, freshness);
-    }
-    const status = error instanceof ChatRunRequestError ? ` (HTTP ${error.status})` : '';
-    const detail = error instanceof Error ? error.message : String(error);
-    targetMessages.update((items) => items.map((message) => message.research?.runId === runId
-      ? { ...message, error: `Stop request failed${status}: ${detail}` }
-      : message));
-  }
 }
 
 /** Stop active research durably; ordinary streams keep their abort behavior. */

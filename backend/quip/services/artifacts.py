@@ -1,14 +1,14 @@
 """Artifact parser — extracts <artifact> tags from model output."""
-import re
-import hashlib
-from uuid import uuid4
 
+import hashlib
+import re
+from uuid import uuid4
 
 # Regex to match <artifact ...attributes...>content</artifact>
 # Uses a more flexible attribute parser
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 _TAG_RE = re.compile(
-    r'<artifact\s+([^>]*)>(.*?)</artifact>',
+    r"<artifact\s+([^>]*)>(.*?)</artifact>",
     re.DOTALL,
 )
 

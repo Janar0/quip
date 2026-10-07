@@ -1,9 +1,9 @@
 """Admin endpoints — settings, user management, models, usage."""
+
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -12,19 +12,20 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from quip.core.config import get_all_settings, get_bool_setting, get_setting, save_settings, set_setting
 from quip.database import get_db
+from quip.models.budget import Budget
 from quip.models.chat import Chat
 from quip.models.config import Config
-from quip.models.workspace import Workspace
 from quip.models.usage import UsageLog
-from quip.models.budget import Budget
-from quip.models.user import User, Auth
-from quip.services.permissions import get_admin_user
-from quip.core.config import get_setting, set_setting, save_settings, get_bool_setting, get_all_settings
-from quip.services.auth import hash_password
-from quip.providers.openrouter import list_models as or_list_models, get_key_info
+from quip.models.user import Auth, User
+from quip.models.workspace import Workspace
+from quip.providers.openrouter import get_key_info
+from quip.providers.openrouter import list_models as or_list_models
 from quip.routers.models import get_cached_models, invalidate_openrouter_models_cache
 from quip.services import model_updater
+from quip.services.auth import hash_password
+from quip.services.permissions import get_admin_user
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 _model_update_in_progress = False
@@ -49,6 +50,7 @@ def _single_model_update(handler):
 
 
 # --- Settings ---
+
 
 class SettingsUpdate(BaseModel):
     openrouter_api_key: str | None = None
@@ -101,10 +103,10 @@ class SettingsResponse(BaseModel):
     rag_chunk_overlap: int = 64
     rag_top_k: int = 5
     model_aliases: dict[str, str] = {}
-    search_model: Optional[str] = None
-    research_model: Optional[str] = None
-    title_model: Optional[str] = None
-    default_model: Optional[str] = None
+    search_model: str | None = None
+    research_model: str | None = None
+    title_model: str | None = None
+    default_model: str | None = None
     mistral_api_key_set: bool = False
     ocr_provider: str = "auto"
     ocr_tesseract_langs: str = "eng+rus"
@@ -112,9 +114,9 @@ class SettingsResponse(BaseModel):
     tool_gating_enabled: bool = True
     telegram_bot_token_set: bool = False
     telegram_allowed_user_ids: str = ""
-    telegram_model: Optional[str] = None
-    telegram_login_redirect_uri: Optional[str] = None
-    public_app_url: Optional[str] = None
+    telegram_model: str | None = None
+    telegram_login_redirect_uri: str | None = None
+    public_app_url: str | None = None
     qwen_voice_enabled: bool = False
     qwen_realtime_endpoint: str = "https://maas.qwencloudapi.com/api/v1/webrtc/realtime"
     qwen_realtime_api_key_set: bool = False
@@ -173,8 +175,12 @@ async def get_settings(user: User = Depends(get_admin_user)):
 
 _JSON_SETTING_FIELDS = {"model_whitelist", "model_aliases"}
 _BOOL_SETTING_FIELDS = {
-    "rag_enabled", "search_enabled", "research_enabled", "tool_gating_enabled",
-    "qwen_voice_enabled", "qwen_realtime_video_enabled",
+    "rag_enabled",
+    "search_enabled",
+    "research_enabled",
+    "tool_gating_enabled",
+    "qwen_voice_enabled",
+    "qwen_realtime_video_enabled",
 }
 
 
@@ -201,6 +207,7 @@ async def update_settings(
 
 
 # --- Models ---
+
 
 @router.get("/models")
 async def get_models(user: User = Depends(get_admin_user)):
@@ -238,7 +245,9 @@ async def update_models(
         raise HTTPException(status_code=502, detail="The provider returned no model catalog; nothing was changed.")
     catalog = [item for item in catalog if isinstance(item, dict) and isinstance(item.get("id"), str)]
     if not catalog:
-        raise HTTPException(status_code=502, detail="The provider returned an invalid model catalog; nothing was changed.")
+        raise HTTPException(
+            status_code=502, detail="The provider returned an invalid model catalog; nothing was changed."
+        )
     invalidate_openrouter_models_cache()
     fresh_by_id = {item["id"]: item for item in catalog}
     fresh_models = [{"id": item["id"], "name": str(item.get("name") or item["id"])} for item in catalog]
@@ -247,9 +256,7 @@ async def update_models(
     initial_config = config_result.scalar_one_or_none()
     initial_config_version = initial_config.version if initial_config else None
     initial_config_data = (
-        json.dumps(initial_config.data, sort_keys=True, separators=(",", ":"))
-        if initial_config
-        else None
+        json.dumps(initial_config.data, sort_keys=True, separators=(",", ":")) if initial_config else None
     )
     users = list((await db.execute(select(User))).scalars().all())
     workspaces = list((await db.execute(select(Workspace))).scalars().all())
@@ -257,9 +264,7 @@ async def update_models(
         target_user.id: (target_user.settings.get("default_model") if isinstance(target_user.settings, dict) else None)
         for target_user in users
     }
-    workspace_default_snapshot = {
-        workspace.id: workspace.default_model for workspace in workspaces
-    }
+    workspace_default_snapshot = {workspace.id: workspace.default_model for workspace in workspaces}
     setting_refs = {
         key: get_setting(key) or ""
         for key in ("default_model", "search_model", "research_model", "title_model", "telegram_model")
@@ -299,9 +304,7 @@ async def update_models(
     candidate_pools, candidate_skips = model_updater.find_successor_candidates(source_ids, catalog)
     already_skipped = {item["model_id"] for item in candidate_skips}
     mappable = {
-        source_id: candidates
-        for source_id, candidates in candidate_pools.items()
-        if source_id not in already_skipped
+        source_id: candidates for source_id, candidates in candidate_pools.items() if source_id not in already_skipped
     }
     suggestions: dict[str, str] = {}
     duplicate_suggestions: set[str] = set()
@@ -364,46 +367,26 @@ async def update_models(
             # existing records on databases that implement SELECT FOR UPDATE.
             if db.get_bind().dialect.name == "sqlite":
                 await db.execute(text("BEGIN IMMEDIATE"))
-            config = (
-                await db.execute(
-                    select(Config).where(Config.id == 1).with_for_update()
-                )
-            ).scalar_one_or_none()
+            config = (await db.execute(select(Config).where(Config.id == 1).with_for_update())).scalar_one_or_none()
             current_config_version = config.version if config else None
-            current_config_data = (
-                json.dumps(config.data, sort_keys=True, separators=(",", ":"))
-                if config
-                else None
-            )
+            current_config_data = json.dumps(config.data, sort_keys=True, separators=(",", ":")) if config else None
             current_users = list(
-                (
-                    await db.execute(
-                        select(User)
-                        .with_for_update()
-                        .execution_options(populate_existing=True)
-                    )
-                ).scalars().all()
+                (await db.execute(select(User).with_for_update().execution_options(populate_existing=True)))
+                .scalars()
+                .all()
             )
             current_workspaces = list(
-                (
-                    await db.execute(
-                        select(Workspace)
-                        .with_for_update()
-                        .execution_options(populate_existing=True)
-                    )
-                ).scalars().all()
+                (await db.execute(select(Workspace).with_for_update().execution_options(populate_existing=True)))
+                .scalars()
+                .all()
             )
             current_user_defaults = {
                 target_user.id: (
-                    target_user.settings.get("default_model")
-                    if isinstance(target_user.settings, dict)
-                    else None
+                    target_user.settings.get("default_model") if isinstance(target_user.settings, dict) else None
                 )
                 for target_user in current_users
             }
-            current_workspace_defaults = {
-                workspace.id: workspace.default_model for workspace in current_workspaces
-            }
+            current_workspace_defaults = {workspace.id: workspace.default_model for workspace in current_workspaces}
             if (
                 current_config_version != initial_config_version
                 or current_config_data != initial_config_data
@@ -491,6 +474,7 @@ def _read_json_setting(key: str, default):
 
 # --- Users ---
 
+
 class UserListItem(BaseModel):
     id: str
     email: str
@@ -498,7 +482,7 @@ class UserListItem(BaseModel):
     name: str
     role: str
     is_active: bool
-    last_active_at: Optional[datetime] = None
+    last_active_at: datetime | None = None
 
 
 @router.get("/users", response_model=list[UserListItem])
@@ -510,8 +494,12 @@ async def list_users(
     users = result.scalars().all()
     return [
         UserListItem(
-            id=str(u.id), email=u.email, username=u.username,
-            name=u.name, role=u.role, is_active=u.is_active,
+            id=str(u.id),
+            email=u.email,
+            username=u.username,
+            name=u.name,
+            role=u.role,
+            is_active=u.is_active,
             last_active_at=u.last_active_at,
         )
         for u in users
@@ -609,13 +597,14 @@ async def delete_user(
 
 # --- Usage ---
 
+
 @router.get("/usage")
 async def get_usage(
     days: int = Query(default=30, ge=1, le=365),
     admin: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(UTC) - timedelta(days=days)
 
     # Total stats
     totals_q = await db.execute(
@@ -673,8 +662,7 @@ async def get_usage(
         .order_by(func.sum(UsageLog.cost).desc())
     )
     by_user = [
-        {"name": r.name, "email": r.email, "requests": r.requests, "cost": float(r.cost)}
-        for r in by_user_q.all()
+        {"name": r.name, "email": r.email, "requests": r.requests, "cost": float(r.cost)} for r in by_user_q.all()
     ]
 
     # By day (last N days) — use func.date() to get plain "YYYY-MM-DD" string;
@@ -690,10 +678,7 @@ async def get_usage(
         .group_by(func.date(UsageLog.created_at))
         .order_by(func.date(UsageLog.created_at))
     )
-    by_day = [
-        {"day": str(r.day), "requests": r.requests, "cost": float(r.cost)}
-        for r in by_day_q.all()
-    ]
+    by_day = [{"day": str(r.day), "requests": r.requests, "cost": float(r.cost)} for r in by_day_q.all()]
 
     return {
         "period_days": days,
@@ -711,6 +696,7 @@ async def get_usage(
 
 
 # --- Budgets ---
+
 
 class BudgetItem(BaseModel):
     id: str
@@ -744,10 +730,15 @@ async def list_budgets(
     items = []
     for b in budgets:
         user_name = user_names.get(b.user_id) if b.user_id else None
-        items.append(BudgetItem(
-            id=str(b.id), user_id=str(b.user_id) if b.user_id else None,
-            user_name=user_name, period=b.period, limit_usd=float(b.limit_usd),
-        ))
+        items.append(
+            BudgetItem(
+                id=str(b.id),
+                user_id=str(b.user_id) if b.user_id else None,
+                user_name=user_name,
+                period=b.period,
+                limit_usd=float(b.limit_usd),
+            )
+        )
     return items
 
 
@@ -758,9 +749,7 @@ async def upsert_budget(
     db: AsyncSession = Depends(get_db),
 ):
     uid = UUID(data.user_id) if data.user_id else None
-    result = await db.execute(
-        select(Budget).where(Budget.user_id == uid, Budget.period == data.period)
-    )
+    result = await db.execute(select(Budget).where(Budget.user_id == uid, Budget.period == data.period))
     budget = result.scalar_one_or_none()
     if budget:
         budget.limit_usd = data.limit_usd

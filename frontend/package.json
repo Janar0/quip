@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
+		"postbuild": "node scripts/check-pwa.mjs",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "vitest run",
@@ -15,6 +16,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"overrides": {
+		"katex": "$katex",
 		"@sveltejs/kit": {
 			"cookie": "^0.7.2"
 		},
@@ -48,7 +50,7 @@
 		"@fontsource/manrope": "^5.2.8",
 		"chart.js": "^4.5.1",
 		"highlight.js": "^11.11.1",
-		"katex": "^0.16.45",
+		"katex": "^0.18.2",
 		"marked": "^17.0.6",
 		"mermaid": "^11.14.0",
 		"mustache": "^4.2.0",

@@ -43,6 +43,10 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# The aiohttp dependency chain must not resolve the vulnerable items-view implementation.
+constraint-dependencies = ["multidict>=6.9.1"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

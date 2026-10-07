@@ -1,7 +1,8 @@
 """Tests for document text extraction and chunking."""
+
 import pytest
 
-from quip.services.documents import extract_text, chunk_text
+from quip.services.documents import chunk_text, extract_text
 
 
 @pytest.mark.asyncio

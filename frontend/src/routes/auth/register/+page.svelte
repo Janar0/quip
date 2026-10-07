@@ -14,7 +14,6 @@
   let error = $state('');
   let loading = $state(false);
   let setupRequired = $state(false);
-  let adminEmailConfigured = $state(false);
   let bootstrapToken = $state('');
   const telegramLink = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('telegram_link')
@@ -23,7 +22,6 @@
   onMount(() => {
     getSetupStatus().then((setup) => {
       setupRequired = setup.required;
-      adminEmailConfigured = setup.admin_email_configured;
     }).catch(() => { error = $t('error.connection'); });
   });
 
@@ -80,10 +78,10 @@
             type="password"
             class="input font-mono"
             bind:value={bootstrapToken}
-            required={!adminEmailConfigured}
+            required
             autocomplete="one-time-code"
           />
-          <span class="text-xs opacity-50">{adminEmailConfigured ? $t('auth.bootstrapTokenOptional') : $t('auth.bootstrapTokenHint')}</span>
+          <span class="text-xs opacity-50">{$t('auth.bootstrapTokenHint')}</span>
         </label>
       {/if}
 

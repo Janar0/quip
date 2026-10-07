@@ -1,14 +1,14 @@
 """Migration endpoint — import chats from OpenWebUI export."""
-import json
-from datetime import datetime, timezone
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import json
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from quip.database import get_db
-from quip.models.user import User
 from quip.models.chat import Chat, Message
+from quip.models.user import User
 from quip.services.permissions import get_current_user
 
 router = APIRouter(prefix="/api/migrate", tags=["migrate"])
@@ -58,13 +58,13 @@ async def import_openwebui(
             # Parse timestamp
             created_ts = chat_data.get("created_at")
             if isinstance(created_ts, (int, float)):
-                created_at = datetime.fromtimestamp(created_ts, tz=timezone.utc)
+                created_at = datetime.fromtimestamp(created_ts, tz=UTC)
             else:
-                created_at = datetime.now(timezone.utc)
+                created_at = datetime.now(UTC)
 
             updated_ts = chat_data.get("updated_at")
             if isinstance(updated_ts, (int, float)):
-                updated_at = datetime.fromtimestamp(updated_ts, tz=timezone.utc)
+                updated_at = datetime.fromtimestamp(updated_ts, tz=UTC)
             else:
                 updated_at = created_at
 
@@ -114,7 +114,7 @@ async def import_openwebui(
 
                 msg_ts = msg_data.get("timestamp")
                 if isinstance(msg_ts, (int, float)):
-                    msg_created = datetime.fromtimestamp(msg_ts, tz=timezone.utc)
+                    msg_created = datetime.fromtimestamp(msg_ts, tz=UTC)
                 else:
                     msg_created = created_at
 

@@ -5,12 +5,12 @@ environment, fresh checkout, stripped Docker image), every lookup returns
 ``None`` and the base prompt simply omits the location line — the server
 still starts and serves requests normally.
 """
+
 import ipaddress
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from fastapi import Request
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 _reader = None
 try:
     import geoip2.database  # type: ignore
+
     _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "GeoLite2-City.mmdb"
     if _DB_PATH.exists():
         _reader = geoip2.database.Reader(str(_DB_PATH))
@@ -34,10 +35,10 @@ except Exception as e:  # noqa: BLE001
 @dataclass(frozen=True)
 class GeoInfo:
     country: str
-    city: Optional[str]
+    city: str | None
 
 
-def client_ip(request: Request) -> Optional[str]:
+def client_ip(request: Request) -> str | None:
     """Extract the best-effort client IP from a FastAPI request.
 
     Honors ``X-Forwarded-For`` (first hop) then ``X-Real-IP`` then the
@@ -48,9 +49,7 @@ def client_ip(request: Request) -> Optional[str]:
     if xff:
         ip = xff.split(",")[0].strip()
     else:
-        ip = request.headers.get("x-real-ip") or (
-            request.client.host if request.client else None
-        )
+        ip = request.headers.get("x-real-ip") or (request.client.host if request.client else None)
     if not ip:
         return None
     try:
@@ -63,7 +62,7 @@ def client_ip(request: Request) -> Optional[str]:
 
 
 @lru_cache(maxsize=4096)
-def resolve(ip: Optional[str]) -> Optional[GeoInfo]:
+def resolve(ip: str | None) -> GeoInfo | None:
     """Resolve an IP to coarse location (city + country). Best-effort."""
     if not ip or _reader is None:
         return None
@@ -77,7 +76,7 @@ def resolve(ip: Optional[str]) -> Optional[GeoInfo]:
     return GeoInfo(country=country, city=r.city.name or None)
 
 
-def format_location(geo: Optional[GeoInfo]) -> Optional[str]:
+def format_location(geo: GeoInfo | None) -> str | None:
     """Render a one-line location hint for the system prompt, or None."""
     if not geo:
         return None

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, DateTime, JSON, func
+from sqlalchemy import JSON, Column, DateTime, Integer, func
 
 from quip.database import Base
 

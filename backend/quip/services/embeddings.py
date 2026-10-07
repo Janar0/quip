@@ -1,7 +1,7 @@
 """Embedding service — generate embeddings via OpenRouter or Ollama."""
+
 import logging
 import time
-from typing import Optional
 
 import httpx
 
@@ -19,7 +19,7 @@ _QUERY_CACHE_MAX = 256
 _query_cache: dict[tuple[str, str, str], tuple[float, list[float]]] = {}
 
 
-def _cache_get(key: tuple[str, str, str]) -> Optional[list[float]]:
+def _cache_get(key: tuple[str, str, str]) -> list[float] | None:
     hit = _query_cache.get(key)
     if not hit:
         return None
@@ -57,7 +57,7 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
 
     # Batch processing
     for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i:i + BATCH_SIZE]
+        batch = texts[i : i + BATCH_SIZE]
 
         if provider == "ollama":
             embeddings = await _embed_ollama(batch, model)
@@ -74,7 +74,7 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
     return all_embeddings
 
 
-async def _embed_openrouter(texts: list[str], model: str) -> Optional[list[list[float]]]:
+async def _embed_openrouter(texts: list[str], model: str) -> list[list[float]] | None:
     """Generate embeddings via OpenRouter (OpenAI-compatible endpoint)."""
     api_key = get_setting("openrouter_api_key")
     if not api_key:
@@ -108,7 +108,7 @@ async def _embed_openrouter(texts: list[str], model: str) -> Optional[list[list[
         return None
 
 
-async def _embed_ollama(texts: list[str], model: str) -> Optional[list[list[float]]]:
+async def _embed_ollama(texts: list[str], model: str) -> list[list[float]] | None:
     """Generate embeddings via Ollama."""
     base_url = get_setting("ollama_url", "http://localhost:11434")
 

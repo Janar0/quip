@@ -1,4 +1,4 @@
-"""Skill: poll — Display a poll or comparison card with options. Use when user wants to create a """
+"""Skill: poll — Display a poll or comparison card with options. Use when user wants to create a"""
 
 
 async def _handler(params: dict) -> dict:
@@ -12,17 +12,17 @@ async def _handler(params: dict) -> dict:
 
 
 SKILL = {
-    'id': 'poll',
-    'name': 'Poll',
-    'description': 'Display a poll or comparison card with options. Use when user wants to create a poll or compare options visually.',
-    'category': 'widget',
-    'handler': _handler,
-    'icon': 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """Widget: poll — display a poll/comparison card with options.
+    "id": "poll",
+    "name": "Poll",
+    "description": "Display a poll or comparison card with options. Use when user wants to create a poll or compare options visually.",
+    "category": "widget",
+    "handler": _handler,
+    "icon": "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """Widget: poll — display a poll/comparison card with options.
 
 Call: use_widget(name="poll", data={...})
 
@@ -38,9 +38,15 @@ Data schema:
 
 This is display-only — the card shows options but doesn't collect votes.
 Set votes/percent to 0 for new polls. Pre-calculate percent if you have data: percent = round(votes/total*100).""",
-    'data_schema': {'question': 'string', 'options': [{'label': 'string', 'description': 'string (optional)', 'votes': 'number', 'percent': 'number 0-100'}], 'total_votes': 'number'},
-    'api_config': None,
-    'template_html': """<div class="widget-poll">
+    "data_schema": {
+        "question": "string",
+        "options": [
+            {"label": "string", "description": "string (optional)", "votes": "number", "percent": "number 0-100"}
+        ],
+        "total_votes": "number",
+    },
+    "api_config": None,
+    "template_html": """<div class="widget-poll">
   <div class="wpl-question">{{question}}</div>
   <div class="wpl-options">
     {{#options}}
@@ -59,7 +65,7 @@ Set votes/percent to 0 for new polls. Pre-calculate percent if you have data: pe
   </div>
   {{#total_votes}}<div class="wpl-total">{{total_votes}} total votes</div>{{/total_votes}}
 </div>""",
-    'template_css': """.widget-card .widget-poll {
+    "template_css": """.widget-card .widget-poll {
   padding: 1.35rem;
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--quip-glass-bg, rgba(22,22,26,0.42));

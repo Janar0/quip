@@ -12,6 +12,7 @@ Configure with `ocr_provider` setting. Graceful: if a provider's deps are
 missing it returns an empty result so callers (documents.py) fall back to
 embedded text extraction.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,6 +41,7 @@ class OCRResult:
 
 # ── Abstract provider ─────────────────────────────────────────────────────
 
+
 class BaseOCRProvider(ABC):
     name: str = "base"
 
@@ -63,8 +65,9 @@ def _check_tesseract() -> bool:
     global _TESSERACT_AVAILABLE
     if _TESSERACT_AVAILABLE is None:
         try:
-            import pytesseract  # noqa: F401
             import PIL.Image  # noqa: F401
+            import pytesseract  # noqa: F401
+
             _TESSERACT_AVAILABLE = True
         except ImportError:
             _TESSERACT_AVAILABLE = False
@@ -72,16 +75,17 @@ def _check_tesseract() -> bool:
 
 
 _IS_FORMULA_RE = (
-    r'\$\$|\$[^$]+\$|'         # LaTeX delimiters
-    r'\\int|\\sum|\\frac|\\sqrt|\\alpha|\\beta|\\gamma|\\delta|\\lambda|\\mu|\\sigma|'
-    r'\\prod|\\infty|\\partial|\\nabla|\\leq|\\geq|\\neq|\\approx|'
-    r'∫|∑|∏|√|∞|∂|∇|α|β|γ|δ|λ|μ|σ'
+    r"\$\$|\$[^$]+\$|"  # LaTeX delimiters
+    r"\\int|\\sum|\\frac|\\sqrt|\\alpha|\\beta|\\gamma|\\delta|\\lambda|\\mu|\\sigma|"
+    r"\\prod|\\infty|\\partial|\\nabla|\\leq|\\geq|\\neq|\\approx|"
+    r"∫|∑|∏|√|∞|∂|∇|α|β|γ|δ|λ|μ|σ"
 )
 
 
 def _looks_like_formula(text: str) -> bool:
     """Heuristic: text contains LaTeX patterns or math symbols."""
     import re
+
     return bool(re.search(_IS_FORMULA_RE, text))
 
 
@@ -101,9 +105,7 @@ class TesseractOCR(BaseOCRProvider):
 
         loop = asyncio.get_running_loop()
         try:
-            img = await loop.run_in_executor(
-                None, lambda: Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            )
+            img = await loop.run_in_executor(None, lambda: Image.open(io.BytesIO(image_bytes)).convert("RGB"))
         except Exception as e:
             return OCRResult(error=f"image_open_error: {e}")
 
@@ -150,26 +152,32 @@ class MistralOCR(BaseOCRProvider):
         if not key:
             return OCRResult(error="no_key")
         b64 = base64.b64encode(image_bytes).decode("ascii")
-        return await self._post({
-            "model": _MISTRAL_OCR_MODEL,
-            "document": {
-                "type": "image_url",
-                "image_url": f"data:{mime};base64,{b64}",
+        return await self._post(
+            {
+                "model": _MISTRAL_OCR_MODEL,
+                "document": {
+                    "type": "image_url",
+                    "image_url": f"data:{mime};base64,{b64}",
+                },
             },
-        }, key)
+            key,
+        )
 
     async def ocr_pdf(self, pdf_bytes: bytes) -> OCRResult:
         key = _mistral_key()
         if not key:
             return OCRResult(error="no_key")
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
-        return await self._post({
-            "model": _MISTRAL_OCR_MODEL,
-            "document": {
-                "type": "document_url",
-                "document_url": f"data:application/pdf;base64,{b64}",
+        return await self._post(
+            {
+                "model": _MISTRAL_OCR_MODEL,
+                "document": {
+                    "type": "document_url",
+                    "document_url": f"data:application/pdf;base64,{b64}",
+                },
             },
-        }, key)
+            key,
+        )
 
     async def _post(self, payload: dict, key: str) -> OCRResult:
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -185,9 +193,9 @@ class MistralOCR(BaseOCRProvider):
                         return self._parse(r.json())
                     if 400 <= r.status_code < 500:
                         return OCRResult(error=f"http_{r.status_code}: {r.text[:200]}")
-                    logger.warning(f"Mistral OCR {r.status_code}, attempt {attempt+1}")
+                    logger.warning(f"Mistral OCR {r.status_code}, attempt {attempt + 1}")
                 except (httpx.TimeoutException, httpx.NetworkError) as e:
-                    logger.warning(f"Mistral OCR network error attempt {attempt+1}: {e}")
+                    logger.warning(f"Mistral OCR network error attempt {attempt + 1}: {e}")
                 except Exception as e:
                     logger.error(f"Mistral OCR unexpected error: {e}")
                     return OCRResult(error=str(e))
@@ -201,6 +209,7 @@ class MistralOCR(BaseOCRProvider):
 
 
 # ── Auto (tess → mistral fallback) ────────────────────────────────────────
+
 
 class AutoOCR(BaseOCRProvider):
     """Try Tesseract first; escalate to Mistral for formula-heavy content."""
@@ -218,8 +227,11 @@ class AutoOCR(BaseOCRProvider):
         key = _mistral_key()
         if not key:
             return res  # No Mistral key — use whatever tesseract gave us
-        logger.info("AutoOCR: tess gave %d chars (formula=%s), falling back to mistral",
-                    len(res.text), _looks_like_formula(res.text))
+        logger.info(
+            "AutoOCR: tess gave %d chars (formula=%s), falling back to mistral",
+            len(res.text),
+            _looks_like_formula(res.text),
+        )
         mr = await mistral.ocr_image(image_bytes, mime)
         return mr if mr.text else res  # Prefer Mistral on success, keep tess on failure
 
@@ -253,6 +265,7 @@ def _get_provider() -> BaseOCRProvider:
 
 
 # ── Public API (backwards-compat wrappers) ────────────────────────────────
+
 
 async def ocr_image(image_bytes: bytes, mime: str) -> OCRResult:
     """Run OCR on a single image using the configured provider."""

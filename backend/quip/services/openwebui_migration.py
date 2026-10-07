@@ -11,17 +11,18 @@ Detection order:
 
 Migration is idempotent: a .migrated marker file prevents re-runs.
 """
+
 import json
 import logging
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from quip.database import async_session, DATABASE_URL
-from quip.models.user import User, Auth
+from quip.database import DATABASE_URL, async_session
 from quip.models.chat import Chat, Message
+from quip.models.user import Auth, User
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ MARKER_FILENAME = "webui.db.migrated"
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
+
 
 def _quip_db_dir() -> Path:
     url = DATABASE_URL
@@ -79,11 +81,14 @@ def _already_migrated(webui_path: Path) -> bool:
 
 def _write_marker(webui_path: Path, stats: dict) -> None:
     _marker_path(webui_path).write_text(
-        json.dumps({
-            "migrated_at": datetime.now(timezone.utc).isoformat(),
-            "source": str(webui_path),
-            **stats,
-        }, indent=2),
+        json.dumps(
+            {
+                "migrated_at": datetime.now(UTC).isoformat(),
+                "source": str(webui_path),
+                **stats,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
@@ -92,17 +97,18 @@ def _write_marker(webui_path: Path, stats: dict) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _ts(val) -> datetime:
     if val is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if isinstance(val, (int, float)):
-        return datetime.fromtimestamp(float(val), tz=timezone.utc)
+        return datetime.fromtimestamp(float(val), tz=UTC)
     if isinstance(val, str):
         try:
             return datetime.fromisoformat(val.replace("Z", "+00:00"))
         except Exception:
             pass
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _uid(val) -> uuid.UUID | None:
@@ -134,7 +140,7 @@ def _decode_content(raw) -> str:
         return ""
     # Try JSON decode: '"actual text"' or '["block1","block2"]'
     stripped = text.strip()
-    if stripped.startswith(('"', '[', '{')):
+    if stripped.startswith(('"', "[", "{")):
         try:
             decoded = json.loads(stripped)
             return _extract_text(decoded)
@@ -163,6 +169,7 @@ def _extract_text(content) -> str:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 async def run_migration_if_needed() -> None:
     webui_path = _find_webui_db()
     if not webui_path:
@@ -181,7 +188,9 @@ async def run_migration_if_needed() -> None:
     # Hard stop: don't touch a quip.db that already has data
     async with async_session() as db:
         from sqlalchemy import func, select
+
         from quip.models.user import User as _User
+
         result = await db.execute(select(func.count()).select_from(_User))
         existing_users = result.scalar_one()
     if existing_users > 0:
@@ -242,9 +251,10 @@ async def run_migration_if_needed() -> None:
 # Entity migrators
 # ---------------------------------------------------------------------------
 
+
 async def _migrate_users(cur: sqlite3.Cursor, db, stats: dict) -> None:
     cur.execute(
-        'SELECT id, name, email, role, profile_image_url, settings, '
+        "SELECT id, name, email, role, profile_image_url, settings, "
         'created_at, updated_at, last_active_at, username FROM "user"'
     )
 
@@ -323,10 +333,7 @@ async def _migrate_auths(cur: sqlite3.Cursor, db, stats: dict) -> None:
 
 
 async def _migrate_chats(cur: sqlite3.Cursor, db, stats: dict) -> None:
-    cur.execute(
-        "SELECT id, user_id, title, share_id, archived, pinned, meta, created_at, updated_at "
-        "FROM chat"
-    )
+    cur.execute("SELECT id, user_id, title, share_id, archived, pinned, meta, created_at, updated_at FROM chat")
 
     for row in cur.fetchall():
         cid = _uid(row["id"])
@@ -438,6 +445,7 @@ async def _migrate_messages_from_table(cur: sqlite3.Cursor, db, stats: dict) -> 
 async def _migrate_messages_from_blob(cur: sqlite3.Cursor, db, stats: dict) -> None:
     """Legacy open-webui: messages embedded in chat.chat JSON blob."""
     from sqlalchemy import func, select
+
     cur.execute("SELECT id, chat FROM chat WHERE chat IS NOT NULL AND chat != ''")
 
     rows = cur.fetchall()
@@ -452,9 +460,7 @@ async def _migrate_messages_from_blob(cur: sqlite3.Cursor, db, stats: dict) -> N
             continue
 
         # Skip if messages already exist for this chat (idempotency guard)
-        count_result = await db.execute(
-            select(func.count()).select_from(Message).where(Message.chat_id == cid)
-        )
+        count_result = await db.execute(select(func.count()).select_from(Message).where(Message.chat_id == cid))
         if count_result.scalar_one() > 0:
             continue
 

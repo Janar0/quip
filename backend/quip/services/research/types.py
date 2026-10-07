@@ -1,10 +1,10 @@
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from quip.providers.openrouter import UsageInfo
 
@@ -15,9 +15,11 @@ class ResearchLimitReached(RuntimeError):
 
 # --- Events ---
 
+
 @dataclass
 class ResearchEvent:
     """Queued event — either a status update or a content chunk."""
+
     type: str
     data: dict = field(default_factory=dict)
 
@@ -27,14 +29,15 @@ StatusCallback = Callable[[ResearchEvent], Awaitable[None]]
 
 # --- Session state ---
 
+
 @dataclass
 class SubAgentHandle:
     task_id: str
     kind: str  # "search" | "sandbox" | "artifact"
     task: asyncio.Task
     status: str = "running"  # running | done | error | cancelled
-    result: Optional[dict] = None
-    usage: Optional[UsageInfo] = None
+    result: dict | None = None
+    usage: UsageInfo | None = None
     started_at: float = field(default_factory=time.monotonic)
 
 
@@ -46,8 +49,8 @@ class ResearchSession:
     is_ollama: bool
     api_key: str
     ollama_url: str
-    locale: Optional[str] = None
-    location: Optional[str] = None
+    locale: str | None = None
+    location: str | None = None
     max_child_agents: int = 8
     max_concurrent_agents: int = 3
     max_runtime_seconds: int = 600
@@ -96,7 +99,7 @@ class ResearchSession:
     def next_task_id(self, kind: str) -> str:
         return f"{kind}-{uuid.uuid4().hex[:8]}"
 
-    def add_usage(self, u: Optional[UsageInfo]) -> None:
+    def add_usage(self, u: UsageInfo | None) -> None:
         if not u:
             return
         self.total_usage.prompt_tokens += u.prompt_tokens

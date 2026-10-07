@@ -1,4 +1,5 @@
 """Tests for web search and scraper services."""
+
 import json
 import socket
 from types import SimpleNamespace
@@ -7,9 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from quip.core.config import set_setting
-from quip.services.search import SearchResponse, SearchResult, web_search
 from quip.services.scraper import read_url
-
+from quip.services.search import SearchResponse, SearchResult, web_search
 
 # ── Search provider tests ─────────────────────────────────────────────
 
@@ -86,9 +86,10 @@ async def test_search_provider_routing():
     set_setting("searxng_url", "http://searx")
 
     empty_response = SearchResponse([], [])
-    with patch("quip.services.search._tavily_search", new_callable=AsyncMock, return_value=empty_response) as tavily, \
-         patch("quip.services.search._searxng_search", new_callable=AsyncMock, return_value=empty_response) as searxng:
-
+    with (
+        patch("quip.services.search._tavily_search", new_callable=AsyncMock, return_value=empty_response) as tavily,
+        patch("quip.services.search._searxng_search", new_callable=AsyncMock, return_value=empty_response) as searxng,
+    ):
         set_setting("search_provider", "tavily")
         await web_search("test")
         tavily.assert_called_once()
@@ -116,10 +117,13 @@ async def test_jina_reader():
     mock_response.raise_for_status = MagicMock()
     mock_response.text = content
 
-    with patch(
-        "quip.services.url_security.socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ), patch("quip.services.scraper.httpx.AsyncClient") as MockClient:
+    with (
+        patch(
+            "quip.services.url_security.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ),
+        patch("quip.services.scraper.httpx.AsyncClient") as MockClient,
+    ):
         instance = AsyncMock()
         instance.get.return_value = mock_response
         instance.__aenter__ = AsyncMock(return_value=instance)
@@ -135,12 +139,16 @@ async def test_jina_reader():
 @pytest.mark.asyncio
 async def test_jina_fallback():
     """When Jina fails, falls back to direct fetch."""
-    with patch(
-        "quip.services.url_security.socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ), patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=Exception("Jina down")), \
-         patch("quip.services.scraper._direct_fetch", new_callable=AsyncMock, return_value="Fallback content") as mock_direct:
-
+    with (
+        patch(
+            "quip.services.url_security.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ),
+        patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=Exception("Jina down")),
+        patch(
+            "quip.services.scraper._direct_fetch", new_callable=AsyncMock, return_value="Fallback content"
+        ) as mock_direct,
+    ):
         result = await read_url("https://example.com")
 
     assert result == "Fallback content"
@@ -152,8 +160,16 @@ async def test_read_url_double_failure_is_reported_as_tool_error():
     """Both failed page readers must reach the model as an error, not page content."""
     from quip.services.tools import execute_tool_call
 
-    with patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=RuntimeError("Jina unavailable")), \
-         patch("quip.services.scraper._direct_fetch", new_callable=AsyncMock, side_effect=RuntimeError("origin unavailable")):
+    with (
+        patch(
+            "quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=RuntimeError("Jina unavailable")
+        ),
+        patch(
+            "quip.services.scraper._direct_fetch",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("origin unavailable"),
+        ),
+    ):
         raw = await execute_tool_call(
             None, None, "chat-id", "read_url", json.dumps({"url": "https://example.com/article"})
         )
@@ -171,12 +187,19 @@ async def test_search_tool_execution():
     """execute_tool_call dispatches web_search correctly."""
     from quip.services.tools import execute_tool_call
 
-    mock_results = [SearchResult(title="Result", url="https://example.com", snippet="A snippet", content="Full content")]
+    mock_results = [
+        SearchResult(title="Result", url="https://example.com", snippet="A snippet", content="Full content")
+    ]
 
-    with patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])) as mock_search:
+    with patch(
+        "quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])
+    ):
         result_str = await execute_tool_call(
-            None, None, "chat-id",
-            "web_search", json.dumps({"query": "test"}),
+            None,
+            None,
+            "chat-id",
+            "web_search",
+            json.dumps({"query": "test"}),
         )
 
     result = json.loads(result_str)
@@ -314,9 +337,7 @@ async def test_search_tool_execution_keeps_failure_metadata():
         warning=None,
     )
     with patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=search_response):
-        result_str = await execute_tool_call(
-            None, None, "chat-id", "web_search", json.dumps({"query": "test"})
-        )
+        result_str = await execute_tool_call(None, None, "chat-id", "web_search", json.dumps({"query": "test"}))
 
     result = json.loads(result_str)
     assert result["status"] == "error"
@@ -395,10 +416,13 @@ async def test_completion_with_search(client, auth_headers):
         call_count += 1
         if call_count == 1:
             # First call: model decides to search
-            yield StreamChunk(tool_calls=[
-                ToolCallDelta(index=0, id="call_1", function_name="web_search",
-                              function_arguments='{"query": "test"}')
-            ])
+            yield StreamChunk(
+                tool_calls=[
+                    ToolCallDelta(
+                        index=0, id="call_1", function_name="web_search", function_arguments='{"query": "test"}'
+                    )
+                ]
+            )
             yield StreamChunk(finish_reason="tool_calls")
         else:
             # Second call: model responds with search results
@@ -408,8 +432,10 @@ async def test_completion_with_search(client, auth_headers):
 
     mock_results = [SearchResult(title="Test", url="https://test.com", snippet="A result")]
 
-    with patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream), \
-         patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])):
+    with (
+        patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream),
+        patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])),
+    ):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -444,38 +470,39 @@ async def test_fast_search_completes_five_mocked_queries_and_persists_sources(cl
         nonlocal provider_calls
         provider_calls += 1
         if provider_calls <= 5:
-            yield StreamChunk(tool_calls=[
-                ToolCallDelta(
-                    index=0,
-                    id=f"search_{provider_calls}",
-                    function_name="web_search",
-                    function_arguments=json.dumps({"query": f"mock angle {provider_calls}"}),
-                )
-            ])
+            yield StreamChunk(
+                tool_calls=[
+                    ToolCallDelta(
+                        index=0,
+                        id=f"search_{provider_calls}",
+                        function_name="web_search",
+                        function_arguments=json.dumps({"query": f"mock angle {provider_calls}"}),
+                    )
+                ]
+            )
             yield StreamChunk(finish_reason="tool_calls")
         elif provider_calls == 6:
-            yield StreamChunk(tool_calls=[
-                ToolCallDelta(
-                    index=0,
-                    id="read_failed_page",
-                    function_name="read_url",
-                    function_arguments=json.dumps({"url": "https://example.com/source"}),
-                )
-            ])
+            yield StreamChunk(
+                tool_calls=[
+                    ToolCallDelta(
+                        index=0,
+                        id="read_failed_page",
+                        function_name="read_url",
+                        function_arguments=json.dumps({"url": "https://example.com/source"}),
+                    )
+                ]
+            )
             yield StreamChunk(finish_reason="tool_calls")
         else:
             yield StreamChunk(
                 content=(
-                    "A source-grounded answer. [1]\n\n---\n**Sources:**\n"
-                    "[1] Mock source - https://example.com/source"
+                    "A source-grounded answer. [1]\n\n---\n**Sources:**\n[1] Mock source - https://example.com/source"
                 )
             )
             yield StreamChunk(finish_reason="stop")
             yield StreamChunk(usage=UsageInfo(prompt_tokens=50, completion_tokens=10, cost=0.001))
 
-    mock_results = [SearchResult(
-        title="Mock source", url="https://example.com/source", snippet="Mock evidence"
-    )]
+    mock_results = [SearchResult(title="Mock source", url="https://example.com/source", snippet="Mock evidence")]
 
     test_db_override = app.dependency_overrides[get_db]
 
@@ -487,14 +514,25 @@ async def test_fast_search_completes_five_mocked_queries_and_persists_sources(cl
         finally:
             await session_generator.aclose()
 
-    with patch(
-        "quip.services.url_security.socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ), patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream), \
-         patch("quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])) as mock_search, \
-         patch("quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=RuntimeError("Jina unavailable")), \
-         patch("quip.services.scraper._direct_fetch", new_callable=AsyncMock, side_effect=RuntimeError("origin unavailable")), \
-         patch("quip.services.messages_persist.async_session", new=test_save_session):
+    with (
+        patch(
+            "quip.services.url_security.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ),
+        patch("quip.services.completion.stream.openrouter.stream_completion", new=mock_stream),
+        patch(
+            "quip.services.search.web_search", new_callable=AsyncMock, return_value=SearchResponse(mock_results, [])
+        ) as mock_search,
+        patch(
+            "quip.services.scraper._jina_reader", new_callable=AsyncMock, side_effect=RuntimeError("Jina unavailable")
+        ),
+        patch(
+            "quip.services.scraper._direct_fetch",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("origin unavailable"),
+        ),
+        patch("quip.services.messages_persist.async_session", new=test_save_session),
+    ):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -520,9 +558,7 @@ async def test_fast_search_completes_five_mocked_queries_and_persists_sources(cl
     assert "Page retrieval failed" in failed_read["result"]
 
     chat_event = next(
-        json.loads(frame.split("data: ", 1)[1])
-        for frame in res.text.split("\n\n")
-        if frame.startswith("event: chat\n")
+        json.loads(frame.split("data: ", 1)[1]) for frame in res.text.split("\n\n") if frame.startswith("event: chat\n")
     )
     saved = await client.get(f"/api/chats/{chat_event['chat_id']}", headers=auth_headers)
     assert saved.status_code == 200

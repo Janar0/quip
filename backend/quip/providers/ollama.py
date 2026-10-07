@@ -1,10 +1,11 @@
 """Ollama provider — streams chat completions from a local Ollama instance."""
+
 import json
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
 
 import httpx
 
-from quip.providers.types import StreamChunk, UsageInfo, ToolCallDelta
+from quip.providers.types import StreamChunk, ToolCallDelta, UsageInfo
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
@@ -14,7 +15,7 @@ async def stream_completion(
     model: str,
     base_url: str = DEFAULT_OLLAMA_URL,
     temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
     tools: list[dict] | None = None,
     context_length: int = 0,
 ) -> AsyncIterator[StreamChunk]:
@@ -116,10 +117,10 @@ def _guess_ollama_context_length(model_name: str, details: dict | None = None) -
     common model family patterns.
     """
     name_lower = model_name.lower()
-    param_size = (details or {}).get("parameter_size", "")
 
     # Explicit context tags in name: e.g. "qwen-8k", "llama-128k"
     import re
+
     ctx_match = re.search(r"(\d+)k", name_lower)
     if ctx_match:
         return int(ctx_match.group(1)) * 1024

@@ -1,12 +1,16 @@
 """Skill: weather — Get current weather and forecast for any location. Use when user asks about weat"""
-import httpx
+
 from datetime import datetime
+
+import httpx
+
 from quip.core.config import get_setting
 
 
 async def _fetch_weather(params: dict) -> dict:
     """Fetch current weather + forecast from Gismeteo."""
     from quip.services.skill_store import get_skill_setting
+
     api_key = get_skill_setting("weather", "gismeteo_api_key", "") or get_setting("gismeteo_api_key", "")
     if not api_key:
         return {"error": "gismeteo_api_key is not configured — ask an admin to set it in Settings → Tools."}
@@ -66,13 +70,15 @@ async def _fetch_weather(params: dict) -> dict:
             except Exception:
                 day_name = date_str[:3]
 
-        forecast.append({
-            "day": day_name,
-            "temp_max": round(temp_max) if temp_max is not None else "—",
-            "temp_min": round(temp_min) if temp_min is not None else "—",
-            "condition": day_condition,
-            "icon_emoji": day_emoji,
-        })
+        forecast.append(
+            {
+                "day": day_name,
+                "temp_max": round(temp_max) if temp_max is not None else "—",
+                "temp_min": round(temp_min) if temp_min is not None else "—",
+                "condition": day_condition,
+                "icon_emoji": day_emoji,
+            }
+        )
 
     return {
         "city": city,
@@ -93,17 +99,17 @@ async def _handler(params: dict) -> dict:
 
 
 SKILL = {
-    'id': 'weather',
-    'name': 'Weather',
-    'description': 'Get current weather and forecast for any location. Use when user asks about weather.',
-    'category': 'widget',
-    'icon': 'M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 6a6 6 0 100 12 6 6 0 000-12z',
-    'type': 'api',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'handler': _handler,
-    'prompt_instructions': """Widget: weather — show current weather + forecast via Gismeteo.
+    "id": "weather",
+    "name": "Weather",
+    "description": "Get current weather and forecast for any location. Use when user asks about weather.",
+    "category": "widget",
+    "icon": "M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 6a6 6 0 100 12 6 6 0 000-12z",
+    "type": "api",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "handler": _handler,
+    "prompt_instructions": """Widget: weather — show current weather + forecast via Gismeteo.
 
 Call: use_widget(name="weather", params={"lat": 55.75, "lon": 37.62, "city": "Moscow"})
 - lat/lon: geographic coordinates (required). Use known values or search for them first.
@@ -116,9 +122,26 @@ Common coordinates:
 
 The widget renders a card with current conditions + 5-day forecast.
 After the widget, briefly summarize the weather in 1-2 sentences.""",
-    'data_schema': {'city': 'string — city name', 'temp': 'number — current temperature °C', 'feels_like': 'number — feels-like temperature °C', 'humidity': 'number — humidity %', 'wind_speed': 'number — wind speed m/s', 'wind_dir': 'string — wind direction (N/NE/E/SE/S/SW/W/NW)', 'pressure': 'number — pressure mmHg', 'condition': 'string — weather condition text', 'icon_emoji': 'string — weather emoji', 'forecast': [{'day': 'string', 'temp_max': 'number', 'temp_min': 'number', 'condition': 'string', 'icon_emoji': 'string'}]},
-    'api_config': {'url': 'https://api.gismeteo.net/v3/weather/current/', 'method': 'GET', '_note': 'Special handling in widget_api.py _fetch_weather() — uses lat/lon + X-Gismeteo-Token'},
-    'template_html': """<div class="widget-weather">
+    "data_schema": {
+        "city": "string — city name",
+        "temp": "number — current temperature °C",
+        "feels_like": "number — feels-like temperature °C",
+        "humidity": "number — humidity %",
+        "wind_speed": "number — wind speed m/s",
+        "wind_dir": "string — wind direction (N/NE/E/SE/S/SW/W/NW)",
+        "pressure": "number — pressure mmHg",
+        "condition": "string — weather condition text",
+        "icon_emoji": "string — weather emoji",
+        "forecast": [
+            {"day": "string", "temp_max": "number", "temp_min": "number", "condition": "string", "icon_emoji": "string"}
+        ],
+    },
+    "api_config": {
+        "url": "https://api.gismeteo.net/v3/weather/current/",
+        "method": "GET",
+        "_note": "Special handling in widget_api.py _fetch_weather() — uses lat/lon + X-Gismeteo-Token",
+    },
+    "template_html": """<div class="widget-weather">
   <div class="ww-header">
     <div class="ww-city">{{city}}</div>
     <div class="ww-condition">{{condition}}</div>
@@ -146,7 +169,7 @@ After the widget, briefly summarize the weather in 1-2 sentences.""",
   </div>
   {{/forecast}}
 </div>""",
-    'template_css': """.widget-card .widget-weather {
+    "template_css": """.widget-card .widget-weather {
   padding: 1.5rem;
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--quip-glass-bg, rgba(22,22,26,0.42));
@@ -226,9 +249,14 @@ After the widget, briefly summarize the weather in 1-2 sentences.""",
 .widget-card .ww-day-icon { font-size: 1.5rem; line-height: 1; margin-bottom: 0.2rem; }
 .widget-card .ww-day-temp { font-size: 0.95rem; font-weight: 700; color: var(--quip-text, #f5f5f5); }
 .widget-card .ww-day-min { font-size: 0.75rem; color: var(--quip-text-muted, #6b6b74); }""",
-    'settings_schema': [
-        {'key': 'gismeteo_api_key', 'label': 'Gismeteo API key', 'type': 'password', 'default': '',
-         'help': 'Required. Get one at https://gismeteo.ru/api/.'},
+    "settings_schema": [
+        {
+            "key": "gismeteo_api_key",
+            "label": "Gismeteo API key",
+            "type": "password",
+            "default": "",
+            "help": "Required. Get one at https://gismeteo.ru/api/.",
+        },
     ],
-    'default_settings': {'gismeteo_api_key': ''},
+    "default_settings": {"gismeteo_api_key": ""},
 }
