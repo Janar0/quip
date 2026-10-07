@@ -2,6 +2,7 @@
 
 Model: google/gemini-2.0-flash-001 (mocked — no real API calls).
 """
+
 import asyncio
 import json
 import sqlite3
@@ -28,6 +29,7 @@ MODEL = "google/gemini-2.0-flash-001"
 
 def _png_bytes():
     from PIL import Image
+
     buf = BytesIO()
     Image.new("RGB", (1, 1), "red").save(buf, format="PNG")
     return buf.getvalue()
@@ -53,9 +55,14 @@ async def _fake_stream(**kwargs):
     """Minimal mock stream yielding one content chunk."""
     yield StreamChunk(content="Hello from Gemini!")
     yield StreamChunk(finish_reason="stop")
-    yield StreamChunk(usage=UsageInfo(
-        prompt_tokens=10, completion_tokens=5, cost=0.0001, provider="Google",
-    ))
+    yield StreamChunk(
+        usage=UsageInfo(
+            prompt_tokens=10,
+            completion_tokens=5,
+            cost=0.0001,
+            provider="Google",
+        )
+    )
 
 
 # ── Tests ───────────────────────────────────────────────────────────────────
@@ -142,25 +149,35 @@ async def test_document_extraction_does_not_hold_sqlite_writer(client, tmp_path,
         yield StreamChunk(finish_reason="stop")
 
     try:
-        registered = await client.post("/api/auth/register", json={
-            "email": "writer@test.dev", "username": "writer", "name": "Writer",
-            "password": "password123", "bootstrap_token": "test-bootstrap-token",
-        })
+        registered = await client.post(
+            "/api/auth/register",
+            json={
+                "email": "writer@test.dev",
+                "username": "writer",
+                "name": "Writer",
+                "password": "password123",
+                "bootstrap_token": "test-bootstrap-token",
+            },
+        )
         assert registered.status_code == 201
         headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
         uploaded = await client.post(
-            "/api/files/upload", headers=headers,
+            "/api/files/upload",
+            headers=headers,
             files=[("files", ("note.txt", b"Document content is available", "text/plain"))],
         )
         assert uploaded.status_code == 200
         file_id = uploaded.json()["files"][0]["id"]
 
-        with patch("quip.services.documents.extract", new=extracting_document), \
-             patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream), \
-             patch("quip.services.completion.service.save_assistant_message", new_callable=AsyncMock), \
-             patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None):
+        with (
+            patch("quip.services.documents.extract", new=extracting_document),
+            patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream),
+            patch("quip.services.completion.service.save_assistant_message", new_callable=AsyncMock),
+            patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None),
+        ):
             response = await client.post(
-                "/api/chat/completions", headers=headers,
+                "/api/chat/completions",
+                headers=headers,
                 json={"model": MODEL, "message": "Read note", "file_ids": [file_id]},
             )
 
@@ -173,31 +190,35 @@ async def test_document_extraction_does_not_hold_sqlite_writer(client, tmp_path,
 
 @pytest.mark.asyncio
 async def test_preflight_failure_does_not_claim_file_or_create_chat(
-    client, auth_headers, db_session, tmp_upload_dir,
+    client,
+    auth_headers,
+    db_session,
+    tmp_upload_dir,
 ):
     set_setting("openrouter_api_key", "")
     set_setting("sandbox_enabled", "false")
     uploaded = await client.post(
-        "/api/files/upload", headers=auth_headers,
+        "/api/files/upload",
+        headers=auth_headers,
         files=[("files", ("unclaimed.txt", b"Keep this file reusable", "text/plain"))],
     )
     assert uploaded.status_code == 200
     from uuid import UUID
+
     file_id = UUID(uploaded.json()["files"][0]["id"])
 
     response = await client.post(
-        "/api/chat/completions", headers=auth_headers,
+        "/api/chat/completions",
+        headers=auth_headers,
         json={"model": MODEL, "message": "Preflight fails", "file_ids": [str(file_id)]},
     )
 
     assert response.status_code == 400
     assert (await db_session.get(File, file_id)).chat_id is None
-    assert (await db_session.execute(
-        select(Chat).where(Chat.title == "Preflight fails")
-    )).scalar_one_or_none() is None
-    assert (await db_session.execute(
-        select(Message).where(Message.content == "Preflight fails")
-    )).scalar_one_or_none() is None
+    assert (await db_session.execute(select(Chat).where(Chat.title == "Preflight fails"))).scalar_one_or_none() is None
+    assert (
+        await db_session.execute(select(Message).where(Message.content == "Preflight fails"))
+    ).scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
@@ -221,6 +242,7 @@ async def test_concurrent_completion_rejects_stale_preparation(client, tmp_path,
     set_setting("sandbox_enabled", "false")
 
     from quip.services.documents import ExtractionResult, PageContent
+
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -230,32 +252,45 @@ async def test_concurrent_completion_rejects_stale_preparation(client, tmp_path,
         return ExtractionResult(pages=[PageContent(text="A slow document")])
 
     try:
-        registered = await client.post("/api/auth/register", json={
-            "email": "branch@test.dev", "username": "branch", "name": "Branch",
-            "password": "password123", "bootstrap_token": "test-bootstrap-token",
-        })
+        registered = await client.post(
+            "/api/auth/register",
+            json={
+                "email": "branch@test.dev",
+                "username": "branch",
+                "name": "Branch",
+                "password": "password123",
+                "bootstrap_token": "test-bootstrap-token",
+            },
+        )
         assert registered.status_code == 201
         headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
         created = await client.post("/api/chats", headers=headers, json={"title": "Shared"})
         chat_id = created.json()["id"]
         with patch("quip.routers.files._process_file_background", new_callable=AsyncMock):
             uploaded = await client.post(
-                "/api/files/upload", headers=headers,
+                "/api/files/upload",
+                headers=headers,
                 files=[("files", ("slow.txt", b"A slow document", "text/plain"))],
             )
         file_id = uploaded.json()["files"][0]["id"]
 
-        with patch("quip.services.documents.extract", new=slow_document), \
-             patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream), \
-             patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None):
-            first_task = asyncio.create_task(client.post(
-                "/api/chat/completions", headers=headers,
-                json={"chat_id": chat_id, "model": MODEL, "message": "Slow first", "file_ids": [file_id]},
-            ))
+        with (
+            patch("quip.services.documents.extract", new=slow_document),
+            patch("quip.services.completion.stream.openrouter.stream_completion", new=_fake_stream),
+            patch("quip.services.completion.service.generate_chat_identity", new_callable=AsyncMock, return_value=None),
+        ):
+            first_task = asyncio.create_task(
+                client.post(
+                    "/api/chat/completions",
+                    headers=headers,
+                    json={"chat_id": chat_id, "model": MODEL, "message": "Slow first", "file_ids": [file_id]},
+                )
+            )
             try:
                 await asyncio.wait_for(started.wait(), timeout=5)
                 second = await client.post(
-                    "/api/chat/completions", headers=headers,
+                    "/api/chat/completions",
+                    headers=headers,
                     json={"chat_id": chat_id, "model": MODEL, "message": "Fast second"},
                 )
                 assert second.status_code == 200
@@ -265,12 +300,12 @@ async def test_concurrent_completion_rejects_stale_preparation(client, tmp_path,
 
         assert first.status_code == 409
         async with sessions() as db:
-            assert (await db.execute(
-                select(Message).where(Message.content == "Slow first")
-            )).scalar_one_or_none() is None
-            assert (await db.execute(
-                select(Message).where(Message.content == "Fast second")
-            )).scalar_one_or_none() is not None
+            assert (
+                await db.execute(select(Message).where(Message.content == "Slow first"))
+            ).scalar_one_or_none() is None
+            assert (
+                await db.execute(select(Message).where(Message.content == "Fast second"))
+            ).scalar_one_or_none() is not None
     finally:
         app.dependency_overrides[get_db] = previous_db
         await engine.dispose()
@@ -281,12 +316,14 @@ async def test_document_text_uses_processed_chunks_before_ocr(db_session, tmp_up
     """A processed attachment should not run OCR again during every chat turn."""
     clear_b64_cache()
     file_id = uuid4()
-    db_session.add(DocumentChunk(
-        file_id=file_id,
-        chunk_index=0,
-        content="Already processed document text",
-        token_count=4,
-    ))
+    db_session.add(
+        DocumentChunk(
+            file_id=file_id,
+            chunk_index=0,
+            content="Already processed document text",
+            token_count=4,
+        )
+    )
     await db_session.commit()
     storage_path = f"{file_id}.pdf"
     (tmp_upload_dir / storage_path).write_bytes(b"placeholder")
@@ -378,9 +415,7 @@ async def test_completion_rejects_cross_user_attachment(
     )
     db_session.add(attacker)
     await db_session.commit()
-    attacker_headers = {
-        "Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"
-    }
+    attacker_headers = {"Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"}
 
     res = await client.post(
         "/api/chat/completions",
@@ -407,12 +442,8 @@ async def test_completion_rejects_attachment_from_another_chat(
     set_setting("rag_enabled", "false")
     set_setting("sandbox_enabled", "false")
 
-    first_chat = await client.post(
-        "/api/chats", headers=auth_headers, json={"title": "First"}
-    )
-    second_chat = await client.post(
-        "/api/chats", headers=auth_headers, json={"title": "Second"}
-    )
+    first_chat = await client.post("/api/chats", headers=auth_headers, json={"title": "First"})
+    second_chat = await client.post("/api/chats", headers=auth_headers, json={"title": "Second"})
     upload_res = await client.post(
         "/api/files/upload",
         headers=auth_headers,
@@ -461,14 +492,17 @@ async def test_completion_with_rag_context(client, auth_headers, tmp_upload_dir,
 
     from sqlalchemy import update
 
-    await db_session.execute(
-        update(File).where(File.id == UUID(file_id)).values(embedding_status="completed")
+    await db_session.execute(update(File).where(File.id == UUID(file_id)).values(embedding_status="completed"))
+    db_session.add(
+        DocumentChunk(
+            file_id=UUID(file_id),
+            chat_id=UUID(chat_id),
+            chunk_index=0,
+            content="Capital of France is Paris.",
+            embedding=[1.0, 0.0, 0.0],
+            token_count=7,
+        )
     )
-    db_session.add(DocumentChunk(
-        file_id=UUID(file_id), chat_id=UUID(chat_id),
-        chunk_index=0, content="Capital of France is Paris.",
-        embedding=[1.0, 0.0, 0.0], token_count=7,
-    ))
     await db_session.commit()
 
     # Capture messages sent to provider
@@ -479,9 +513,10 @@ async def test_completion_with_rag_context(client, auth_headers, tmp_upload_dir,
         yield StreamChunk(content="Paris!")
         yield StreamChunk(finish_reason="stop")
 
-    with patch("quip.services.rag.get_embeddings", new_callable=AsyncMock,
-               return_value=[[0.9, 0.1, 0.0]]), \
-         patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream):
+    with (
+        patch("quip.services.rag.get_embeddings", new_callable=AsyncMock, return_value=[[0.9, 0.1, 0.0]]),
+        patch("quip.services.completion.stream.openrouter.stream_completion", new=capturing_stream),
+    ):
         res = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -594,12 +629,14 @@ async def test_build_multimodal_message_openrouter(tmp_upload_dir):
     img_path.write_bytes(_png_bytes())
 
     msg = {"role": "user", "content": "What is this?"}
-    attachments = [{
-        "file_id": "some-id",
-        "file_type": "image",
-        "content_type": "image/png",
-        "storage_path": "user1/img.png",
-    }]
+    attachments = [
+        {
+            "file_id": "some-id",
+            "file_type": "image",
+            "content_type": "image/png",
+            "storage_path": "user1/img.png",
+        }
+    ]
 
     result, _ = await _build_multimodal_message(msg, attachments, is_ollama=False)
     assert isinstance(result["content"], list)
@@ -621,12 +658,14 @@ async def test_build_multimodal_message_ollama(tmp_upload_dir):
     img_path.write_bytes(_png_bytes())
 
     msg = {"role": "user", "content": "Describe"}
-    attachments = [{
-        "file_id": "some-id",
-        "file_type": "image",
-        "content_type": "image/png",
-        "storage_path": "user1/img.png",
-    }]
+    attachments = [
+        {
+            "file_id": "some-id",
+            "file_type": "image",
+            "content_type": "image/png",
+            "storage_path": "user1/img.png",
+        }
+    ]
 
     result, _ = await _build_multimodal_message(msg, attachments, is_ollama=True)
     assert "images" in result
@@ -649,29 +688,36 @@ async def test_build_multimodal_no_images():
 
 
 async def test_ollama_completion_and_regeneration_do_not_require_openrouter(client, auth_headers, monkeypatch):
-    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
-    set_setting('openrouter_api_key', '')
-    set_setting('rag_enabled', 'false')
-    set_setting('ollama_url', 'http://localhost:11434')
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    set_setting("openrouter_api_key", "")
+    set_setting("rag_enabled", "false")
+    set_setting("ollama_url", "http://localhost:11434")
     captured = []
 
     async def local_stream(**kwargs):
         captured.append(kwargs)
-        yield StreamChunk(content='Local model answer', provider='ollama')
-        yield StreamChunk(finish_reason='stop')
+        yield StreamChunk(content="Local model answer", provider="ollama")
+        yield StreamChunk(finish_reason="stop")
 
-    with patch('quip.services.completion.stream.ollama.stream_completion', new=local_stream):
-        response = await client.post('/api/chat/completions', headers=auth_headers,
-                                     json={'model': 'ollama/test-model', 'message': 'Hello'})
+    with patch("quip.services.completion.stream.ollama.stream_completion", new=local_stream):
+        response = await client.post(
+            "/api/chat/completions", headers=auth_headers, json={"model": "ollama/test-model", "message": "Hello"}
+        )
         assert response.status_code == 200
         events = _parse_sse(response.text)
-        chat = next(data for event, data in events if event == 'chat')
-        assert any(data.get('text') == 'Local model answer' for event, data in events if event == 'content')
-        response = await client.post('/api/chat/regenerate', headers=auth_headers, json={
-            'chat_id': chat['chat_id'], 'message_id': chat['message_id'], 'model': 'ollama/test-model',
-        })
+        chat = next(data for event, data in events if event == "chat")
+        assert any(data.get("text") == "Local model answer" for event, data in events if event == "content")
+        response = await client.post(
+            "/api/chat/regenerate",
+            headers=auth_headers,
+            json={
+                "chat_id": chat["chat_id"],
+                "message_id": chat["message_id"],
+                "model": "ollama/test-model",
+            },
+        )
         assert response.status_code == 200
-        assert 'Local model answer' in response.text
+        assert "Local model answer" in response.text
     assert len(captured) == 2
-    assert all(call['model'] == 'test-model' for call in captured)
-    assert all(call['base_url'] == 'http://localhost:11434' for call in captured)
+    assert all(call["model"] == "test-model" for call in captured)
+    assert all(call["base_url"] == "http://localhost:11434" for call in captured)

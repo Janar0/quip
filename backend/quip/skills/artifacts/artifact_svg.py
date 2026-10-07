@@ -1,16 +1,16 @@
 """Skill: artifact_svg — Inline SVG vector graphic"""
 
 SKILL = {
-    'id': 'artifact_svg',
-    'name': 'artifact_svg',
-    'description': 'Inline SVG vector graphic',
-    'category': 'artifact',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """When creating visualizations, code, diagrams, or data displays, use artifact tags with structured data.
+    "id": "artifact_svg",
+    "name": "artifact_svg",
+    "description": "Inline SVG vector graphic",
+    "category": "artifact",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """When creating visualizations, code, diagrams, or data displays, use artifact tags with structured data.
 
 GENERAL RULES:
 - Use the SIMPLEST type that fits the data (plot > html for function graphs, chart > html for data viz).
@@ -39,8 +39,8 @@ DO NOT USE WHEN:
 - Flowcharts or sequence diagrams (use mermaid)
 - Mathematical plots (use plot)
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

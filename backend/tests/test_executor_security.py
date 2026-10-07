@@ -46,9 +46,7 @@ def test_created_container_has_fixed_image_mount_and_isolation(monkeypatch, tmp_
     chown_calls = []
     fake_container = SimpleNamespace(id="sandbox-id", start=lambda: None)
     fake_client = SimpleNamespace(
-        containers=SimpleNamespace(
-            create=lambda **kwargs: (captured.update(kwargs) or fake_container)
-        )
+        containers=SimpleNamespace(create=lambda **kwargs: captured.update(kwargs) or fake_container)
     )
     monkeypatch.setattr(executor_app, "client", fake_client)
     monkeypatch.setattr(executor_app, "MOUNTED_SANDBOX_DIR", tmp_path)
@@ -63,9 +61,7 @@ def test_created_container_has_fixed_image_mount_and_isolation(monkeypatch, tmp_
 
     assert chown_calls == [(tmp_path / "deadbeef", 1000, 1000)]
     assert captured["image"] == executor_app.SANDBOX_IMAGE
-    assert captured["volumes"] == {
-        "/srv/quip-sandbox/deadbeef": {"bind": "/workspace", "mode": "rw"}
-    }
+    assert captured["volumes"] == {"/srv/quip-sandbox/deadbeef": {"bind": "/workspace", "mode": "rw"}}
     assert captured["network_mode"] == "none"
     assert captured["read_only"] is True
     assert captured["cap_drop"] == ["ALL"]
@@ -102,7 +98,5 @@ def test_existing_unmanaged_container_is_never_deleted(monkeypatch):
     )
 
     with pytest.raises(HTTPException, match="Conflicting container"):
-        executor_app.ensure_container(
-            executor_app.ContainerRequest(name="quip-sandbox-deadbeef", user_key="deadbeef")
-        )
+        executor_app.ensure_container(executor_app.ContainerRequest(name="quip-sandbox-deadbeef", user_key="deadbeef"))
     assert removed is False

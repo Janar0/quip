@@ -1,4 +1,5 @@
 """Request and response schemas for authenticated voice calls."""
+
 import json
 from typing import Any, Literal
 from uuid import UUID

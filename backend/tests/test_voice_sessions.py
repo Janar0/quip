@@ -27,7 +27,9 @@ async def test_voice_session_requires_authentication(client):
 
 
 @pytest.mark.asyncio
-async def test_voice_capabilities_are_authenticated_and_disable_camera_for_qwen_audio_31(client, auth_headers, monkeypatch):
+async def test_voice_capabilities_are_authenticated_and_disable_camera_for_qwen_audio_31(
+    client, auth_headers, monkeypatch
+):
     monkeypatch.setitem(config._settings, "qwen_realtime_model", "qwen-audio-3.1-realtime-plus")
     monkeypatch.setitem(config._settings, "qwen_realtime_video_enabled", "true")
 
@@ -176,9 +178,7 @@ async def test_voice_sdp_uses_server_key_and_does_not_return_it(client, auth_hea
     assert captured["content"].startswith(b"v=0")
     assert secret not in response.text
     assert "api_key" not in response.json()
-    persisted_call = await db_session.scalar(
-        select(VoiceCall).where(VoiceCall.id == UUID(response.json()["call_id"]))
-    )
+    persisted_call = await db_session.scalar(select(VoiceCall).where(VoiceCall.id == UUID(response.json()["call_id"])))
     assert persisted_call is not None
     assert persisted_call.camera_enabled is False
 
@@ -265,23 +265,27 @@ async def test_voice_provider_error_is_sanitized_and_session_is_failed(client, a
 @pytest.mark.asyncio
 async def test_voice_end_hides_call_owned_by_another_user(client, auth_headers, db_session):
     other_id, chat_id, call_id = uuid4(), uuid4(), uuid4()
-    db_session.add(User(
-        id=other_id,
-        email="voice-owner@quip.dev",
-        username="voice-owner",
-        name="Voice Owner",
-        role="user",
-        is_active=True,
-    ))
+    db_session.add(
+        User(
+            id=other_id,
+            email="voice-owner@quip.dev",
+            username="voice-owner",
+            name="Voice Owner",
+            role="user",
+            is_active=True,
+        )
+    )
     db_session.add(Chat(id=chat_id, user_id=other_id, title="Private voice chat"))
-    db_session.add(VoiceCall(
-        id=call_id,
-        user_id=other_id,
-        chat_id=chat_id,
-        provider="qwen",
-        model="catalog-model-fixture",
-        status="active",
-    ))
+    db_session.add(
+        VoiceCall(
+            id=call_id,
+            user_id=other_id,
+            chat_id=chat_id,
+            provider="qwen",
+            model="catalog-model-fixture",
+            status="active",
+        )
+    )
     await db_session.commit()
 
     response = await client.post(f"/api/voice/calls/{call_id}/end", headers=auth_headers)

@@ -1,4 +1,5 @@
 """Web page content extraction — Jina Reader with direct-fetch fallback."""
+
 import logging
 import re
 
@@ -25,9 +26,7 @@ async def read_url(url: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
             return await _direct_fetch(url, max_chars)
         except Exception as e2:
             logger.warning(f"Direct fetch also failed for {url}: {e2}")
-            raise RuntimeError(
-                "Page retrieval failed: both Jina Reader and direct fetch were unsuccessful."
-            ) from e2
+            raise RuntimeError("Page retrieval failed: both Jina Reader and direct fetch were unsuccessful.") from e2
 
 
 async def _jina_reader(url: str, max_chars: int) -> str:
@@ -51,17 +50,21 @@ async def _jina_reader(url: str, max_chars: int) -> str:
 async def _direct_fetch(url: str, max_chars: int) -> str:
     """Fallback: fetch HTML and strip tags."""
     async with httpx.AsyncClient(timeout=DIRECT_TIMEOUT, follow_redirects=False) as client:
-        resp = await safe_get(client, url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; QUIP/1.0; +https://quip.dev)",
-        })
+        resp = await safe_get(
+            client,
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; QUIP/1.0; +https://quip.dev)",
+            },
+        )
         resp.raise_for_status()
         html = resp.text
 
     # Strip script/style blocks, then all tags
-    text = re.sub(r'<(script|style|noscript)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r"<(script|style|noscript)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
     # Collapse whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
 
     if len(text) > max_chars:
         text = text[:max_chars] + "\n\n... (truncated)"

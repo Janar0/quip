@@ -14,9 +14,7 @@ from quip.services.artifacts import extract_artifacts
 logger = logging.getLogger(__name__)
 
 _MAX_TELEGRAM_TEXT = 4096
-_SOURCE_LINE = re.compile(
-    r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE
-)
+_SOURCE_LINE = re.compile(r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE)
 
 
 def _telegram_text(text: str) -> tuple[str, list[dict]]:

@@ -52,17 +52,21 @@ async def test_voice_events_persist_final_user_and_assistant_transcripts_once(cl
     assistant = await client.post(
         f"/api/voice/calls/{call.id}/events",
         headers=auth_headers,
-        json={"event": {
-            "type": "response.audio_transcript.done",
-            "event_id": "evt-assistant-final",
-            "item_id": "item-assistant-1",
-            "transcript": "Сейчас проверю.",
-        }},
+        json={
+            "event": {
+                "type": "response.audio_transcript.done",
+                "event_id": "evt-assistant-final",
+                "item_id": "item-assistant-1",
+                "transcript": "Сейчас проверю.",
+            }
+        },
     )
 
     assert first.status_code == second.status_code == assistant.status_code == 200
     assert second.json()["duplicate"] is True
-    messages = list((await db_session.scalars(select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at))).all())
+    messages = list(
+        (await db_session.scalars(select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at))).all()
+    )
     assert [(message.role, message.content) for message in messages] == [
         ("user", "Найди расписание музея на завтра."),
         ("assistant", "Сейчас проверю."),
@@ -78,14 +82,16 @@ async def test_voice_events_store_only_preliminary_provider_usage(client, auth_h
     response = await client.post(
         f"/api/voice/calls/{call.id}/events",
         headers=auth_headers,
-        json={"event": {
-            "type": "response.done",
-            "event_id": "evt-done",
-            "response": {
-                "id": "response-1",
-                "usage": {"total_tokens": 9, "input_tokens": 5, "output_tokens": 4},
-            },
-        }},
+        json={
+            "event": {
+                "type": "response.done",
+                "event_id": "evt-done",
+                "response": {
+                    "id": "response-1",
+                    "usage": {"total_tokens": 9, "input_tokens": 5, "output_tokens": 4},
+                },
+            }
+        },
     )
     await db_session.refresh(call)
 
@@ -118,23 +124,27 @@ async def test_voice_events_reject_unknown_and_malformed_provider_events(client,
 @pytest.mark.asyncio
 async def test_voice_events_hide_calls_owned_by_another_user(client, auth_headers, db_session):
     other_id, chat_id, call_id = uuid4(), uuid4(), uuid4()
-    db_session.add(User(
-        id=other_id,
-        email="events-owner@quip.dev",
-        username="events-owner",
-        name="Events Owner",
-        role="user",
-        is_active=True,
-    ))
+    db_session.add(
+        User(
+            id=other_id,
+            email="events-owner@quip.dev",
+            username="events-owner",
+            name="Events Owner",
+            role="user",
+            is_active=True,
+        )
+    )
     db_session.add(Chat(id=chat_id, user_id=other_id, title="Private events"))
-    db_session.add(VoiceCall(
-        id=call_id,
-        user_id=other_id,
-        chat_id=chat_id,
-        provider="qwen",
-        model="catalog-model-fixture",
-        status="active",
-    ))
+    db_session.add(
+        VoiceCall(
+            id=call_id,
+            user_id=other_id,
+            chat_id=chat_id,
+            provider="qwen",
+            model="catalog-model-fixture",
+            status="active",
+        )
+    )
     await db_session.commit()
 
     response = await client.post(

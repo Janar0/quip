@@ -25,9 +25,7 @@ async def _table_names(database_url: str) -> set[str]:
     engine = create_async_engine(database_url, poolclass=NullPool)
     try:
         async with engine.connect() as connection:
-            return await connection.run_sync(
-                lambda sync_connection: set(inspect(sync_connection).get_table_names())
-            )
+            return await connection.run_sync(lambda sync_connection: set(inspect(sync_connection).get_table_names()))
     finally:
         await engine.dispose()
 
@@ -46,9 +44,7 @@ def upgrade_schema(database_url: str | None = None) -> None:
         # shape as baseline, then run every explicit migration after it.
         command.stamp(config, "0001")
     elif "alembic_version" not in tables and tables:
-        raise RuntimeError(
-            "Database is not empty and does not look like a QUIP schema; refusing automatic migration"
-        )
+        raise RuntimeError("Database is not empty and does not look like a QUIP schema; refusing automatic migration")
 
     command.upgrade(config, "head")
 

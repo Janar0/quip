@@ -37,9 +37,7 @@ def test_resolves_only_newer_same_vendor_family_and_tier_successor():
         model("anthropic/glm-6"),
     ]
 
-    result = model_updater.resolve_successor_mappings(
-        [old["id"]], catalog, {old["id"]: latest["id"]}
-    )
+    result = model_updater.resolve_successor_mappings([old["id"]], catalog, {old["id"]: latest["id"]})
 
     assert result == {"replacements": {old["id"]: latest["id"]}, "skipped": []}
 
@@ -87,9 +85,7 @@ def test_skips_ambiguous_latest_versions():
     source = "z-ai/glm-5.2"
     catalog = [model(source), model("z-ai/glm-6"), model("z-ai/glm-6.0")]
 
-    result = model_updater.resolve_successor_mappings(
-        [source], catalog, {source: "z-ai/glm-6"}
-    )
+    result = model_updater.resolve_successor_mappings([source], catalog, {source: "z-ai/glm-6"})
 
     assert result["replacements"] == {}
     assert result["skipped"] == [{"model_id": source, "reason": "ambiguous"}]
@@ -185,13 +181,7 @@ async def test_admin_update_fetches_catalog_maps_references_and_reports_price_ch
             200,
             json={
                 "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                {"replacements": [{"from": source["id"], "to": target["id"]}]}
-                            )
-                        }
-                    }
+                    {"message": {"content": json.dumps({"replacements": [{"from": source["id"], "to": target["id"]}]})}}
                 ]
             },
         )
@@ -258,9 +248,7 @@ async def test_admin_update_fetches_catalog_maps_references_and_reports_price_ch
 
 
 @pytest.mark.asyncio
-async def test_empty_whitelist_means_all_models_remain_allowed(
-    client, auth_headers, monkeypatch
-):
+async def test_empty_whitelist_means_all_models_remain_allowed(client, auth_headers, monkeypatch):
     set_setting("openrouter_api_key", "test-only-key")
     set_setting("model_whitelist", "[]")
     set_setting("default_model", "")
@@ -310,9 +298,7 @@ async def test_catalog_failure_returns_error_without_changing_saved_selection(
 
 
 @pytest.mark.asyncio
-async def test_mapping_failure_leaves_saved_model_references_unchanged(
-    client, auth_headers, db_session, monkeypatch
-):
+async def test_mapping_failure_leaves_saved_model_references_unchanged(client, auth_headers, db_session, monkeypatch):
     source = "z-ai/glm-5.2"
     target = "z-ai/glm-6"
     set_setting("openrouter_api_key", "test-only-key")
@@ -372,9 +358,7 @@ async def test_model_update_rejects_changed_settings_without_partial_updates(
         async def persist_fixture_settings():
             from quip.core.config import get_all_settings
 
-            config = (
-                await db_session.execute(select(Config).where(Config.id == 1))
-            ).scalar_one_or_none()
+            config = (await db_session.execute(select(Config).where(Config.id == 1))).scalar_one_or_none()
             data = dict(config.data) if config and isinstance(config.data, dict) else {}
             data.update(get_all_settings())
             if config:
@@ -420,9 +404,7 @@ async def test_model_update_rejects_changed_settings_without_partial_updates(
 
 
 @pytest.mark.asyncio
-async def test_concurrent_model_update_request_does_not_repeat_remote_mapping(
-    client, auth_headers, monkeypatch
-):
+async def test_concurrent_model_update_request_does_not_repeat_remote_mapping(client, auth_headers, monkeypatch):
     source = "z-ai/glm-5.2"
     target = "z-ai/glm-6"
     set_setting("openrouter_api_key", "test-only-key")
@@ -447,9 +429,7 @@ async def test_concurrent_model_update_request_does_not_repeat_remote_mapping(
     monkeypatch.setattr("quip.routers.admin.or_list_models", catalog)
     monkeypatch.setattr(model_updater, "request_successor_mappings", slow_mapping)
 
-    first_request = asyncio.create_task(
-        client.post("/api/admin/models/update", headers=auth_headers)
-    )
+    first_request = asyncio.create_task(client.post("/api/admin/models/update", headers=auth_headers))
     await asyncio.wait_for(mapping_started.wait(), timeout=5)
     second_response = await client.post("/api/admin/models/update", headers=auth_headers)
     allow_mapping.set()

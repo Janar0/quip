@@ -1,4 +1,5 @@
 """Chat-title generation — short call to a cheap model after the first turn."""
+
 from __future__ import annotations
 
 import json

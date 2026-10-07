@@ -1,4 +1,5 @@
 """Shared vector math utilities."""
+
 import math
 
 

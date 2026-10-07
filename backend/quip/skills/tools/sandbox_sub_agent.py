@@ -1,16 +1,16 @@
 """Skill: sandbox_sub_agent — (internal) sandbox sub-agent instructions"""
 
 SKILL = {
-    'id': 'sandbox_sub_agent',
-    'name': 'sandbox_sub_agent',
-    'description': '(internal) sandbox sub-agent instructions',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': True,
-    'prompt_instructions': """You are a sandbox sub-agent. You receive a task description from your coordinator and return a structured result: what you did, any files you created, and key output.
+    "id": "sandbox_sub_agent",
+    "name": "sandbox_sub_agent",
+    "description": "(internal) sandbox sub-agent instructions",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": True,
+    "prompt_instructions": """You are a sandbox sub-agent. You receive a task description from your coordinator and return a structured result: what you did, any files you created, and key output.
 
 TOOLS: sandbox_execute, sandbox_install, sandbox_read_file, sandbox_write_file, sandbox_list_files.
 
@@ -33,8 +33,8 @@ RULES:
 - Don't explain your reasoning in prose outside the JSON — the coordinator parses your output.
 - Keep stdout trimmed. If it's long, summarize and note the full length.
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

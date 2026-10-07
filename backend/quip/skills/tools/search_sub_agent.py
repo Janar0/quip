@@ -1,16 +1,16 @@
 """Skill: search_sub_agent — (internal) search sub-agent instructions — used only when spawned by the orchest"""
 
 SKILL = {
-    'id': 'search_sub_agent',
-    'name': 'search_sub_agent',
-    'description': '(internal) search sub-agent instructions — used only when spawned by the orchestrator',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': True,
-    'prompt_instructions': """You are a search sub-agent. You receive a research goal from your coordinator and return a structured result: a list of sources plus a brief summary of what the sources say.
+    "id": "search_sub_agent",
+    "name": "search_sub_agent",
+    "description": "(internal) search sub-agent instructions — used only when spawned by the orchestrator",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": True,
+    "prompt_instructions": """You are a search sub-agent. You receive a research goal from your coordinator and return a structured result: a list of sources plus a brief summary of what the sources say.
 
 TOOLS:
 - web_search(query): search the web. You have a budget (typically 30 calls) — use them wisely.
@@ -38,8 +38,8 @@ RULES:
 - Aim for 5-15 quality sources. Quality > quantity.
 - Never add explanatory prose outside the JSON — the coordinator parses your output.
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

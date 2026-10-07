@@ -3,6 +3,7 @@
 Skills are defined under `quip/skills/{widgets,tools,artifacts}/<id>.py` — each
 module exports a `SKILL` dict. `discover_skills()` walks the registry at startup.
 """
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +17,14 @@ _skills_cache: dict[str, Skill] = {}
 
 # Fields the code owns — always refreshed from the manifest.
 _CODE_FIELDS = {
-    "prompt_instructions", "data_schema", "template_html", "template_css",
-    "api_config", "is_builtin", "is_internal", "settings_schema",
+    "prompt_instructions",
+    "data_schema",
+    "template_html",
+    "template_css",
+    "api_config",
+    "is_builtin",
+    "is_internal",
+    "settings_schema",
 }
 
 
@@ -72,7 +79,7 @@ def get_skill_setting(skill_id: str, key: str, default=None):
     settings = skill.settings or {}
     if key in settings:
         return settings[key]
-    for field in (skill.settings_schema or []):
+    for field in skill.settings_schema or []:
         if field.get("key") == key:
             return field.get("default", default)
     return default
@@ -96,12 +103,14 @@ def get_widget_skills() -> list[dict]:
     result = []
     for skill in _skills_cache.values():
         if skill.category == "widget" and skill.enabled and skill.template_html:
-            result.append({
-                "id": skill.id,
-                "name": skill.name,
-                "template_html": skill.template_html,
-                "template_css": skill.template_css or "",
-            })
+            result.append(
+                {
+                    "id": skill.id,
+                    "name": skill.name,
+                    "template_html": skill.template_html,
+                    "template_css": skill.template_css or "",
+                }
+            )
     return result
 
 
@@ -141,9 +150,7 @@ async def get_all_skills(db: AsyncSession) -> list[Skill]:
     return list(result.scalars().all())
 
 
-def build_enabled_skills(
-    *, search_mode: bool = False, search_enabled: bool, sandbox_available: bool
-) -> set[str]:
+def build_enabled_skills(*, search_mode: bool = False, search_enabled: bool, sandbox_available: bool) -> set[str]:
     """Compute the set of skill IDs the model should see for this turn.
 
     Single pass over `_skills_cache` — earlier versions iterated 4-5 times.

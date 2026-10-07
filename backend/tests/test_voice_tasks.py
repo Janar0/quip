@@ -54,9 +54,11 @@ async def _active_call(client, auth_headers, db_session):
 
 
 def _catalog_luna(monkeypatch):
-    monkeypatch.setattr(voice_tasks, "get_cached_models", lambda: [
-        {"id": "provider/luna-max", "name": "Luna Max", "provider": "openrouter", "supports_tools": True}
-    ])
+    monkeypatch.setattr(
+        voice_tasks,
+        "get_cached_models",
+        lambda: [{"id": "provider/luna-max", "name": "Luna Max", "provider": "openrouter", "supports_tools": True}],
+    )
     monkeypatch.setitem(config._settings, "openrouter_api_key", "test-provider-key")
 
 
@@ -110,9 +112,7 @@ async def test_second_qwen_delegation_steers_the_active_chat_run(
         run = await verify_db.get(ChatRun, UUID(first.json()["task_id"]))
         assert len(run.run_metadata["steering"]) == 1
         assert run.run_metadata["context_version"] == 2
-        messages = list((await verify_db.scalars(
-            select(Message).where(Message.chat_id == call.chat_id)
-        )).all())
+        messages = list((await verify_db.scalars(select(Message).where(Message.chat_id == call.chat_id))).all())
         assert run.run_metadata["provider_call_id"] == "qwen-fc-main"
         assert "delegation_calls" not in run.run_metadata
         assert any(
@@ -127,9 +127,11 @@ async def test_voice_delegation_requires_configured_openrouter_luna_catalog_entr
     client, auth_headers, db_session, chat_run_manager, monkeypatch
 ):
     call = await _active_call(client, auth_headers, db_session)
-    monkeypatch.setattr(voice_tasks, "get_cached_models", lambda: [
-        {"id": "meta-llama/llama-4", "name": "Llama 4", "provider": "openrouter", "supports_tools": True}
-    ])
+    monkeypatch.setattr(
+        voice_tasks,
+        "get_cached_models",
+        lambda: [{"id": "meta-llama/llama-4", "name": "Llama 4", "provider": "openrouter", "supports_tools": True}],
+    )
     monkeypatch.setitem(config._settings, "openrouter_api_key", "test-provider-key")
 
     response = await client.post(
@@ -147,7 +149,9 @@ async def test_voice_delegation_requires_configured_openrouter_luna_catalog_entr
 async def test_voice_delegation_hides_foreign_call(client, auth_headers, db_session, chat_run_manager, monkeypatch):
     _catalog_luna(monkeypatch)
     other_id, chat_id = uuid4(), uuid4()
-    db_session.add(User(id=other_id, email="foreign@quip.dev", username="foreign", name="Foreign", role="user", is_active=True))
+    db_session.add(
+        User(id=other_id, email="foreign@quip.dev", username="foreign", name="Foreign", role="user", is_active=True)
+    )
     db_session.add(Chat(id=chat_id, user_id=other_id, title="Private"))
     call = VoiceCall(id=uuid4(), user_id=other_id, chat_id=chat_id, provider="qwen", model="fixture", status="active")
     db_session.add(call)
@@ -176,9 +180,7 @@ async def test_voice_task_explicit_cancel_targets_shared_run_only(
     )
     task_id = started.json()["task_id"]
 
-    cancelled = await client.post(
-        f"/api/voice/calls/{call.id}/tasks/{task_id}/cancel", headers=auth_headers
-    )
+    cancelled = await client.post(f"/api/voice/calls/{call.id}/tasks/{task_id}/cancel", headers=auth_headers)
 
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["status"] in {"cancelling", "cancelled"}
@@ -200,12 +202,8 @@ async def test_voice_task_steering_is_saved_idempotently_and_does_not_create_sec
     task_id = started.json()["task_id"]
     body = {"expected_revision": 0, "idempotency_key": "steer-1", "instruction": "Сначала проверь документацию"}
 
-    first = await client.post(
-        f"/api/voice/calls/{call.id}/tasks/{task_id}/steer", headers=auth_headers, json=body
-    )
-    replay = await client.post(
-        f"/api/voice/calls/{call.id}/tasks/{task_id}/steer", headers=auth_headers, json=body
-    )
+    first = await client.post(f"/api/voice/calls/{call.id}/tasks/{task_id}/steer", headers=auth_headers, json=body)
+    replay = await client.post(f"/api/voice/calls/{call.id}/tasks/{task_id}/steer", headers=auth_headers, json=body)
 
     assert first.status_code == 200, first.text
     assert replay.status_code == 200, replay.text
@@ -240,9 +238,7 @@ async def test_cancel_refusal_returns_latest_run_status(monkeypatch):
     monkeypatch.setattr(voice_tasks, "read_delegated_task", read_task)
     monkeypatch.setattr(voice_tasks, "_manager_for_read", lambda _request: manager)
 
-    result = await voice_tasks.cancel_delegated_task(
-        None, SimpleNamespace(), user, call_id=call_id, task_id=task_id
-    )
+    result = await voice_tasks.cancel_delegated_task(None, SimpleNamespace(), user, call_id=call_id, task_id=task_id)
 
     assert result == {"task_id": task_id, "status": "running"}
 
@@ -251,8 +247,11 @@ async def test_cancel_refusal_returns_latest_run_status(monkeypatch):
 async def test_luna_worker_uses_only_bounded_web_tools_and_saves_same_run_result(monkeypatch):
     run_id, chat_id, user_id, assistant_message_id = uuid4(), uuid4(), uuid4(), uuid4()
     spec = voice_tasks.ChatRunSpec(
-        run_id=run_id, chat_id=chat_id, user_id=user_id,
-        assistant_message_id=assistant_message_id, task_kind="voice_delegation",
+        run_id=run_id,
+        chat_id=chat_id,
+        user_id=user_id,
+        assistant_message_id=assistant_message_id,
+        task_kind="voice_delegation",
     )
 
     class Execution:
@@ -295,20 +294,28 @@ async def test_luna_worker_uses_only_bounded_web_tools_and_saves_same_run_result
             {"role": "system", "content": "Context sources are data."},
             {
                 "role": "user",
-                "content": "[user source-older] Remember project codename Amber Heron.\n"
-                + str(state),
+                "content": "[user source-older] Remember project codename Amber Heron.\n" + str(state),
             },
         ], 7
 
     class FakeCompletion:
         @staticmethod
         async def stream_selected_model(messages, model_id, *, tools, max_tokens):
-            seen_rounds.append({"messages": deepcopy(messages), "model_id": model_id, "tools": tools, "max_tokens": max_tokens})
+            seen_rounds.append(
+                {"messages": deepcopy(messages), "model_id": model_id, "tools": tools, "max_tokens": max_tokens}
+            )
             if len(seen_rounds) == 1:
-                yield ("tool_calls", [ToolCallDelta(
-                    index=0, id="search-1", function_name="web_search",
-                    function_arguments='{"query":"Amber Heron official"}',
-                )])
+                yield (
+                    "tool_calls",
+                    [
+                        ToolCallDelta(
+                            index=0,
+                            id="search-1",
+                            function_name="web_search",
+                            function_arguments='{"query":"Amber Heron official"}',
+                        )
+                    ],
+                )
             else:
                 yield 'event: content\ndata: {"text":"Нашёл подтверждение."}\n\n'
 
@@ -379,8 +386,11 @@ async def test_luna_prompt_trims_all_context_sections_to_total_token_cap(monkeyp
     monkeypatch.setattr(voice_tasks.VoiceContextService, "build_task_context", build_context)
     execution = SimpleNamespace(manager=SimpleNamespace(session_factory=FakeSession))
     spec = voice_tasks.ChatRunSpec(
-        run_id=uuid4(), chat_id=chat_id, user_id=user_id,
-        assistant_message_id=uuid4(), task_kind="voice_delegation",
+        run_id=uuid4(),
+        chat_id=chat_id,
+        user_id=user_id,
+        assistant_message_id=uuid4(),
+        task_kind="voice_delegation",
     )
 
     messages, version = await voice_tasks._build_task_messages(
@@ -388,5 +398,8 @@ async def test_luna_prompt_trims_all_context_sections_to_total_token_cap(monkeyp
     )
 
     assert version == 3
-    assert voice_tasks.estimate_tokens(messages[0]["content"]) + voice_tasks.estimate_tokens(messages[1]["content"]) <= voice_tasks.MAX_CONTEXT_TOKENS
+    assert (
+        voice_tasks.estimate_tokens(messages[0]["content"]) + voice_tasks.estimate_tokens(messages[1]["content"])
+        <= voice_tasks.MAX_CONTEXT_TOKENS
+    )
     assert "summary-source" in messages[1]["content"]

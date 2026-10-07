@@ -4,6 +4,7 @@ No auth required: filenames are UUIDv4 (122 bits of randomness), equivalent in
 security to signed URLs. This lets LLMs and widget templates reference images
 by path without needing to attach a per-user token.
 """
+
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException

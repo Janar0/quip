@@ -148,14 +148,10 @@ async def _link_user_to_telegram(
         if auth_result.scalar_one_or_none() is None:
             workspace = await ensure_personal_workspace(user, db)
             await db.execute(
-                update(Chat)
-                .where(Chat.user_id == legacy.id)
-                .values(user_id=user.id, workspace_id=workspace.id)
+                update(Chat).where(Chat.user_id == legacy.id).values(user_id=user.id, workspace_id=workspace.id)
             )
             await db.execute(
-                update(File)
-                .where(File.user_id == legacy.id)
-                .values(user_id=user.id, workspace_id=workspace.id)
+                update(File).where(File.user_id == legacy.id).values(user_id=user.id, workspace_id=workspace.id)
             )
             await db.execute(update(ChatRun).where(ChatRun.user_id == legacy.id).values(user_id=user.id))
             legacy.telegram_user_id = None
@@ -166,9 +162,7 @@ async def _link_user_to_telegram(
 
     user.telegram_user_id = telegram_user_id
     if sender:
-        display_name = " ".join(
-            part for part in [sender.get("first_name"), sender.get("last_name")] if part
-        ).strip()
+        display_name = " ".join(part for part in [sender.get("first_name"), sender.get("last_name")] if part).strip()
         if display_name and user.name == user.username:
             user.name = display_name[:255]
     return user
@@ -183,9 +177,7 @@ async def consume_telegram_link(
     if not raw_token.startswith(TELEGRAM_LINK_PREFIX):
         raise TelegramAuthError("Invalid Telegram link")
 
-    result = await db.execute(
-        select(TelegramLinkToken).where(TelegramLinkToken.token_hash == _token_hash(raw_token))
-    )
+    result = await db.execute(select(TelegramLinkToken).where(TelegramLinkToken.token_hash == _token_hash(raw_token)))
     link = result.scalar_one_or_none()
     now = _now()
     if link is None or link.consumed_at is not None or _as_utc(link.expires_at) <= now:
@@ -223,9 +215,7 @@ async def claim_telegram_link(db: AsyncSession, raw_token: str, user: User) -> U
     if not raw_token.startswith(TELEGRAM_LINK_PREFIX):
         raise TelegramAuthError("Invalid Telegram link")
 
-    result = await db.execute(
-        select(TelegramLinkToken).where(TelegramLinkToken.token_hash == _token_hash(raw_token))
-    )
+    result = await db.execute(select(TelegramLinkToken).where(TelegramLinkToken.token_hash == _token_hash(raw_token)))
     link = result.scalar_one_or_none()
     now = _now()
     if (

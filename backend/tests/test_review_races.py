@@ -32,59 +32,71 @@ async def state(factory, spec):
 
 @pytest.mark.asyncio
 async def test_snapshot_updates_keep_both_concurrent_fields(db_session):
-    spec = await make_run(db_session, status='running')
+    spec = await make_run(db_session, status="running")
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     entered, release = asyncio.Event(), asyncio.Event()
-    slow = asyncio.create_task(update_run_snapshot(blocked_factory(db_session.bind, entered, release), run_id=spec.run_id, patch={'sources':[{'url':'https://example.org', 'title':'real source'}]}))
+    slow = asyncio.create_task(
+        update_run_snapshot(
+            blocked_factory(db_session.bind, entered, release),
+            run_id=spec.run_id,
+            patch={"sources": [{"url": "https://example.org", "title": "real source"}]},
+        )
+    )
     await entered.wait()
-    await update_run_snapshot(factory, run_id=spec.run_id, patch={'errors':[{'message':'agent failed'}]})
+    await update_run_snapshot(factory, run_id=spec.run_id, patch={"errors": [{"message": "agent failed"}]})
     release.set()
     await slow
     actual = await state(factory, spec)
-    assert actual['snapshot'].get('errors') == [{'message':'agent failed'}]
-    assert actual['revision'] == 2
+    assert actual["snapshot"].get("errors") == [{"message": "agent failed"}]
+    assert actual["revision"] == 2
 
 
 @pytest.mark.asyncio
 async def test_heartbeat_keeps_new_snapshot_and_revision(db_session):
-    spec = await make_run(db_session, status='running')
+    spec = await make_run(db_session, status="running")
     run = await db_session.get(ChatRun, spec.run_id)
-    run.run_metadata = {**run.run_metadata, 'runner_owner_id':'live-owner'}
+    run.run_metadata = {**run.run_metadata, "runner_owner_id": "live-owner"}
     await db_session.commit()
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     entered, release = asyncio.Event(), asyncio.Event()
-    slow = asyncio.create_task(_refresh_runner_lease(blocked_factory(db_session.bind, entered, release), run_id=spec.run_id, owner_id='live-owner'))
+    slow = asyncio.create_task(
+        _refresh_runner_lease(
+            blocked_factory(db_session.bind, entered, release), run_id=spec.run_id, owner_id="live-owner"
+        )
+    )
     await entered.wait()
-    await update_run_snapshot(factory, run_id=spec.run_id, patch={'errors':[{'message':'visible failure'}]})
+    await update_run_snapshot(factory, run_id=spec.run_id, patch={"errors": [{"message": "visible failure"}]})
     release.set()
     await slow
     actual = await state(factory, spec)
-    assert actual['snapshot'].get('errors') == [{'message':'visible failure'}]
-    assert actual['revision'] == 1
+    assert actual["snapshot"].get("errors") == [{"message": "visible failure"}]
+    assert actual["revision"] == 1
 
 
 @pytest.mark.asyncio
 async def test_finish_honors_remote_stop_accepted_before_terminal_write(db_session):
-    spec = await make_run(db_session, status='running')
+    spec = await make_run(db_session, status="running")
     run = await db_session.get(ChatRun, spec.run_id)
-    run.run_metadata = {**run.run_metadata, 'runner_owner_id':'live-owner'}
+    run.run_metadata = {**run.run_metadata, "runner_owner_id": "live-owner"}
     await db_session.commit()
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     entered, release = asyncio.Event(), asyncio.Event()
+
     class BlockedGetSession(AsyncSession):
         async def get(self, *args, **kwargs):
             result = await super().get(*args, **kwargs)
             entered.set()
             await release.wait()
             return result
+
     slow_factory = async_sessionmaker(db_session.bind, class_=BlockedGetSession, expire_on_commit=False)
     slow = asyncio.create_task(
         _finish_run(
             slow_factory,
             run_id=spec.run_id,
-            status='completed',
+            status="completed",
             error=None,
-            runner_owner_id='live-owner',
+            runner_owner_id="live-owner",
         )
     )
     await entered.wait()
@@ -98,5 +110,5 @@ async def test_finish_honors_remote_stop_accepted_before_terminal_write(db_sessi
     await slow
     actual = await state(factory, spec)
     assert accepted
-    assert actual['status'] == 'cancelled'
-    assert actual['cancel_requested'] is True
+    assert actual["status"] == "cancelled"
+    assert actual["cancel_requested"] is True

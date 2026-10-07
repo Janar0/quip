@@ -4,6 +4,7 @@ Tool descriptions are intentionally terse. Detailed usage instructions live in
 the skill registry (services/skill_store.py) and are fetched on demand via the
 `load_skill` tool. This keeps the default tool payload small.
 """
+
 import json
 from dataclasses import dataclass
 
@@ -320,15 +321,14 @@ GATED_TOOL_MAP: dict[str, list[dict]] = {
 @dataclass
 class AccumulatedToolCall:
     """A complete tool call accumulated from streaming deltas."""
+
     index: int = 0
     id: str = ""
     function_name: str = ""
     function_arguments: str = ""
 
 
-def accumulate_tool_calls(
-    accumulated: list[AccumulatedToolCall], deltas: list[ToolCallDelta]
-) -> None:
+def accumulate_tool_calls(accumulated: list[AccumulatedToolCall], deltas: list[ToolCallDelta]) -> None:
     """Merge streaming tool call deltas into accumulated tool calls."""
     for delta in deltas:
         # Find or create the accumulated entry for this index
@@ -382,15 +382,18 @@ async def execute_tool_call(
         # Skill registry lookup — returns full skill body as tool result
         if tool_name == "load_skill":
             from quip.services.skill_store import get_skill
+
             name = args.get("name", "").strip()
             if not name:
                 return json.dumps({"error": "missing skill name"})
             if loaded_skills is not None and name in loaded_skills:
-                return json.dumps({
-                    "skill": name,
-                    "already_loaded": True,
-                    "hint": "You already loaded this skill earlier in the conversation — see the previous tool result.",
-                })
+                return json.dumps(
+                    {
+                        "skill": name,
+                        "already_loaded": True,
+                        "hint": "You already loaded this skill earlier in the conversation — see the previous tool result.",
+                    }
+                )
             skill = get_skill(name)
             if not skill or not skill.enabled or skill.is_internal:
                 return json.dumps({"error": f"unknown skill: {name}"})
@@ -441,17 +444,20 @@ async def execute_tool_call(
             except Exception as e:
                 return json.dumps({"error": f"read failed: {e}"})
             data_url = f"data:{img.mime or 'image/png'};base64,{_b64.b64encode(blob).decode('ascii')}"
-            return json.dumps({
-                "image_data_url": data_url,
-                "ref": ref,
-                "file_id": file_id_raw,
-                "page": img.page,
-                "mime": img.mime,
-            })
+            return json.dumps(
+                {
+                    "image_data_url": data_url,
+                    "ref": ref,
+                    "file_id": file_id_raw,
+                    "page": img.page,
+                    "mime": img.mime,
+                }
+            )
 
         # Search tools (no sandbox needed)
         if tool_name == "web_search":
             from quip.services.search import web_search
+
             query = args.get("query", "")
             response = await web_search(query)
             result = {
@@ -461,8 +467,7 @@ async def execute_tool_call(
                     for r in response.results
                 ],
                 "images": [
-                    {"img_src": i.img_src, "source_url": i.source_url, "title": i.title}
-                    for i in response.images
+                    {"img_src": i.img_src, "source_url": i.source_url, "title": i.title} for i in response.images
                 ],
             }
             if response.error:
@@ -475,6 +480,7 @@ async def execute_tool_call(
 
         elif tool_name == "read_url":
             from quip.services.scraper import read_url
+
             content = await read_url(args.get("url", ""))
             return json.dumps({"content": content, "url": args.get("url", "")})
 
@@ -486,12 +492,14 @@ async def execute_tool_call(
                 code=args.get("code", ""),
                 language=args.get("language", "python"),
             )
-            return json.dumps({
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.exit_code,
-                "files_created": result.files_created,
-            })
+            return json.dumps(
+                {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "exit_code": result.exit_code,
+                    "files_created": result.files_created,
+                }
+            )
 
         elif tool_name == "sandbox_install":
             result = await manager.install_packages(
@@ -500,11 +508,13 @@ async def execute_tool_call(
                 manager=args.get("manager", "pip"),
                 db=db,
             )
-            return json.dumps({
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.exit_code,
-            })
+            return json.dumps(
+                {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "exit_code": result.exit_code,
+                }
+            )
 
         elif tool_name == "sandbox_write_file":
             content = args.get("content", "")
@@ -524,17 +534,15 @@ async def execute_tool_call(
 
         elif tool_name == "sandbox_list_files":
             files = await manager.list_files(sandbox, chat_id, args.get("path", "."))
-            return json.dumps({
-                "files": [
-                    {"name": f.name, "path": f.path, "size": f.size, "is_dir": f.is_dir}
-                    for f in files
-                ]
-            })
+            return json.dumps(
+                {"files": [{"name": f.name, "path": f.path, "size": f.size, "is_dir": f.is_dir} for f in files]}
+            )
 
         elif tool_name == "generate_image":
             from quip.core.config import get_setting
             from quip.services.image_gen import generate_image
             from quip.services.skill_store import get_skill_setting
+
             model = get_skill_setting("image_generation", "model", "") or "google/gemini-2.0-flash-exp:free"
             api_key = get_setting("openrouter_api_key", "")
             result = await generate_image(
@@ -554,6 +562,7 @@ async def execute_tool_call(
         elif tool_name == "generate_music":
             from quip.core.config import get_setting
             from quip.services.music_gen import generate_music
+
             api_key = get_setting("openrouter_api_key", "")
             result = await generate_music(
                 prompt=args.get("prompt", ""),
@@ -565,6 +574,7 @@ async def execute_tool_call(
             from quip.services.skill_store import get_skill
             from quip.services.widget_api import execute_widget_api
             from quip.skills import HANDLERS
+
             widget_name = args.get("name", "")
             skill = get_skill(widget_name)
             if not skill or skill.category != "widget" or not skill.enabled or skill.is_internal:
@@ -581,11 +591,13 @@ async def execute_tool_call(
 
             data = _normalize_widget_strings(data)
 
-            return json.dumps({
-                "widget": True,
-                "template": widget_name,
-                "data": data,
-            })
+            return json.dumps(
+                {
+                    "widget": True,
+                    "template": widget_name,
+                    "data": data,
+                }
+            )
 
         else:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -594,7 +606,6 @@ async def execute_tool_call(
         return json.dumps({"error": str(e)})
     except Exception as e:
         return json.dumps({"error": f"Execution error: {str(e)}"})
-
 
 
 async def run_tool_call(
@@ -616,8 +627,11 @@ async def run_tool_call(
     async with async_session() as tool_db:
         try:
             return await execute_tool_call(
-                sandbox_manager, sandbox, chat_id,
-                tc.function_name, tc.function_arguments,
+                sandbox_manager,
+                sandbox,
+                chat_id,
+                tc.function_name,
+                tc.function_arguments,
                 db=tool_db,
                 loaded_skills=loaded_skills,
                 user_id=user_id,

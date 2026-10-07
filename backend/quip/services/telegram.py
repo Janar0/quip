@@ -131,13 +131,12 @@ def _split_text(text: str, limit: int = MAX_MESSAGE_LENGTH - 80) -> list[str]:
 _MDV2_SPECIAL = set("_*[]()~`>#+-=|{}.!\\")
 
 
-_SOURCE_LINE = re.compile(
-    r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE
-)
+_SOURCE_LINE = re.compile(r"^(\s*)\[(\d+)\]\s+(.+?)\s+-\s+(https?://\S+)\s*$", re.MULTILINE)
 
 
 def _normalize_telegram_markdown(markdown: str) -> str:
     """Turn common search source lines into Markdown links."""
+
     def replace(match: re.Match[str]) -> str:
         prefix, number, title, url = match.groups()
         return f"{prefix}[{number}] [{title}]({url.rstrip('.,;')})"
@@ -486,9 +485,7 @@ class TelegramBotService:
         lock = self._thread_locks.setdefault(lock_key, asyncio.Lock())
         try:
             async with lock:
-                await self._handle_locked_message(
-                    message, text, int(chat_id), sender, sender_id, thread_id, media
-                )
+                await self._handle_locked_message(message, text, int(chat_id), sender, sender_id, thread_id, media)
         finally:
             if not lock.locked() and self._thread_locks.get(lock_key) is lock:
                 self._thread_locks.pop(lock_key, None)
@@ -510,9 +507,7 @@ class TelegramBotService:
         topic_created = message.get("forum_topic_created") or {}
         topic_edited = message.get("forum_topic_edited") or {}
         command, argument = self._command(text)
-        topic_name = str(
-            topic_edited.get("name") or topic_created.get("name") or ""
-        ).strip() or None
+        topic_name = str(topic_edited.get("name") or topic_created.get("name") or "").strip() or None
         topic_name_implicit: bool | None = (
             bool(topic_created.get("is_name_implicit"))
             if topic_created
@@ -553,7 +548,10 @@ class TelegramBotService:
             if command == "/unlink":
                 await unlink_telegram(db, user)
                 await self._send_text(
-                    chat_id, thread_id, "Telegram отвязан от QUIP. Для повторного подключения используйте WebUI.", markdown=False
+                    chat_id,
+                    thread_id,
+                    "Telegram отвязан от QUIP. Для повторного подключения используйте WebUI.",
+                    markdown=False,
                 )
                 return
 
@@ -636,9 +634,7 @@ class TelegramBotService:
                 file_ids,
             )
 
-    async def _topic_icon_id(
-        self, api: TelegramBotAPI, emoji: str | None
-    ) -> str | None:
+    async def _topic_icon_id(self, api: TelegramBotAPI, emoji: str | None) -> str | None:
         """Resolve a QUIP emoji to Telegram's allowed custom topic icon ID."""
         if not emoji:
             return None
@@ -657,9 +653,7 @@ class TelegramBotService:
                 icon_ids.setdefault(sticker_emoji, custom_emoji_id)
                 icon_ids.setdefault(sticker_emoji.replace("\ufe0f", ""), custom_emoji_id)
             self._topic_icon_ids = icon_ids
-        return self._topic_icon_ids.get(emoji) or self._topic_icon_ids.get(
-            emoji.replace("\ufe0f", "")
-        )
+        return self._topic_icon_ids.get(emoji) or self._topic_icon_ids.get(emoji.replace("\ufe0f", ""))
 
     async def _link_user(
         self,
@@ -920,9 +914,7 @@ class TelegramBotService:
                     placeholder_id = int(placeholder["message_id"])
 
             async with async_session() as db:
-                response = await CompletionService.chat_completion(
-                    completion_request, request, user, db
-                )
+                response = await CompletionService.chat_completion(completion_request, request, user, db)
                 async for frame in response.body_iterator:
                     event_type, data = _parse_sse_frame(frame)
                     if event_type == "content":
@@ -930,18 +922,10 @@ class TelegramBotService:
                     elif event_type == "tool_result":
                         raw_result = data.get("result")
                         try:
-                            result = (
-                                json.loads(raw_result)
-                                if isinstance(raw_result, str)
-                                else raw_result
-                            )
+                            result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
                         except (TypeError, json.JSONDecodeError):
                             result = None
-                        if (
-                            data.get("name") == "use_widget"
-                            and isinstance(result, dict)
-                            and result.get("widget")
-                        ):
+                        if data.get("name") == "use_widget" and isinstance(result, dict) and result.get("widget"):
                             widget_data = result.get("data")
                             if isinstance(widget_data, dict):
                                 widget_fallbacks.append(
@@ -1035,10 +1019,7 @@ class TelegramBotService:
                 title = artifact.get("title") or "Artifact"
                 body = artifact.get("content") or ""
                 fence = chr(96) * 3
-                artifact_text = (
-                    f"🧩 **{title}**\n\n"
-                    f"{fence}{artifact.get('language') or ''}\n{body}\n{fence}"
-                )
+                artifact_text = f"🧩 **{title}**\n\n{fence}{artifact.get('language') or ''}\n{body}\n{fence}"
                 await self._send_formatted(api, telegram_chat_id, thread_id, artifact_text)
             for widget in widget_fallbacks:
                 await self._send_formatted(api, telegram_chat_id, thread_id, widget)
@@ -1091,9 +1072,7 @@ class TelegramBotService:
         for chunk in chunks[1:]:
             await self._send_formatted(api, chat_id, thread_id, chunk)
 
-    async def _finish_rich_response(
-        self, api: TelegramBotAPI, chat_id: int, thread_id: str, text: str
-    ) -> None:
+    async def _finish_rich_response(self, api: TelegramBotAPI, chat_id: int, thread_id: str, text: str) -> None:
         # Rich messages accept the original Markdown directly and support a
         # much larger payload than legacy sendMessage. Keep a conservative
         # split for unusually long generations and let Telegram render tables,
@@ -1111,9 +1090,7 @@ class TelegramBotService:
             except (TelegramAPIError, httpx.HTTPError):
                 await self._send_formatted(api, chat_id, thread_id, chunk)
 
-    async def _send_formatted(
-        self, api: TelegramBotAPI, chat_id: int, thread_id: str, text: str
-    ) -> None:
+    async def _send_formatted(self, api: TelegramBotAPI, chat_id: int, thread_id: str, text: str) -> None:
         formatted = markdown_to_markdown_v2(text)
         try:
             await api.call(
@@ -1128,9 +1105,7 @@ class TelegramBotService:
         except (TelegramAPIError, httpx.HTTPError):
             await self._send_text(chat_id, thread_id, text, markdown=False)
 
-    async def _send_text(
-        self, chat_id: int, thread_id: str, text: str, *, markdown: bool
-    ) -> None:
+    async def _send_text(self, chat_id: int, thread_id: str, text: str, *, markdown: bool) -> None:
         api = self._api
         if api is None:
             return

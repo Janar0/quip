@@ -1,4 +1,5 @@
 """Image generation service — calls OpenRouter image models (Gemini Nano Banana series)."""
+
 import base64
 import uuid
 from pathlib import Path
@@ -47,10 +48,12 @@ async def generate_image(
             img_data = await _read_image_to_base64(url, db, user_id=user_id)
             if img_data:
                 mime, b64data = img_data
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime};base64,{b64data}"},
-                })
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64data}"},
+                    }
+                )
 
     content.append({"type": "text", "text": prompt})
 
@@ -103,9 +106,7 @@ async def generate_image(
     if isinstance(msg_content, str):
         text_response = msg_content
     elif isinstance(msg_content, list):
-        text_response = " ".join(
-            p.get("text", "") for p in msg_content if p.get("type") == "text"
-        )
+        text_response = " ".join(p.get("text", "") for p in msg_content if p.get("type") == "text")
     else:
         text_response = ""
 
@@ -198,10 +199,9 @@ async def _read_image_to_base64(
 
                 from quip.models.file import File
                 from quip.routers.files import UPLOAD_DIR
+
                 file_uuid = UUID(file_id_str)
-                result = await db.execute(
-                    select(File).where(File.id == file_uuid, File.user_id == user_id)
-                )
+                result = await db.execute(select(File).where(File.id == file_uuid, File.user_id == user_id))
                 file_record = result.scalar_one_or_none()
                 if file_record:
                     file_path = UPLOAD_DIR / file_record.storage_path

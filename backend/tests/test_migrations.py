@@ -20,7 +20,8 @@ async def _schema_snapshot(database_url: str):
                     {column["name"] for column in inspect(sync_connection).get_columns("telegram_link_tokens")},
                     (
                         {column["name"] for column in inspect(sync_connection).get_columns("voice_tool_calls")}
-                        if "voice_tool_calls" in tables else set()
+                        if "voice_tool_calls" in tables
+                        else set()
                     ),
                 )
             )
@@ -41,8 +42,13 @@ def test_fresh_database_migrates_to_workspace_head(tmp_path):
         _schema_snapshot(database_url)
     )
     assert {
-        "workspaces", "workspace_members", "chat_runs", "telegram_link_tokens", "telegram_updates",
-        "voice_calls", "voice_tool_calls",
+        "workspaces",
+        "workspace_members",
+        "chat_runs",
+        "telegram_link_tokens",
+        "telegram_updates",
+        "voice_calls",
+        "voice_tool_calls",
     }.issubset(tables)
     assert "workspace_id" in chat_columns
     assert "workspace_id" in file_columns
@@ -79,8 +85,7 @@ async def _seed_unversioned_baseline(database_url: str):
         async with engine.begin() as connection:
             await connection.execute(
                 text(
-                    "INSERT INTO users (id, email, username, name, role) "
-                    "VALUES (:id, :email, :username, :name, :role)"
+                    "INSERT INTO users (id, email, username, name, role) VALUES (:id, :email, :username, :name, :role)"
                 ),
                 {
                     "id": user_id.hex,
@@ -123,18 +128,10 @@ def test_unversioned_database_is_stamped_and_backfilled(tmp_path, monkeypatch):
         engine = create_async_engine(database_url)
         try:
             async with engine.connect() as connection:
-                workspace_count = (
-                    await connection.execute(text("SELECT count(*) FROM workspaces"))
-                ).scalar_one()
-                chat_workspace = (
-                    await connection.execute(text("SELECT workspace_id FROM chats"))
-                ).scalar_one()
-                file_workspace = (
-                    await connection.execute(text("SELECT workspace_id FROM files"))
-                ).scalar_one()
-                revision = (
-                    await connection.execute(text("SELECT version_num FROM alembic_version"))
-                ).scalar_one()
+                workspace_count = (await connection.execute(text("SELECT count(*) FROM workspaces"))).scalar_one()
+                chat_workspace = (await connection.execute(text("SELECT workspace_id FROM chats"))).scalar_one()
+                file_workspace = (await connection.execute(text("SELECT workspace_id FROM files"))).scalar_one()
+                revision = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
                 return workspace_count, chat_workspace, file_workspace, revision
         finally:
             await engine.dispose()

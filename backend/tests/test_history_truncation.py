@@ -4,6 +4,7 @@ ce109bc introduced _validate_model / _truncate_history. A cache miss made
 _validate_model default context_length to 4096, and _truncate_history then
 dropped the latest user message — the model received only the system prompt.
 """
+
 from quip.services.completion.service import _truncate_history, _validate_model
 
 
@@ -35,7 +36,7 @@ def test_oldest_turns_still_trimmed_when_over_budget():
     """Old turns should still be dropped, but never the final user message."""
     history = [
         {"role": "system", "content": "sys"},
-        {"role": "user", "content": "x" * 20000},      # old, huge
+        {"role": "user", "content": "x" * 20000},  # old, huge
         {"role": "assistant", "content": "y" * 20000},  # old, huge
         {"role": "user", "content": "latest question"},
     ]

@@ -3,6 +3,7 @@
 Revision ID: 0010
 Revises: 0009
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

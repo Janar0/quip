@@ -100,13 +100,16 @@ async def test_research_mode_gate_fails_closed_and_search_remains_separate(clien
     async def fake_run(self, *, chat_id, user_id, max_rounds):
         seen.append((self.search_mode, max_rounds))
         from quip.services.streaming import sse_event
+
         yield sse_event("content", {"text": "Fast search response"})
         yield sse_event("done", {})
 
     from unittest.mock import AsyncMock, patch
 
-    with patch("quip.services.completion.service.StreamOrchestrator.run", new=fake_run), \
-         patch("quip.services.completion.service.save_assistant_message", new_callable=AsyncMock):
+    with (
+        patch("quip.services.completion.service.StreamOrchestrator.run", new=fake_run),
+        patch("quip.services.completion.service.save_assistant_message", new_callable=AsyncMock),
+    ):
         search_response = await client.post(
             "/api/chat/completions",
             headers=auth_headers,
@@ -117,9 +120,7 @@ async def test_research_mode_gate_fails_closed_and_search_remains_separate(clien
 
 
 @pytest.mark.asyncio
-async def test_research_flag_defaults_to_disabled_across_api_and_admin_settings(
-    client, auth_headers, monkeypatch
-):
+async def test_research_flag_defaults_to_disabled_across_api_and_admin_settings(client, auth_headers, monkeypatch):
     from quip.core import config
 
     monkeypatch.delenv("RESEARCH_ENABLED", raising=False)
@@ -152,9 +153,7 @@ async def test_run_state_is_owner_scoped_and_cancel_is_idempotent(client, auth_h
     old_manager = getattr(app.state, "chat_run_manager", None)
     app.state.chat_run_manager = ChatRunManager(factory, runner_mode="single_process")
     try:
-        state = await client.get(
-            f"/api/chats/{chat.id}/runs/{run.id}", headers=auth_headers
-        )
+        state = await client.get(f"/api/chats/{chat.id}/runs/{run.id}", headers=auth_headers)
         assert state.status_code == 200
         payload = state.json()
         assert payload["revision"] == 2
@@ -167,20 +166,19 @@ async def test_run_state_is_owner_scoped_and_cancel_is_idempotent(client, auth_h
         assert chat_view.json()["runs"][0]["task_kind"] == "research"
 
         from quip.services.auth import create_access_token
+
         other = User(
-            email="other-research@test.dev", username="other-research",
-            name="Other", role="user",
+            email="other-research@test.dev",
+            username="other-research",
+            name="Other",
+            role="user",
         )
         db_session.add(other)
         await db_session.commit()
         other_headers = {"Authorization": f"Bearer {create_access_token(str(other.id), other.role)}"}
-        hidden = await client.get(
-            f"/api/chats/{chat.id}/runs/{run.id}", headers=other_headers
-        )
+        hidden = await client.get(f"/api/chats/{chat.id}/runs/{run.id}", headers=other_headers)
         assert hidden.status_code == 404
-        wrong_chat = await client.get(
-            f"/api/chats/{uuid4()}/runs/{run.id}", headers=auth_headers
-        )
+        wrong_chat = await client.get(f"/api/chats/{uuid4()}/runs/{run.id}", headers=auth_headers)
         assert wrong_chat.status_code == 404
 
         steering = await client.post(
@@ -192,12 +190,8 @@ async def test_run_state_is_owner_scoped_and_cancel_is_idempotent(client, auth_h
         assert steering.json()["context_version"] == 2
         assert steering.json()["run"]["steering"][0]["instruction"] == "Add a concise limitations section."
 
-        cancelled = await client.post(
-            f"/api/chats/{chat.id}/runs/{run.id}/cancel", headers=auth_headers
-        )
-        repeated = await client.post(
-            f"/api/chats/{chat.id}/runs/{run.id}/cancel", headers=auth_headers
-        )
+        cancelled = await client.post(f"/api/chats/{chat.id}/runs/{run.id}/cancel", headers=auth_headers)
+        repeated = await client.post(f"/api/chats/{chat.id}/runs/{run.id}/cancel", headers=auth_headers)
         assert cancelled.status_code == repeated.status_code == 200
         assert cancelled.json()["accepted"] is True
         assert repeated.json()["accepted"] is False
@@ -242,6 +236,7 @@ async def test_disconnect_detaches_and_reload_finds_partial_research(client, aut
         return {"status": "partial", "error": "One mocked agent failed"}
 
     from unittest.mock import AsyncMock, patch
+
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     from quip.services.chat_runs import ChatRunManager
     from quip.services.research.run_manager import ResearchRunManager
@@ -254,13 +249,17 @@ async def test_disconnect_detaches_and_reload_finds_partial_research(client, aut
     )
     request_task = None
     try:
-        with patch("quip.services.completion.service._copy_attachments_to_sandbox", new_callable=AsyncMock), \
-             patch("quip.services.completion.service.PromptBuilder.inject_rag", new_callable=AsyncMock, return_value=""):
-            request_task = asyncio.create_task(client.post(
-                "/api/chat/completions",
-                headers=auth_headers,
-                json={"chat_id": chat_id, "model": MODEL, "message": "Research this", "mode_hint": "research"},
-            ))
+        with (
+            patch("quip.services.completion.service._copy_attachments_to_sandbox", new_callable=AsyncMock),
+            patch("quip.services.completion.service.PromptBuilder.inject_rag", new_callable=AsyncMock, return_value=""),
+        ):
+            request_task = asyncio.create_task(
+                client.post(
+                    "/api/chat/completions",
+                    headers=auth_headers,
+                    json={"chat_id": chat_id, "model": MODEL, "message": "Research this", "mode_hint": "research"},
+                )
+            )
             await asyncio.wait_for(entered.wait(), 3)
             request_task.cancel()
             with pytest.raises(asyncio.CancelledError):
@@ -273,9 +272,7 @@ async def test_disconnect_detaches_and_reload_finds_partial_research(client, aut
         )
         run = persisted.scalars().first()
         assert run is not None
-        state = await client.get(
-            f"/api/chats/{chat_id}/runs/{run.id}", headers=auth_headers
-        )
+        state = await client.get(f"/api/chats/{chat_id}/runs/{run.id}", headers=auth_headers)
         assert state.status_code == 200
         assert state.json()["status"] == "partial"
         assert state.json()["message"]["content"] == "Partial report retained after disconnect."
@@ -311,20 +308,32 @@ async def test_oversized_unicode_sources_are_bounded_and_live_snapshot_matches_s
     source_fixtures.append({"title": "too long url", "url": "https://example.test/" + "b" * 2100})
 
     async def fake_research(_context, *, emit, **_kwargs):
-        await emit(ResearchEvent("status", {
-            "phase": "searching", "detail": "🔬" * 3000,
-        }))
+        await emit(
+            ResearchEvent(
+                "status",
+                {
+                    "phase": "searching",
+                    "detail": "🔬" * 3000,
+                },
+            )
+        )
         await emit(ResearchEvent("sources", {"sources": source_fixtures}))
 
     task_manager = ChatRunManager(factory, runner_mode="single_process")
     research_manager = ResearchRunManager(task_manager, runner=fake_research)
-    subscription = await research_manager.start(ResearchRunSpec(
-        run=ChatRunSpec(
-            run_id=run.id, chat_id=chat.id, user_id=owner.id,
-            assistant_message_id=message.id, task_kind="research",
-        ),
-        query="Large mocked source set", model=MODEL,
-    ))
+    subscription = await research_manager.start(
+        ResearchRunSpec(
+            run=ChatRunSpec(
+                run_id=run.id,
+                chat_id=chat.id,
+                user_id=owner.id,
+                assistant_message_id=message.id,
+                task_kind="research",
+            ),
+            query="Large mocked source set",
+            model=MODEL,
+        )
+    )
     try:
         events = [event async for event in subscription]
         persisted = await read_run(factory, run_id=run.id, chat_id=chat.id, user_id=owner.id)
@@ -363,6 +372,7 @@ async def test_stop_endpoint_cancels_active_research_and_keeps_partial_text(clie
         await asyncio.Event().wait()
 
     from unittest.mock import AsyncMock, patch
+
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     from quip.services.research.run_manager import ResearchRunManager
 
@@ -372,13 +382,17 @@ async def test_stop_endpoint_cancels_active_research_and_keeps_partial_text(clie
     app.state.research_run_manager = ResearchRunManager(app.state.chat_run_manager, runner=fake_research)
     request_task = None
     try:
-        with patch("quip.services.completion.service._copy_attachments_to_sandbox", new_callable=AsyncMock), \
-             patch("quip.services.completion.service.PromptBuilder.inject_rag", new_callable=AsyncMock, return_value=""):
-            request_task = asyncio.create_task(client.post(
-                "/api/chat/completions",
-                headers=auth_headers,
-                json={"chat_id": chat_id, "model": MODEL, "message": "Stop test", "mode_hint": "research"},
-            ))
+        with (
+            patch("quip.services.completion.service._copy_attachments_to_sandbox", new_callable=AsyncMock),
+            patch("quip.services.completion.service.PromptBuilder.inject_rag", new_callable=AsyncMock, return_value=""),
+        ):
+            request_task = asyncio.create_task(
+                client.post(
+                    "/api/chat/completions",
+                    headers=auth_headers,
+                    json={"chat_id": chat_id, "model": MODEL, "message": "Stop test", "mode_hint": "research"},
+                )
+            )
             await asyncio.wait_for(entered.wait(), 3)
             await asyncio.sleep(0)
             found = await db_session.execute(
@@ -386,9 +400,7 @@ async def test_stop_endpoint_cancels_active_research_and_keeps_partial_text(clie
             )
             run = found.scalars().first()
             assert run is not None
-            stopped = await client.post(
-                f"/api/chats/{chat_id}/runs/{run.id}/cancel", headers=auth_headers
-            )
+            stopped = await client.post(f"/api/chats/{chat_id}/runs/{run.id}/cancel", headers=auth_headers)
             assert stopped.status_code == 200
             assert stopped.json()["accepted"] is True
             response = await asyncio.wait_for(request_task, 3)
@@ -424,27 +436,38 @@ async def test_usage_from_cancelled_research_is_still_logged(db_session):
     entered = asyncio.Event()
 
     async def fake_research(_context, *, emit, **_kwargs):
-        await emit(ResearchEvent("usage", {
-            "prompt_tokens": 12, "completion_tokens": 4, "cached_tokens": 0,
-            "cost": 0.02, "provider": "mock-provider", "generation_id": "mock-generation",
-            "subagent_generations": ["mock-generation"],
-        }))
+        await emit(
+            ResearchEvent(
+                "usage",
+                {
+                    "prompt_tokens": 12,
+                    "completion_tokens": 4,
+                    "cached_tokens": 0,
+                    "cost": 0.02,
+                    "provider": "mock-provider",
+                    "generation_id": "mock-generation",
+                    "subagent_generations": ["mock-generation"],
+                },
+            )
+        )
         entered.set()
         await asyncio.Event().wait()
 
     task_manager = ChatRunManager(factory, runner_mode="single_process")
     research_manager = ResearchRunManager(task_manager, runner=fake_research)
-    subscription = await research_manager.start(ResearchRunSpec(
-        run=ChatRunSpec(
-            run_id=run_id,
-            chat_id=chat_id,
-            user_id=user_id,
-            assistant_message_id=message_id,
-            task_kind="research",
-        ),
-        query="Mocked cost accounting",
-        model=MODEL,
-    ))
+    subscription = await research_manager.start(
+        ResearchRunSpec(
+            run=ChatRunSpec(
+                run_id=run_id,
+                chat_id=chat_id,
+                user_id=user_id,
+                assistant_message_id=message_id,
+                task_kind="research",
+            ),
+            query="Mocked cost accounting",
+            model=MODEL,
+        )
+    )
     try:
         await asyncio.wait_for(entered.wait(), 1)
         assert await task_manager.request_cancel(run_id=run_id, chat_id=chat_id, user_id=user_id)

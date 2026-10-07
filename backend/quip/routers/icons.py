@@ -5,6 +5,7 @@ repo and gives the frontend a stable same-origin URL.
 No hardcoded whitelist: any slug matching the lobe-icons naming convention
 (lowercase alphanumerics + dashes) is tried. Misses are cached in memory so
 we don't hammer upstreams for unknown slugs."""
+
 from __future__ import annotations
 
 import asyncio

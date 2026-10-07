@@ -46,11 +46,13 @@ def validated_search_sources(result_json: str, *, limit: int = 30) -> list[dict[
         if url in seen:
             continue
         seen.add(url)
-        sources.append({
-            "title": str(item.get("title") or host)[:240],
-            "url": url,
-            "snippet": str(item.get("snippet") or item.get("content") or "")[:600],
-        })
+        sources.append(
+            {
+                "title": str(item.get("title") or host)[:240],
+                "url": url,
+                "snippet": str(item.get("snippet") or item.get("content") or "")[:600],
+            }
+        )
         if len(sources) >= max(1, min(limit, 30)):
             break
     return sources

@@ -4,6 +4,7 @@ Pipeline:
   embed query → score chunks via configured VectorStore → dedup by content_hash →
   MMR re-rank for diversity → format context with token budget → inject
 """
+
 import asyncio
 import logging
 import time
@@ -44,15 +45,17 @@ def _score_rows(query_vec: list[float], rows: list) -> list[dict]:
     for chunk, filename, content_hash in rows:
         if not chunk.embedding:
             continue
-        scored.append({
-            "content": chunk.content,
-            "filename": filename,
-            "file_id": str(chunk.file_id),
-            "chunk_index": chunk.chunk_index,
-            "metadata": chunk.chunk_metadata or {},
-            "content_hash": content_hash,
-            "score": cosine_similarity(query_vec, chunk.embedding),
-        })
+        scored.append(
+            {
+                "content": chunk.content,
+                "filename": filename,
+                "file_id": str(chunk.file_id),
+                "chunk_index": chunk.chunk_index,
+                "metadata": chunk.chunk_metadata or {},
+                "content_hash": content_hash,
+                "score": cosine_similarity(query_vec, chunk.embedding),
+            }
+        )
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored
 
@@ -223,30 +226,36 @@ async def retrieve_context(
         )
     arch_result = await db.execute(arch_q)
     for chunk, filename, chash in arch_result.all():
-        top.append({
-            "content": chunk.content,
-            "filename": filename,
-            "file_id": str(chunk.file_id),
-            "chunk_index": chunk.chunk_index,
-            "metadata": chunk.chunk_metadata or {"source": "archive"},
-            "content_hash": chash,
-            "score": 0.0,
-        })
+        top.append(
+            {
+                "content": chunk.content,
+                "filename": filename,
+                "file_id": str(chunk.file_id),
+                "chunk_index": chunk.chunk_index,
+                "metadata": chunk.chunk_metadata or {"source": "archive"},
+                "content_hash": chash,
+                "score": 0.0,
+            }
+        )
 
     elapsed = (time.monotonic() - t0) * 1000
     if top:
         scores = [c.get("score", 0) for c in top if c.get("score", 0) > 0]
-        score_summary = (
-            f"top={scores[0]:.3f} avg={sum(scores)/len(scores):.3f}" if scores else "no scores"
-        )
+        score_summary = f"top={scores[0]:.3f} avg={sum(scores) / len(scores):.3f}" if scores else "no scores"
         logger.info(
             "RAG: query=%r chat=%s chunks_scanned=%d retrieved=%d "
             "dedup_dropped=%d scores=[%s] "
             "timings(ms)=embed=%.0f fetch=%.0f score=%.0f rerank=%.0f total=%.0f",
-            query[:80], str(chat_id)[:8], len(rows), len(top),
-            dupes, score_summary,
-            (t_embed - t0) * 1000, (t_fetch - t_embed) * 1000,
-            (t_score - t_fetch) * 1000, (t_rerank - t_score) * 1000,
+            query[:80],
+            str(chat_id)[:8],
+            len(rows),
+            len(top),
+            dupes,
+            score_summary,
+            (t_embed - t0) * 1000,
+            (t_fetch - t_embed) * 1000,
+            (t_score - t_fetch) * 1000,
+            (t_rerank - t_score) * 1000,
             elapsed,
         )
 
@@ -316,14 +325,11 @@ def format_rag_context(chunks: list[dict], max_tokens: int = FORMAT_MAX_TOKENS) 
     lines.append("[/Retrieved Context]")
 
     if included > 0 or archive:
-        lines.append(
-            "Use the above context to answer the user's question. "
-            "Cite sources by filename when relevant."
-        )
+        lines.append("Use the above context to answer the user's question. Cite sources by filename when relevant.")
     if has_images:
         lines.append(
             "If a chunk references `[image: img_N]` and you need to see that image, "
-            "call `get_document_image(ref=\"img_N\", file_id=\"<file_id>\")` to retrieve it."
+            'call `get_document_image(ref="img_N", file_id="<file_id>")` to retrieve it.'
         )
     if has_archive:
         lines.append(

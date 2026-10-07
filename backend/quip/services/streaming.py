@@ -1,4 +1,5 @@
 """SSE framing + content coalescing for streaming chat completions."""
+
 from __future__ import annotations
 
 import json

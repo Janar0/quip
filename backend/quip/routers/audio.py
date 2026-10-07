@@ -2,6 +2,7 @@
 
 No auth required: filenames are UUIDv4, equivalent in security to signed URLs.
 """
+
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException

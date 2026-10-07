@@ -1,4 +1,5 @@
 """File and DocumentChunk models for uploads, images, and RAG."""
+
 import uuid
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text, Uuid, func

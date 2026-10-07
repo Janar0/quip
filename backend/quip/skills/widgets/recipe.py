@@ -1,16 +1,16 @@
 """Skill: recipe — Display a recipe with ingredients, steps as a beautiful card. Use when user asks"""
 
 SKILL = {
-    'id': 'recipe',
-    'name': 'Recipe',
-    'description': 'Display a recipe with ingredients, steps as a beautiful card. Use when user asks for recipes or cooking instructions.',
-    'category': 'widget',
-    'icon': 'M15 11h.01M11 15h.01M16 16a4 4 0 11-8 0c0-1.6.8-3 2-4l2-2 2 2c1.2 1 2 2.4 2 4z',
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """Widget: recipe — display a recipe as a rich card with hero images, ingredients, numbered steps, and notes.
+    "id": "recipe",
+    "name": "Recipe",
+    "description": "Display a recipe with ingredients, steps as a beautiful card. Use when user asks for recipes or cooking instructions.",
+    "category": "widget",
+    "icon": "M15 11h.01M11 15h.01M16 16a4 4 0 11-8 0c0-1.6.8-3 2-4l2-2 2 2c1.2 1 2 2.4 2 4z",
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """Widget: recipe — display a recipe as a rich card with hero images, ingredients, numbered steps, and notes.
 
 Call: use_widget(name="recipe", data={...})
 
@@ -37,9 +37,20 @@ Rules:
 - `amount`/`unit` in ingredients may be strings (e.g. "400" + "g", "1" + "pinch", "2" + "cloves").
 - Steps should be concrete instructions, one per array item — they will be auto-numbered.
 - After the widget, keep follow-up text very short (or omit entirely). The widget is the main content.""",
-    'data_schema': {'title': 'string', 'description': 'string', 'servings': 'number', 'prep_time': 'string', 'cook_time': 'string', 'images': ['string'], 'ingredients': [{'amount': 'string', 'unit': 'string', 'name': 'string'}], 'steps': ['string'], 'notes': 'string', 'tags': ['string']},
-    'api_config': None,
-    'template_html': """<div class="widget-recipe">
+    "data_schema": {
+        "title": "string",
+        "description": "string",
+        "servings": "number",
+        "prep_time": "string",
+        "cook_time": "string",
+        "images": ["string"],
+        "ingredients": [{"amount": "string", "unit": "string", "name": "string"}],
+        "steps": ["string"],
+        "notes": "string",
+        "tags": ["string"],
+    },
+    "api_config": None,
+    "template_html": """<div class="widget-recipe">
   {{#images.length}}
   <div class="wr-hero wr-hero-{{images.length}}">
     {{#images}}<div class="wr-hero-img" style="background-image: url('{{.}}')"></div>{{/images}}
@@ -146,7 +157,7 @@ Rules:
     };
   });
 </script>""",
-    'template_css': """.widget-card .widget-recipe {
+    "template_css": """.widget-card .widget-recipe {
   font-family: system-ui, -apple-system, sans-serif;
   overflow: hidden;
   background: var(--quip-glass-bg, rgba(22,22,26,0.42));

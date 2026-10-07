@@ -7,6 +7,7 @@ Responses are ETag-tagged with a short SHA-256 digest of the payload so the
 client can send `If-None-Match: <etag>` and get a 16-byte 304 when nothing
 changed — cheap re-validation on every page load without resending the list.
 """
+
 import hashlib
 import json
 import time
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 # Simple in-memory cache
 _cache: dict[str, tuple[float, list]] = {}
 OPENROUTER_TTL = 300  # 5 minutes
-OLLAMA_TTL = 30       # 30 seconds
+OLLAMA_TTL = 30  # 30 seconds
 
 
 def _model_supports_tools(model_raw: dict) -> bool:
@@ -73,6 +74,7 @@ def get_cached_models() -> list[dict]:
         models.extend(or_models)
 
     from quip.core.config import get_setting as _gs
+
     ollama_url = _gs("ollama_url", "http://localhost:11434")
     ollama_models = _get_cached(f"ollama:{ollama_url}", OLLAMA_TTL)
     if ollama_models:
@@ -113,17 +115,19 @@ async def get_available_models(
             or_models = []
             for m in raw:
                 pricing = m.get("pricing", {})
-                or_models.append({
-                    "id": m.get("id", ""),
-                    "name": m.get("name", ""),
-                    "context_length": m.get("context_length", 0),
-                    "pricing": {
-                        "prompt": pricing.get("prompt", "0"),
-                        "completion": pricing.get("completion", "0"),
-                    },
-                    "provider": "openrouter",
-                    "supports_tools": _model_supports_tools(m),
-                })
+                or_models.append(
+                    {
+                        "id": m.get("id", ""),
+                        "name": m.get("name", ""),
+                        "context_length": m.get("context_length", 0),
+                        "pricing": {
+                            "prompt": pricing.get("prompt", "0"),
+                            "completion": pricing.get("completion", "0"),
+                        },
+                        "provider": "openrouter",
+                        "supports_tools": _model_supports_tools(m),
+                    }
+                )
             if or_models:
                 _set_cached("openrouter", or_models)
             else:
@@ -162,15 +166,10 @@ async def get_available_models(
         except json.JSONDecodeError:
             pass
     if aliases:
-        models = [
-            {**m, "display_name": aliases[m["id"]]} if m["id"] in aliases else m
-            for m in models
-        ]
+        models = [{**m, "display_name": aliases[m["id"]]} if m["id"] in aliases else m for m in models]
 
     payload = {"models": models, "default_model": get_setting("default_model") or None}
-    etag = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()[:16]
+    etag = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
     # Client sent a matching ETag — nothing changed, return 304 (empty body).
     if if_none_match and if_none_match.strip('"') == etag:

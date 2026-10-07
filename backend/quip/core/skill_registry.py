@@ -13,6 +13,7 @@ with all DB fields plus optional extras:
 
 discover_skills() walks all three category subpackages and returns (skills, handlers).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -56,7 +57,9 @@ def discover_skills() -> list[dict]:
                 manifest = SkillManifest.from_dict(skill)
             except Exception:
                 logger.warning(
-                    "Skipping skill %s/%s: invalid SKILL dict", sub, mod_info.name,
+                    "Skipping skill %s/%s: invalid SKILL dict",
+                    sub,
+                    mod_info.name,
                     exc_info=True,
                 )
                 continue

@@ -1,4 +1,5 @@
 """File upload/download/delete endpoints for images and documents."""
+
 import asyncio
 import hashlib
 import mimetypes
@@ -73,6 +74,7 @@ def _normalize_image(data: bytes, content_type: str, max_size: int = 2 * 1024 * 
         import io
 
         from PIL import Image, ImageOps
+
         img = Image.open(io.BytesIO(data))
 
         # Apply EXIF orientation — physically rotates pixels, strips orientation tag
@@ -113,9 +115,7 @@ async def upload_files(
     chat_uuid = chat_id
     workspace = None
     if chat_uuid is not None:
-        chat_result = await db.execute(
-            select(Chat).where(Chat.id == chat_uuid, Chat.user_id == user.id)
-        )
+        chat_result = await db.execute(select(Chat).where(Chat.id == chat_uuid, Chat.user_id == user.id))
         chat = chat_result.scalar_one_or_none()
         if chat is None:
             raise HTTPException(status_code=404, detail="Chat not found")
@@ -150,7 +150,7 @@ async def upload_files(
             if len(data) > archive_max:
                 raise HTTPException(
                     status_code=413,
-                    detail=f"Archive too large (max {archive_max // (1024*1024)} MB)",
+                    detail=f"Archive too large (max {archive_max // (1024 * 1024)} MB)",
                 )
 
         # Hash for dedup
@@ -158,6 +158,7 @@ async def upload_files(
 
         # Create DB record
         import uuid
+
         file_id = uuid.uuid4()
         ext = Path(upload.filename or "file").suffix or ""
         storage_name = f"{file_id}{ext}"
@@ -202,20 +203,22 @@ async def upload_files(
             try:
                 from quip.services.sandbox import sandbox_manager
                 from quip.services.skill_store import get_skill as _gsk
+
                 _sb = _gsk("sandbox")
                 if sandbox_manager.available and _sb and _sb.enabled:
                     from quip.database import async_session
                     from quip.models.sandbox import Sandbox
+
                     async with async_session() as sdb:
-                        result = await sdb.execute(
-                            select(Sandbox).where(Sandbox.user_id == user.id)
-                        )
+                        result = await sdb.execute(select(Sandbox).where(Sandbox.user_id == user.id))
                         sandbox = result.scalar_one_or_none()
                         if sandbox:
                             await sandbox_manager.ensure_chat_dir(sandbox, str(chat_uuid))
                             # Create uploads subdir and copy file
                             await sandbox_manager._exec(sandbox, f"mkdir -p /workspace/{chat_uuid}/uploads")
-                            safe_name = (upload.filename or "file").replace("/", "_").replace("\\", "_").replace("..", "_")
+                            safe_name = (
+                                (upload.filename or "file").replace("/", "_").replace("\\", "_").replace("..", "_")
+                            )
                             await sandbox_manager.write_file(sandbox, str(chat_uuid), f"uploads/{safe_name}", data)
             except Exception:
                 pass  # Sandbox copy is best-effort
@@ -224,14 +227,16 @@ async def upload_files(
         if embedding_status == "pending":
             pending_file_ids.append(file_id)
 
-        results.append({
-            "id": str(file_id),
-            "filename": upload.filename or "file",
-            "file_type": file_type,
-            "content_type": content_type,
-            "size": len(data),
-            "workspace_id": str(workspace.id),
-        })
+        results.append(
+            {
+                "id": str(file_id),
+                "filename": upload.filename or "file",
+                "file_type": file_type,
+                "content_type": content_type,
+                "size": len(data),
+                "workspace_id": str(workspace.id),
+            }
+        )
 
     await db.commit()
 
@@ -246,11 +251,14 @@ async def _process_file_background(file_id: UUID):
     """Process a document file in the background (extract, chunk, embed)."""
     try:
         from quip.database import async_session
+
         async with async_session() as db:
             from quip.services.documents import process_file
+
             await process_file(file_id, db)
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Background file processing failed for {file_id}: {e}")
 
 

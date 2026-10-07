@@ -1,16 +1,16 @@
 """Skill: artifact_code — Source code block with syntax highlighting"""
 
 SKILL = {
-    'id': 'artifact_code',
-    'name': 'artifact_code',
-    'description': 'Source code block with syntax highlighting',
-    'category': 'artifact',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """When creating visualizations, code, diagrams, or data displays, use artifact tags with structured data.
+    "id": "artifact_code",
+    "name": "artifact_code",
+    "description": "Source code block with syntax highlighting",
+    "category": "artifact",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """When creating visualizations, code, diagrams, or data displays, use artifact tags with structured data.
 
 GENERAL RULES:
 - Use the SIMPLEST type that fits the data (plot > html for function graphs, chart > html for data viz).
@@ -39,8 +39,8 @@ DO NOT USE WHEN:
 - Inline code snippets (use markdown code fences)
 - Configuration or logs better shown as plain text
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

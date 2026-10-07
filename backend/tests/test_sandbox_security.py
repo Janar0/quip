@@ -307,9 +307,7 @@ async def test_simultaneous_first_sandbox_requests_share_reservation(tmp_path, m
             return await manager.get_or_create(user_id, db)
 
     try:
-        first, second = await asyncio.wait_for(
-            asyncio.gather(get_sandbox(), get_sandbox()), timeout=10
-        )
+        first, second = await asyncio.wait_for(asyncio.gather(get_sandbox(), get_sandbox()), timeout=10)
         assert first.id == second.id
         assert starts == 1
     finally:

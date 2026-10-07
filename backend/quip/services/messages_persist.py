@@ -3,6 +3,7 @@
 Runs in a fresh DB session because the streaming response may have already
 detached from the request-scoped session by the time we save.
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,9 +42,7 @@ async def save_assistant_message(
     try:
         factory = session_factory or async_session
         async with factory() as db:
-            result = await db.execute(
-                select(Message).where(Message.id == UUID(assistant_msg_id))
-            )
+            result = await db.execute(select(Message).where(Message.id == UUID(assistant_msg_id)))
             msg = result.scalar_one_or_none()
             if msg is None and require_persisted:
                 raise RuntimeError("Assistant message does not exist; result was not persisted")
@@ -76,10 +75,12 @@ async def save_assistant_message(
                 msg.model = model
 
             if usage:
+
                 def _u(key, default=None):
                     if isinstance(usage, dict):
                         return usage.get(key, default)
                     return getattr(usage, key, default)
+
                 log = UsageLog(
                     user_id=user_id,
                     chat_id=UUID(chat_id),

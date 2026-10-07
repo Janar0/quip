@@ -1,16 +1,16 @@
 """Skill: music_generation — Generate AI music using the generate_music tool"""
 
 SKILL = {
-    'id': 'music_generation',
-    'name': 'Music Generation',
-    'description': 'Generate AI music using the generate_music tool',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """## Music Generation
+    "id": "music_generation",
+    "name": "Music Generation",
+    "description": "Generate AI music using the generate_music tool",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """## Music Generation
 
 Use the `generate_music` tool to create AI-generated music.
 
@@ -42,17 +42,17 @@ Just write a short description of what was generated in plain prose.
 {"prompt": "Upbeat jazz cafe background, acoustic bass, brushed snare, muted trumpet, 140 BPM"}
 {"prompt": "Ambient electronic soundscape, soft pads, distant synth arpeggios, meditative, 60 BPM"}
 ```""",
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'settings_schema': [
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "settings_schema": [
         {
-            'key': 'model',
-            'label': 'Model',
-            'type': 'text',
-            'default': 'google/lyria-3-clip-preview',
-            'help': 'OpenRouter audio model id.',
+            "key": "model",
+            "label": "Model",
+            "type": "text",
+            "default": "google/lyria-3-clip-preview",
+            "help": "OpenRouter audio model id.",
         },
     ],
-    'default_settings': {'model': 'google/lyria-3-clip-preview'},
+    "default_settings": {"model": "google/lyria-3-clip-preview"},
 }

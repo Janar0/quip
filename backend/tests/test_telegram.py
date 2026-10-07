@@ -112,7 +112,9 @@ def test_telegram_media_selects_largest_photo_and_caption_attachments():
 
 
 def test_telegram_media_supports_documents_voice_and_video():
-    document = describe_media({"document": {"file_id": "doc", "file_name": "report.pdf", "mime_type": "application/pdf"}})
+    document = describe_media(
+        {"document": {"file_id": "doc", "file_name": "report.pdf", "mime_type": "application/pdf"}}
+    )
     voice = describe_media({"voice": {"file_id": "voice", "mime_type": "audio/ogg"}})
     video = describe_media({"video": {"file_id": "video", "file_name": "clip.mp4", "mime_type": "video/mp4"}})
 

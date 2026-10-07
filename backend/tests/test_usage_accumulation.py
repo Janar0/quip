@@ -5,16 +5,29 @@ multiple rounds). The chat path used to keep only the last round's usage
 (`last_usage = data`), so cost/tokens for every earlier round were dropped —
 costs came out roughly halved for tool-using turns.
 """
+
 from quip.services.completion.service import _accumulate_usage
 
 
 def test_accumulate_sums_tokens_and_cost_across_rounds():
     acc = None
     rounds = [
-        {"prompt_tokens": 1000, "completion_tokens": 200, "cached_tokens": 0,
-         "cost": 0.01, "provider": "openai", "generation_id": "gen-1"},
-        {"prompt_tokens": 1500, "completion_tokens": 300, "cached_tokens": 100,
-         "cost": 0.02, "provider": "openai", "generation_id": "gen-2"},
+        {
+            "prompt_tokens": 1000,
+            "completion_tokens": 200,
+            "cached_tokens": 0,
+            "cost": 0.01,
+            "provider": "openai",
+            "generation_id": "gen-1",
+        },
+        {
+            "prompt_tokens": 1500,
+            "completion_tokens": 300,
+            "cached_tokens": 100,
+            "cost": 0.02,
+            "provider": "openai",
+            "generation_id": "gen-2",
+        },
     ]
     for r in rounds:
         acc = _accumulate_usage(acc, r)

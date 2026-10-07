@@ -1,16 +1,16 @@
 """Skill: converter — Display a unit/currency conversion result as a visual card. Use when user asks t"""
 
 SKILL = {
-    'id': 'converter',
-    'name': 'Unit Converter',
-    'description': 'Display a unit/currency conversion result as a visual card. Use when user asks to convert units, currencies, or measurements.',
-    'category': 'widget',
-    'icon': 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """Widget: converter — display a unit/currency conversion.
+    "id": "converter",
+    "name": "Unit Converter",
+    "description": "Display a unit/currency conversion result as a visual card. Use when user asks to convert units, currencies, or measurements.",
+    "category": "widget",
+    "icon": "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """Widget: converter — display a unit/currency conversion.
 
 Call: use_widget(name="converter", data={...})
 
@@ -27,9 +27,18 @@ Data schema:
 }
 
 category: one of "distance", "weight", "temperature", "volume", "currency", "area", "speed", "time", "data".""",
-    'data_schema': {'from_value': 'number', 'from_unit': 'string', 'from_label': 'string', 'to_value': 'number', 'to_unit': 'string', 'to_label': 'string', 'formula': 'string', 'category': 'string'},
-    'api_config': None,
-    'template_html': """<div class="widget-converter">
+    "data_schema": {
+        "from_value": "number",
+        "from_unit": "string",
+        "from_label": "string",
+        "to_value": "number",
+        "to_unit": "string",
+        "to_label": "string",
+        "formula": "string",
+        "category": "string",
+    },
+    "api_config": None,
+    "template_html": """<div class="widget-converter">
   {{#category}}<div class="wc-cat">{{category}}</div>{{/category}}
   <div class="wc-row">
     <div class="wc-side">
@@ -48,7 +57,7 @@ category: one of "distance", "weight", "temperature", "volume", "currency", "are
   </div>
   {{#formula}}<div class="wc-formula">{{formula}}</div>{{/formula}}
 </div>""",
-    'template_css': """.widget-card .widget-converter {
+    "template_css": """.widget-card .widget-converter {
   padding: 1.5rem;
   font-family: system-ui, -apple-system, sans-serif;
   text-align: center;

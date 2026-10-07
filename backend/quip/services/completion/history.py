@@ -1,4 +1,5 @@
 """Build message history for chat completions."""
+
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -14,9 +15,7 @@ class HistoryService:
     """Builds message history arrays for LLM API calls."""
 
     @staticmethod
-    async def build_file_path_map(
-        messages: list[Message], chat: Chat, db: AsyncSession
-    ) -> dict[str, str]:
+    async def build_file_path_map(messages: list[Message], chat: Chat, db: AsyncSession) -> dict[str, str]:
         """Resolve storage paths without crossing the chat's tenant boundary."""
         all_file_ids: set[UUID] = set()
         for m in messages:
@@ -52,9 +51,7 @@ class HistoryService:
         - Normal flow: flat list, capped at HISTORY_LIMIT, ordered by created_at ascending.
         """
         if branch_from_message_id or user_msg:
-            all_msgs_result = await db.execute(
-                select(Message).where(Message.chat_id == chat.id)
-            )
+            all_msgs_result = await db.execute(select(Message).where(Message.chat_id == chat.id))
             id_to_msg = {m.id: m for m in all_msgs_result.scalars().all()}
 
             start = user_msg if user_msg else None
@@ -87,15 +84,11 @@ class HistoryService:
         orig_msg: Message,
     ) -> tuple[list[Message], dict[str, str]]:
         """Walk ancestry from orig_msg.parent → root. Returns (chain, file_path_map)."""
-        all_msgs_result = await db.execute(
-            select(Message).where(Message.chat_id == chat.id)
-        )
+        all_msgs_result = await db.execute(select(Message).where(Message.chat_id == chat.id))
         id_to_msg = {m.id: m for m in all_msgs_result.scalars().all()}
 
         chain: list[Message] = []
-        curr: Message | None = (
-            id_to_msg.get(orig_msg.parent_id) if orig_msg.parent_id else None
-        )
+        curr: Message | None = id_to_msg.get(orig_msg.parent_id) if orig_msg.parent_id else None
         while curr:
             chain.append(curr)
             curr = id_to_msg.get(curr.parent_id) if curr.parent_id else None

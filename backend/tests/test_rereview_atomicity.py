@@ -23,13 +23,13 @@ from quip.services.chat_runs import (
 
 @pytest.fixture
 async def file_factory(tmp_path):
-    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path / "review.db"}', connect_args={'timeout': 5})
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'review.db'}", connect_args={"timeout": 5})
 
-    @event.listens_for(engine.sync_engine, 'connect')
+    @event.listens_for(engine.sync_engine, "connect")
     def configure(connection, _record):
         cursor = connection.cursor()
-        cursor.execute('PRAGMA journal_mode=WAL')
-        cursor.execute('PRAGMA busy_timeout=5000')
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
     async with engine.begin() as connection:
@@ -42,9 +42,13 @@ async def file_factory(tmp_path):
 @pytest.mark.asyncio
 async def test_recovery_cannot_overwrite_terminal_run_after_conflict_retry(file_factory, terminal_status):
     async with file_factory() as db:
-        spec = await make_run(db, status='running')
+        spec = await make_run(db, status="running")
         run = await db.get(ChatRun, spec.run_id)
-        run.run_metadata = {**run.run_metadata, 'runner_owner_id': 'late-owner', 'runner_heartbeat_at': (datetime.now(UTC) - timedelta(minutes=2)).isoformat()}
+        run.run_metadata = {
+            **run.run_metadata,
+            "runner_owner_id": "late-owner",
+            "runner_heartbeat_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+        }
         await db.commit()
     entered, release = asyncio.Event(), asyncio.Event()
     first_update = True
@@ -52,13 +56,13 @@ async def test_recovery_cannot_overwrite_terminal_run_after_conflict_retry(file_
     class DelayedRecovery(AsyncSession):
         async def execute(self, statement, *args, **kwargs):
             nonlocal first_update
-            if isinstance(statement, Update) and statement.table.name == 'chat_runs' and first_update:
+            if isinstance(statement, Update) and statement.table.name == "chat_runs" and first_update:
                 first_update = False
                 entered.set()
                 await asyncio.wait_for(release.wait(), 3)
             return await super().execute(statement, *args, **kwargs)
 
-    recovery_factory = async_sessionmaker(file_factory.kw['bind'], class_=DelayedRecovery, expire_on_commit=False)
+    recovery_factory = async_sessionmaker(file_factory.kw["bind"], class_=DelayedRecovery, expire_on_commit=False)
     recovery = asyncio.create_task(interrupt_active_runs(recovery_factory))
     await asyncio.wait_for(entered.wait(), 3)
     terminal = await _finish_run(
@@ -66,13 +70,13 @@ async def test_recovery_cannot_overwrite_terminal_run_after_conflict_retry(file_
         run_id=spec.run_id,
         status=terminal_status,
         error=None,
-        runner_owner_id='late-owner',
+        runner_owner_id="late-owner",
     )
     assert terminal == terminal_status
     release.set()
     count = await recovery
     result = await read_run(file_factory, run_id=spec.run_id, chat_id=spec.chat_id, user_id=spec.user_id)
-    assert result['status'] == terminal_status
+    assert result["status"] == terminal_status
     assert count == 0
 
 
@@ -102,19 +106,19 @@ async def test_concurrent_same_manager_starts_claim_one_queued_execution(file_fa
                     second_target_read.set()
             return result
 
-    factory = async_sessionmaker(file_factory.kw['bind'], class_=BarrierClaim, expire_on_commit=False)
-    manager = ChatRunManager(factory, runner_mode='single_process', max_concurrent_runs=1)
+    factory = async_sessionmaker(file_factory.kw["bind"], class_=BarrierClaim, expire_on_commit=False)
+    manager = ChatRunManager(factory, runner_mode="single_process", max_concurrent_runs=1)
     worker_entered = asyncio.Event()
     worker_release = asyncio.Event()
 
     async def hold_slot(_context):
         worker_entered.set()
         await worker_release.wait()
-        return RunOutcome(status='completed')
+        return RunOutcome(status="completed")
 
     async def target_worker(context):
-        context.report = 'Useful completed work'
-        return RunOutcome(status='completed')
+        context.report = "Useful completed work"
+        return RunOutcome(status="completed")
 
     occupant_subscription = await manager.start(occupier, hold_slot)
     await asyncio.wait_for(worker_entered.wait(), 3)
@@ -127,12 +131,12 @@ async def test_concurrent_same_manager_starts_claim_one_queued_execution(file_fa
             return await manager.start(target, target_worker)
 
         subscriptions = await asyncio.gather(start_together(), start_together())
-        target_executions = [task for task in asyncio.all_tasks() if task.get_name() == f'chat-run-{target.run_id}']
+        target_executions = [task for task in asyncio.all_tasks() if task.get_name() == f"chat-run-{target.run_id}"]
         assert len(target_executions) == 1
         worker_release.set()
         await asyncio.gather(*target_executions)
         result = await read_run(file_factory, run_id=target.run_id, chat_id=target.chat_id, user_id=target.user_id)
-        assert result['status'] == 'completed'
+        assert result["status"] == "completed"
     finally:
         worker_release.set()
         await manager.close()
@@ -145,38 +149,38 @@ async def test_concurrent_same_manager_starts_claim_one_queued_execution(file_fa
 async def test_finish_handshake_returns_steering_accepted_after_workers_last_check(file_factory):
     async with file_factory() as db:
         spec = await make_run(db)
-    manager = ChatRunManager(file_factory, runner_mode='single_process')
+    manager = ChatRunManager(file_factory, runner_mode="single_process")
     checked, continue_to_finish = asyncio.Event(), asyncio.Event()
     finish_accepted, allow_return = asyncio.Event(), asyncio.Event()
 
     async def worker(context):
         assert await context.take_steering() == []
-        context.report = 'Report before last-minute steering.'
+        context.report = "Report before last-minute steering."
         checked.set()
         await continue_to_finish.wait()
 
         decision = await context.try_finish(
             expected_context_version=spec.context_version,
-            status='completed',
+            status="completed",
             error=None,
         )
         assert decision.accepted is False
         assert len(decision.steering) == 1
-        assert decision.steering[0]['instruction'] == 'Include a short limitations section.'
-        context.report += ' Limitations: this is a mocked result.'
+        assert decision.steering[0]["instruction"] == "Include a short limitations section."
+        context.report += " Limitations: this is a mocked result."
         await context.flush_result()
 
         final_decision = await context.try_finish(
             expected_context_version=decision.context_version,
-            status='completed',
+            status="completed",
             error=None,
         )
         assert final_decision.accepted is True
-        assert final_decision.status == 'completed'
+        assert final_decision.status == "completed"
         assert final_decision.steering == []
         finish_accepted.set()
         await allow_return.wait()
-        return RunOutcome(status='completed')
+        return RunOutcome(status="completed")
 
     subscription = await manager.start(spec, worker)
     try:
@@ -186,10 +190,10 @@ async def test_finish_handshake_returns_steering_accepted_after_workers_last_che
             run_id=spec.run_id,
             chat_id=spec.chat_id,
             user_id=spec.user_id,
-            instruction='Include a short limitations section.',
+            instruction="Include a short limitations section.",
         )
-        assert accepted['accepted'] is True
-        assert accepted['context_version'] == 2
+        assert accepted["accepted"] is True
+        assert accepted["context_version"] == 2
         continue_to_finish.set()
         await asyncio.wait_for(finish_accepted.wait(), 3)
         rejected = await enqueue_run_steering(
@@ -197,15 +201,18 @@ async def test_finish_handshake_returns_steering_accepted_after_workers_last_che
             run_id=spec.run_id,
             chat_id=spec.chat_id,
             user_id=spec.user_id,
-            instruction='This arrives after finish admission closed.',
+            instruction="This arrives after finish admission closed.",
         )
-        assert rejected['accepted'] is False
-        assert await request_run_cancel(
-            file_factory,
-            run_id=spec.run_id,
-            chat_id=spec.chat_id,
-            user_id=spec.user_id,
-        ) is False
+        assert rejected["accepted"] is False
+        assert (
+            await request_run_cancel(
+                file_factory,
+                run_id=spec.run_id,
+                chat_id=spec.chat_id,
+                user_id=spec.user_id,
+            )
+            is False
+        )
         allow_return.set()
         async for _ in subscription:
             pass
@@ -216,10 +223,12 @@ async def test_finish_handshake_returns_steering_accepted_after_workers_last_che
             chat_id=spec.chat_id,
             user_id=spec.user_id,
         )
-        assert result['status'] == 'completed'
-        assert result['context_version'] == 2
-        assert result['message']['content'] == 'Report before last-minute steering. Limitations: this is a mocked result.'
-        assert result['steering'] == []
+        assert result["status"] == "completed"
+        assert result["context_version"] == 2
+        assert (
+            result["message"]["content"] == "Report before last-minute steering. Limitations: this is a mocked result."
+        )
+        assert result["steering"] == []
     finally:
         continue_to_finish.set()
         allow_return.set()
@@ -231,55 +240,64 @@ async def test_finish_handshake_returns_steering_accepted_after_workers_last_che
 async def test_finish_handshake_preserves_an_accepted_stop(file_factory):
     async with file_factory() as db:
         spec = await make_run(db)
-    manager = ChatRunManager(file_factory, runner_mode='single_process')
+    manager = ChatRunManager(file_factory, runner_mode="single_process")
     try:
         async with file_factory() as db:
             run = await db.get(ChatRun, spec.run_id)
-            run.run_metadata = {**run.run_metadata, 'runner_owner_id': manager._owner_id}
+            run.run_metadata = {**run.run_metadata, "runner_owner_id": manager._owner_id}
             await db.commit()
-        assert await request_run_cancel(
-            file_factory,
-            run_id=spec.run_id,
-            chat_id=spec.chat_id,
-            user_id=spec.user_id,
-        ) is True
+        assert (
+            await request_run_cancel(
+                file_factory,
+                run_id=spec.run_id,
+                chat_id=spec.chat_id,
+                user_id=spec.user_id,
+            )
+            is True
+        )
 
         context = RunExecutionContext(manager, spec, asyncio.Event())
-        context.report = 'Keep this partial report after Stop.'
+        context.report = "Keep this partial report after Stop."
         await context.flush_result()
         decision = await context.try_finish(
             expected_context_version=spec.context_version,
-            status='completed',
+            status="completed",
             error=None,
         )
         assert decision.accepted is True
-        assert decision.status == 'cancelled'
-        assert (await _finish_run(
-            file_factory,
-            run_id=spec.run_id,
-            status='completed',
-            error=None,
-            runner_owner_id=manager._owner_id,
-        )) == 'cancelled'
+        assert decision.status == "cancelled"
+        assert (
+            await _finish_run(
+                file_factory,
+                run_id=spec.run_id,
+                status="completed",
+                error=None,
+                runner_owner_id=manager._owner_id,
+            )
+        ) == "cancelled"
         result = await read_run(
             file_factory,
             run_id=spec.run_id,
             chat_id=spec.chat_id,
             user_id=spec.user_id,
         )
-        assert result['status'] == 'cancelled'
-        assert result['message']['content'] == 'Keep this partial report after Stop.'
+        assert result["status"] == "cancelled"
+        assert result["message"]["content"] == "Keep this partial report after Stop."
     finally:
         await manager.close()
 
 
-@pytest.mark.parametrize('regression_name', [
-    'test_snapshot_updates_keep_both_concurrent_fields',
-    'test_heartbeat_keeps_new_snapshot_and_revision',
-    'test_finish_honors_remote_stop_accepted_before_terminal_write',
-])
+@pytest.mark.parametrize(
+    "regression_name",
+    [
+        "test_snapshot_updates_keep_both_concurrent_fields",
+        "test_heartbeat_keeps_new_snapshot_and_revision",
+        "test_finish_honors_remote_stop_accepted_before_terminal_write",
+    ],
+)
 @pytest.mark.asyncio
 async def test_original_metadata_regression_on_file_backed_database(file_factory, regression_name):
     import test_review_races
+
     async with file_factory() as db:
         await getattr(test_review_races, regression_name)(db)

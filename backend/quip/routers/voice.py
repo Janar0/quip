@@ -1,4 +1,5 @@
 """Authenticated direct-media Qwen voice session routes."""
+
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -64,15 +65,11 @@ async def voice_call_context(
         raise HTTPException(status_code=404, detail="Voice call not found")
     if call.status in {"ended", "failed"}:
         raise HTTPException(status_code=409, detail="Voice call has ended")
-    chat_result = await db.execute(
-        select(Chat).where(Chat.id == call.chat_id, Chat.user_id == user.id)
-    )
+    chat_result = await db.execute(select(Chat).where(Chat.id == call.chat_id, Chat.user_id == user.id))
     chat = chat_result.scalar_one_or_none()
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
-    packet = await VoiceContextService().build_task_context(
-        db, user, chat, "Live voice conversation context"
-    )
+    packet = await VoiceContextService().build_task_context(db, user, chat, "Live voice conversation context")
     return {
         "chat_id": packet.chat_id,
         "context_version": packet.context_version,
@@ -209,10 +206,12 @@ async def start_voice_call(
     await _check_budget(user, db)
 
     active_result = await db.execute(
-        select(VoiceCall.id).where(
+        select(VoiceCall.id)
+        .where(
             VoiceCall.user_id == user.id,
             VoiceCall.status.in_(("connecting", "active")),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if active_result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A voice call is already active")

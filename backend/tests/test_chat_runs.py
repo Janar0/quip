@@ -152,21 +152,27 @@ async def test_cancel_stops_worker_and_terminal_state_cannot_be_overwritten(db_s
     manager = ChatRunManager(session_factory, runner_mode="single_process")
     subscription = await manager.start(spec, worker)
     await asyncio.wait_for(started.wait(), 1)
-    assert await manager.request_cancel(
-        run_id=spec.run_id,
-        chat_id=spec.chat_id,
-        user_id=spec.user_id,
-    ) is True
+    assert (
+        await manager.request_cancel(
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        )
+        is True
+    )
     await subscription.aclose()
     run = await wait_for_terminal(db_session, spec.run_id)
     assert run.status == "cancelled"
     assert later_step_calls == 0
     assert (await db_session.get(Message, spec.assistant_message_id)).content == "Partial work before Stop."
-    assert await manager.request_cancel(
-        run_id=spec.run_id,
-        chat_id=spec.chat_id,
-        user_id=spec.user_id,
-    ) is False
+    assert (
+        await manager.request_cancel(
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        )
+        is False
+    )
     await manager.close()
 
 
@@ -188,11 +194,14 @@ async def test_stop_routed_through_another_manager_cancels_durable_run(db_sessio
     api_manager = ChatRunManager(session_factory, runner_mode="single_process")
     subscription = await runner_manager.start(spec, worker)
     await asyncio.wait_for(started.wait(), 1)
-    assert await api_manager.request_cancel(
-        run_id=spec.run_id,
-        chat_id=spec.chat_id,
-        user_id=spec.user_id,
-    ) is True
+    assert (
+        await api_manager.request_cancel(
+            run_id=spec.run_id,
+            chat_id=spec.chat_id,
+            user_id=spec.user_id,
+        )
+        is True
+    )
     run = await wait_for_terminal(db_session, spec.run_id)
     assert run.status == "cancelled"
     assert after_stop_calls == 0
@@ -239,10 +248,12 @@ async def test_startup_interruption_marks_active_without_replay(db_session):
     spec = await make_run(db_session, status="running")
     run = await db_session.get(ChatRun, spec.run_id)
     metadata = dict(run.run_metadata)
-    metadata.update({
-        "runner_owner_id": "crashed-owner",
-        "runner_heartbeat_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
-    })
+    metadata.update(
+        {
+            "runner_owner_id": "crashed-owner",
+            "runner_heartbeat_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+        }
+    )
     run.run_metadata = metadata
     await db_session.commit()
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
@@ -269,10 +280,12 @@ async def test_startup_recovery_does_not_interrupt_ordinary_chat_runs(db_session
     chat_spec = await make_run(db_session, status="running", task_kind="chat")
     research = await db_session.get(ChatRun, research_spec.run_id)
     metadata = dict(research.run_metadata)
-    metadata.update({
-        "runner_owner_id": "crashed-owner",
-        "runner_heartbeat_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
-    })
+    metadata.update(
+        {
+            "runner_owner_id": "crashed-owner",
+            "runner_heartbeat_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+        }
+    )
     research.run_metadata = metadata
     await db_session.commit()
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)

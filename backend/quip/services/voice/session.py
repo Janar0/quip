@@ -1,4 +1,5 @@
 """Server-only Qwen realtime configuration and WebRTC SDP exchange."""
+
 from dataclasses import dataclass
 
 import httpx

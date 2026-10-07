@@ -6,6 +6,7 @@ Two backends:
 
 Set VECTOR_STORE=hnswlib to enable the HNSW backend.
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,15 +62,17 @@ class SQLiteVectorStore(VectorStore):
         for chunk, filename, content_hash in rows:
             if not chunk.embedding:
                 continue
-            scored.append({
-                "content": chunk.content,
-                "filename": filename,
-                "file_id": str(chunk.file_id),
-                "chunk_index": chunk.chunk_index,
-                "metadata": chunk.chunk_metadata or {},
-                "content_hash": content_hash,
-                "score": cosine_similarity(query_vec, chunk.embedding),
-            })
+            scored.append(
+                {
+                    "content": chunk.content,
+                    "filename": filename,
+                    "file_id": str(chunk.file_id),
+                    "chunk_index": chunk.chunk_index,
+                    "metadata": chunk.chunk_metadata or {},
+                    "content_hash": content_hash,
+                    "score": cosine_similarity(query_vec, chunk.embedding),
+                }
+            )
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
 
@@ -137,9 +140,7 @@ class HNSWVectorStore(VectorStore):
             store.rebuild(chunks)
             return store.search(query_vec, chunks, top_k)
 
-        labels, distances = self._index.knn_query(
-            [query_vec], k=min(top_k * 2, self._index.element_count)
-        )
+        labels, distances = self._index.knn_query([query_vec], k=min(top_k * 2, self._index.element_count))
         results = []
         for label, dist in zip(labels[0], distances[0]):
             if label < 0:
@@ -148,15 +149,17 @@ class HNSWVectorStore(VectorStore):
             if not entry:
                 continue
             chunk, filename, content_hash = entry
-            results.append({
-                "content": chunk.content,
-                "filename": filename,
-                "file_id": str(chunk.file_id),
-                "chunk_index": chunk.chunk_index,
-                "metadata": chunk.chunk_metadata or {},
-                "content_hash": content_hash,
-                "score": float(1.0 - dist if dist <= 1.0 else 1.0 / (1.0 + dist)),
-            })
+            results.append(
+                {
+                    "content": chunk.content,
+                    "filename": filename,
+                    "file_id": str(chunk.file_id),
+                    "chunk_index": chunk.chunk_index,
+                    "metadata": chunk.chunk_metadata or {},
+                    "content_hash": content_hash,
+                    "score": float(1.0 - dist if dist <= 1.0 else 1.0 / (1.0 + dist)),
+                }
+            )
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
 

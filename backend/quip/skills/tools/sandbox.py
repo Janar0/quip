@@ -1,16 +1,16 @@
 """Skill: sandbox — Python 3.12 / Node / bash execution environment with file persistence"""
 
 SKILL = {
-    'id': 'sandbox',
-    'name': 'sandbox',
-    'description': 'Python 3.12 / Node / bash execution environment with file persistence',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """You have a sandboxed execution environment with Python 3.12, Node.js, and bash.
+    "id": "sandbox",
+    "name": "sandbox",
+    "description": "Python 3.12 / Node / bash execution environment with file persistence",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """You have a sandboxed execution environment with Python 3.12, Node.js, and bash.
 
 ALL files the user has uploaded in this conversation are automatically placed in your working directory. Call sandbox_list_files FIRST to see every available file before starting any task that may use them.
 
@@ -30,18 +30,20 @@ RULE — sandbox vs artifact:
 - NEVER use an artifact to do something the sandbox can do better. A presentation (.pptx) must be built with python-pptx in the sandbox, not as an HTML artifact.
 - When using the sandbox, do NOT also produce an artifact for the same content.
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
-    'settings_schema': [
-        {'key': 'memory_limit', 'label': 'Memory limit', 'type': 'text', 'default': '512m'},
-        {'key': 'cpu_limit', 'label': 'CPU limit', 'type': 'text', 'default': '1.0'},
-        {'key': 'idle_timeout', 'label': 'Idle timeout (sec)', 'type': 'number', 'default': 600},
-        {'key': 'exec_timeout', 'label': 'Exec timeout (sec)', 'type': 'number', 'default': 30},
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
+    "settings_schema": [
+        {"key": "memory_limit", "label": "Memory limit", "type": "text", "default": "512m"},
+        {"key": "cpu_limit", "label": "CPU limit", "type": "text", "default": "1.0"},
+        {"key": "idle_timeout", "label": "Idle timeout (sec)", "type": "number", "default": 600},
+        {"key": "exec_timeout", "label": "Exec timeout (sec)", "type": "number", "default": 30},
     ],
-    'default_settings': {
-        'memory_limit': '512m', 'cpu_limit': '1.0',
-        'idle_timeout': 600, 'exec_timeout': 30,
+    "default_settings": {
+        "memory_limit": "512m",
+        "cpu_limit": "1.0",
+        "idle_timeout": 600,
+        "exec_timeout": 30,
     },
 }

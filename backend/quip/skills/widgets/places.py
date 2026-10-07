@@ -1,16 +1,16 @@
 """Skill: places — Show a place/location card with address and map link. Use when user asks about a"""
 
 SKILL = {
-    'id': 'places',
-    'name': 'Places',
-    'description': 'Show a place/location card with address and map link. Use when user asks about a specific place, address, or location.',
-    'category': 'widget',
-    'icon': 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100-2 1 1 0 000 2z',
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """Widget: places — display a location/place card.
+    "id": "places",
+    "name": "Places",
+    "description": "Show a place/location card with address and map link. Use when user asks about a specific place, address, or location.",
+    "category": "widget",
+    "icon": "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 10a1 1 0 100-2 1 1 0 000 2z",
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """Widget: places — display a location/place card.
 
 Call: use_widget(name="places", data={...})
 
@@ -31,9 +31,20 @@ Data schema:
 All fields except name and address are optional.
 If you know coordinates, include them — the card will show a map link.
 Use web_search first to find accurate data about the place.""",
-    'data_schema': {'name': 'string', 'address': 'string', 'lat': 'number (optional)', 'lon': 'number (optional)', 'category': 'string (optional)', 'rating': 'number (optional)', 'description': 'string (optional)', 'hours': 'string (optional)', 'phone': 'string (optional)', 'website': 'string (optional)'},
-    'api_config': None,
-    'template_html': """<div class="widget-places">
+    "data_schema": {
+        "name": "string",
+        "address": "string",
+        "lat": "number (optional)",
+        "lon": "number (optional)",
+        "category": "string (optional)",
+        "rating": "number (optional)",
+        "description": "string (optional)",
+        "hours": "string (optional)",
+        "phone": "string (optional)",
+        "website": "string (optional)",
+    },
+    "api_config": None,
+    "template_html": """<div class="widget-places">
   <div class="wp-card">
     <div class="wp-header">
       <div class="wp-name">{{name}}</div>
@@ -52,7 +63,7 @@ Use web_search first to find accurate data about the place.""",
     </div>
   </div>
 </div>""",
-    'template_css': """.widget-card .widget-places {
+    "template_css": """.widget-card .widget-places {
   font-family: system-ui, -apple-system, sans-serif;
 }
 .widget-card .wp-card {

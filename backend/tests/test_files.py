@@ -1,4 +1,5 @@
 """Tests for file upload, download, and delete endpoints."""
+
 import io
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
@@ -13,6 +14,7 @@ from quip.services.auth import create_access_token
 def _png_bytes():
     """Create a minimal 1x1 PNG."""
     from PIL import Image
+
     buf = BytesIO()
     Image.new("RGB", (1, 1), "red").save(buf, format="PNG")
     return buf.getvalue()
@@ -150,9 +152,7 @@ async def test_upload_rejects_another_users_chat(
     )
     db_session.add(attacker)
     await db_session.commit()
-    attacker_headers = {
-        "Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"
-    }
+    attacker_headers = {"Authorization": f"Bearer {create_access_token(str(attacker.id), attacker.role)}"}
 
     res = await client.post(
         "/api/files/upload",
@@ -240,6 +240,7 @@ async def test_upload_applies_exif_orientation(client, auth_headers, tmp_upload_
     assert res.status_code == 200
 
     from PIL import Image
+
     img = Image.open(io.BytesIO(res.content))
     # After EXIF transpose of orientation 6: width and height should be swapped
     assert img.size[0] == 1, f"Expected width=1 after 90° rotation, got {img.size[0]}"

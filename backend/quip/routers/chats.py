@@ -42,12 +42,7 @@ async def list_chats(
     if workspace_id is not None:
         await get_workspace_for_user(workspace_id, user.id, db)
         query = query.where(Chat.workspace_id == workspace_id)
-    result = await db.execute(
-        query
-        .order_by(Chat.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    result = await db.execute(query.order_by(Chat.updated_at.desc()).limit(limit).offset(offset))
     return result.scalars().all()
 
 
@@ -81,7 +76,9 @@ async def get_chat(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=200, ge=1, le=1000),
-    before: int | None = Query(default=None, ge=0, description="Created-at unix-ms cursor; messages strictly older are returned"),
+    before: int | None = Query(
+        default=None, ge=0, description="Created-at unix-ms cursor; messages strictly older are returned"
+    ),
 ):
     """Return chat metadata and a window of messages.
 
@@ -94,6 +91,7 @@ async def get_chat(
         raise HTTPException(status_code=404, detail="Chat not found")
 
     from datetime import datetime
+
     q = select(Message).where(Message.chat_id == chat_id)
     if before is not None:
         q = q.where(Message.created_at < datetime.fromtimestamp(before / 1000, tz=UTC))
@@ -124,18 +122,20 @@ async def get_chat(
         updated_at=chat.updated_at,
         messages=[MessageResponse.model_validate(m) for m in messages],
         runs=[
-            ChatRunResponse.model_validate({
-                "id": run.id,
-                "chat_id": run.chat_id,
-                "assistant_message_id": run.assistant_message_id,
-                "status": run.status,
-                "task_kind": (run.run_metadata or {}).get("task_kind", "chat"),
-                "model": run.model,
-                "error": run.error,
-                "started_at": run.started_at,
-                "finished_at": run.finished_at,
-                "created_at": run.created_at,
-            })
+            ChatRunResponse.model_validate(
+                {
+                    "id": run.id,
+                    "chat_id": run.chat_id,
+                    "assistant_message_id": run.assistant_message_id,
+                    "status": run.status,
+                    "task_kind": (run.run_metadata or {}).get("task_kind", "chat"),
+                    "model": run.model,
+                    "error": run.error,
+                    "started_at": run.started_at,
+                    "finished_at": run.finished_at,
+                    "created_at": run.created_at,
+                }
+            )
             for run in run_result.scalars().all()
         ],
     )
@@ -255,9 +255,7 @@ async def update_chat(
         else:
             await get_workspace_for_user(workspace_id, user.id, db)
         await db.execute(
-            update(File)
-            .where(File.chat_id == chat.id, File.user_id == user.id)
-            .values(workspace_id=workspace_id)
+            update(File).where(File.chat_id == chat.id, File.user_id == user.id).values(workspace_id=workspace_id)
         )
     for key, value in update_data.items():
         setattr(chat, key, value)
@@ -313,13 +311,10 @@ async def search_chats(
         )
         .distinct()
     )
-    title_chat_ids = (
-        select(Chat.id)
-        .where(
-            Chat.user_id == user.id,
-            Chat.title.ilike(pattern),
-            *([Chat.workspace_id == workspace_id] if workspace_id else []),
-        )
+    title_chat_ids = select(Chat.id).where(
+        Chat.user_id == user.id,
+        Chat.title.ilike(pattern),
+        *([Chat.workspace_id == workspace_id] if workspace_id else []),
     )
 
     result = await db.execute(
@@ -354,12 +349,14 @@ async def search_chats(
             end = min(len(msg), idx + len(q) + 40)
             snippet = ("..." if start > 0 else "") + msg[start:end] + ("..." if end < len(msg) else "")
 
-        results.append({
-            "id": str(chat.id),
-            "title": chat.title,
-            "snippet": snippet,
-            "updated_at": chat.updated_at.isoformat() if chat.updated_at else None,
-        })
+        results.append(
+            {
+                "id": str(chat.id),
+                "title": chat.title,
+                "snippet": snippet,
+                "updated_at": chat.updated_at.isoformat() if chat.updated_at else None,
+            }
+        )
 
     return {"results": results}
 

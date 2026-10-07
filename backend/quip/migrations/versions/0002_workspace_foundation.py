@@ -171,12 +171,8 @@ def upgrade() -> None:
                 role="owner",
             )
         )
-        bind.execute(
-            chats.update().where(chats.c.user_id == user_id).values(workspace_id=workspace_id)
-        )
-        bind.execute(
-            files.update().where(files.c.user_id == user_id).values(workspace_id=workspace_id)
-        )
+        bind.execute(chats.update().where(chats.c.user_id == user_id).values(workspace_id=workspace_id))
+        bind.execute(files.update().where(files.c.user_id == user_id).values(workspace_id=workspace_id))
 
 
 def downgrade() -> None:

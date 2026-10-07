@@ -53,9 +53,7 @@ async def test_history_does_not_resolve_legacy_cross_user_attachment(db_session)
     db_session.add(poisoned_message)
     await db_session.commit()
 
-    path_map = await HistoryService.build_file_path_map(
-        [poisoned_message], other_chat, db_session
-    )
+    path_map = await HistoryService.build_file_path_map([poisoned_message], other_chat, db_session)
 
     assert path_map == {}
 
@@ -162,6 +160,4 @@ async def test_document_image_tool_requires_file_owner(db_session, tmp_upload_di
     )
 
     assert json.loads(denied_raw)["error"] == "image not found: img_1"
-    assert json.loads(allowed_raw)["image_data_url"].startswith(
-        "data:image/png;base64,"
-    )
+    assert json.loads(allowed_raw)["image_data_url"].startswith("data:image/png;base64,")

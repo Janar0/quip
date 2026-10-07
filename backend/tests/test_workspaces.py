@@ -90,9 +90,7 @@ async def test_workspace_is_not_visible_to_another_tenant(
     )
     db_session.add(other)
     await db_session.commit()
-    other_headers = {
-        "Authorization": f"Bearer {create_access_token(str(other.id), other.role)}"
-    }
+    other_headers = {"Authorization": f"Bearer {create_access_token(str(other.id), other.role)}"}
 
     denied = await client.get(
         f"/api/workspaces/{workspace_id}",

@@ -96,7 +96,13 @@ def widget_to_markdown(name: str, data: dict[str, Any]) -> str:
     if name == "places":
         if data.get("name"):
             lines.append(f"**{data['name']}**")
-        for label, key in (("Адрес", "address"), ("Категория", "category"), ("Рейтинг", "rating"), ("Часы", "hours"), ("Телефон", "phone")):
+        for label, key in (
+            ("Адрес", "address"),
+            ("Категория", "category"),
+            ("Рейтинг", "rating"),
+            ("Часы", "hours"),
+            ("Телефон", "phone"),
+        ):
             if data.get(key):
                 lines.append(f"{label}: {_value(data[key])}")
         if data.get("description"):

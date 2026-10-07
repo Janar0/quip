@@ -33,9 +33,7 @@ async def test_validate_outbound_url_rejects_unsafe_destinations(url):
 
 @pytest.mark.asyncio
 async def test_validate_outbound_url_rejects_hostname_resolving_private():
-    private_result = [
-        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", 443))
-    ]
+    private_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", 443))]
     with patch(
         "quip.services.url_security.socket.getaddrinfo",
         return_value=private_result,
@@ -46,9 +44,7 @@ async def test_validate_outbound_url_rejects_hostname_resolving_private():
 
 @pytest.mark.asyncio
 async def test_validate_outbound_url_accepts_public_resolved_destination():
-    public_result = [
-        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
-    ]
+    public_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
     with patch(
         "quip.services.url_security.socket.getaddrinfo",
         return_value=public_result,

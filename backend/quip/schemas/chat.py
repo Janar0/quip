@@ -95,6 +95,7 @@ class ChatWithMessages(ChatResponse):
 
 class CompletionRequest(BaseModel):
     """Request for chat completion — sent from frontend."""
+
     chat_id: UUID | None = None  # None = create new chat
     workspace_id: UUID | None = None
     model: str
@@ -107,6 +108,7 @@ class CompletionRequest(BaseModel):
 
 class RegenerateRequest(BaseModel):
     """Regenerate an assistant response — creates a sibling branch."""
+
     chat_id: UUID
     message_id: UUID  # the assistant message to regenerate
     model: str | None = None  # optional: use different model

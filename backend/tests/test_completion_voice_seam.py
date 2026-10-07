@@ -18,21 +18,34 @@ async def test_selected_model_stream_passes_explicit_tools_through_quip_seam(mon
             yield ("finish", {"reason": "stop"})
 
     monkeypatch.setattr(completion_service, "_resolve_model", lambda selected: selected)
-    monkeypatch.setattr(completion_service, "get_cached_model", lambda selected: {
-        "id": selected, "supports_tools": True, "context_length": 32_000,
-    })
-    monkeypatch.setattr(completion_service, "get_setting", lambda key, default="": {
-        "openrouter_api_key": "fixture-only-key",
-        "ollama_url": "http://localhost:11434",
-    }.get(key, default))
+    monkeypatch.setattr(
+        completion_service,
+        "get_cached_model",
+        lambda selected: {
+            "id": selected,
+            "supports_tools": True,
+            "context_length": 32_000,
+        },
+    )
+    monkeypatch.setattr(
+        completion_service,
+        "get_setting",
+        lambda key, default="": {
+            "openrouter_api_key": "fixture-only-key",
+            "ollama_url": "http://localhost:11434",
+        }.get(key, default),
+    )
     monkeypatch.setattr(completion_service, "StreamOrchestrator", OrchestratorFixture)
 
-    events = [event async for event in completion_service.CompletionService.stream_selected_model(
-        [{"role": "user", "content": "bounded task"}],
-        model_id,
-        tools=explicit_tools,
-        max_tokens=100_000,
-    )]
+    events = [
+        event
+        async for event in completion_service.CompletionService.stream_selected_model(
+            [{"role": "user", "content": "bounded task"}],
+            model_id,
+            tools=explicit_tools,
+            max_tokens=100_000,
+        )
+    ]
 
     assert events == [("finish", {"reason": "stop"})]
     assert captured["constructor"]["model"] == model_id

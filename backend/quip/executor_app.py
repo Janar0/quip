@@ -48,6 +48,7 @@ def get_client():
             client = docker.from_env()
     return client
 
+
 network_enabled: set[str] = set()
 install_locks: dict[str, threading.Lock] = {}
 install_locks_guard = threading.Lock()
@@ -112,11 +113,7 @@ def _managed_container(reference: str):
         raise HTTPException(status_code=404, detail="Sandbox not found") from exc
     labels = container.attrs.get("Config", {}).get("Labels") or {}
     match = NAME_RE.fullmatch(container.name)
-    if (
-        labels.get(MANAGED_LABEL) != "true"
-        or match is None
-        or labels.get("dev.quip.user_key") != match.group(1)
-    ):
+    if labels.get(MANAGED_LABEL) != "true" or match is None or labels.get("dev.quip.user_key") != match.group(1):
         raise HTTPException(status_code=403, detail="Container is not managed by QUIP")
 
     networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
@@ -310,7 +307,9 @@ def install_packages(data: InstallRequest):
     packages = shlex.join(_validated_packages(data.packages))
     if data.manager == "pip":
         deps_dir = "/workspace/.quip/deps/python"
-        command = f"mkdir -p {deps_dir} && pip install --disable-pip-version-check --upgrade --target {deps_dir} {packages}"
+        command = (
+            f"mkdir -p {deps_dir} && pip install --disable-pip-version-check --upgrade --target {deps_dir} {packages}"
+        )
     else:
         deps_dir = "/workspace/.quip/deps/node"
         command = f"mkdir -p {deps_dir} && npm install --no-audit --no-fund --prefix {deps_dir} {packages}"

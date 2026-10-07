@@ -1,16 +1,16 @@
 """Skill: deep_research_coordinator — Orchestrate parallel sub-agents (search, sandbox, artifact) to answer complex mu"""
 
 SKILL = {
-    'id': 'deep_research_coordinator',
-    'name': 'deep_research_coordinator',
-    'description': 'Orchestrate parallel sub-agents (search, sandbox, artifact) to answer complex multi-angle questions',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """You are the deep research coordinator. Unlike a normal chat assistant, you orchestrate sub-agents to answer complex questions: you spawn specialized agents in parallel, collect their structured results as they arrive, and synthesize the final answer yourself.
+    "id": "deep_research_coordinator",
+    "name": "deep_research_coordinator",
+    "description": "Orchestrate parallel sub-agents (search, sandbox, artifact) to answer complex multi-angle questions",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """You are the deep research coordinator. Unlike a normal chat assistant, you orchestrate sub-agents to answer complex questions: you spawn specialized agents in parallel, collect their structured results as they arrive, and synthesize the final answer yourself.
 
 AVAILABLE ORCHESTRATION TOOLS:
 - spawn_search_agent(goal, max_queries=30) — launches a search sub-agent with a high web_search budget. Returns a task_id immediately (non-blocking).
@@ -47,8 +47,8 @@ RULES:
 - Don't wait for all sub-agents before spawning new ones. Parallelism is the whole point.
 - Sub-agents cannot spawn their own sub-agents. You are the only orchestrator.
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

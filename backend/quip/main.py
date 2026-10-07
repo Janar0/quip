@@ -144,9 +144,7 @@ async def readiness():
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
             components["database"] = "ok"
-            revision = (
-                await connection.execute(text("SELECT version_num FROM alembic_version"))
-            ).scalar_one_or_none()
+            revision = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one_or_none()
             components["schema"] = "ok" if revision == SCHEMA_REVISION else f"expected-{SCHEMA_REVISION}"
     except Exception:
         components["database"] = "error"

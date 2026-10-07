@@ -1,4 +1,5 @@
 """Tests for copying uploaded files into the sandbox workspace."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -31,9 +32,11 @@ async def test_copy_attachments_writes_to_sandbox(tmp_upload_dir):
 
     fake_sandbox = MagicMock()
     fake_skill = MagicMock(enabled=True)
-    with patch("quip.services.completion.service.sandbox_manager") as sm, \
-         patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill), \
-         patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir):
+    with (
+        patch("quip.services.completion.service.sandbox_manager") as sm,
+        patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill),
+        patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir),
+    ):
         sm.available = True
         sm.get_or_create = AsyncMock(return_value=fake_sandbox)
         sm.ensure_chat_dir = AsyncMock()
@@ -57,8 +60,10 @@ async def test_copy_skipped_when_sandbox_disabled():
 
     attachments = [{"file_id": str(uuid4()), "filename": "x.txt", "storage_path": "u/x.txt"}]
 
-    with patch("quip.services.completion.service.sandbox_manager") as sm, \
-         patch("quip.services.completion.service.get_skill_by_name", return_value=None):
+    with (
+        patch("quip.services.completion.service.sandbox_manager") as sm,
+        patch("quip.services.completion.service.get_skill_by_name", return_value=None),
+    ):
         sm.available = True
         sm.get_or_create = AsyncMock()
         sm.copy_host_file = AsyncMock()
@@ -100,9 +105,11 @@ async def test_copy_handles_filename_collisions(tmp_upload_dir):
     ]
 
     fake_skill = MagicMock(enabled=True)
-    with patch("quip.services.completion.service.sandbox_manager") as sm, \
-         patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill), \
-         patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir):
+    with (
+        patch("quip.services.completion.service.sandbox_manager") as sm,
+        patch("quip.services.completion.service.get_skill_by_name", return_value=fake_skill),
+        patch("quip.services.completion.service._get_upload_dir", return_value=tmp_upload_dir),
+    ):
         sm.available = True
         sm.get_or_create = AsyncMock(return_value=MagicMock())
         sm.ensure_chat_dir = AsyncMock()

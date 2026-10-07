@@ -1,16 +1,16 @@
 """Skill: artifact_sub_agent — (internal) single-turn artifact generator"""
 
 SKILL = {
-    'id': 'artifact_sub_agent',
-    'name': 'artifact_sub_agent',
-    'description': '(internal) single-turn artifact generator',
-    'category': 'artifact',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': True,
-    'prompt_instructions': """You are an artifact sub-agent. You receive an artifact kind and a spec from your coordinator and return ONE artifact tag.
+    "id": "artifact_sub_agent",
+    "name": "artifact_sub_agent",
+    "description": "(internal) single-turn artifact generator",
+    "category": "artifact",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": True,
+    "prompt_instructions": """You are an artifact sub-agent. You receive an artifact kind and a spec from your coordinator and return ONE artifact tag.
 
 INPUT:
 - kind: one of plot, chart, table, mermaid, code, svg, html.
@@ -60,8 +60,8 @@ RULES:
 - Use a short kebab-case identifier.
 - Never wrap the tag in a code fence.
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

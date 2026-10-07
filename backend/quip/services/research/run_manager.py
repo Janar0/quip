@@ -76,12 +76,14 @@ class ResearchRunManager:
                     await context.append_result(str(data.get("text") or ""))
                 elif event_type == "status":
                     progress = list(state["progress"])
-                    progress.append({
-                        "phase": str(data.get("phase") or "working")[:80],
-                        "detail": str(data.get("detail") or "")[:500],
-                        "sub_queries": [str(q)[:500] for q in (data.get("sub_queries") or [])[:12]],
-                        "sources_found": data.get("sources_found"),
-                    })
+                    progress.append(
+                        {
+                            "phase": str(data.get("phase") or "working")[:80],
+                            "detail": str(data.get("detail") or "")[:500],
+                            "sub_queries": [str(q)[:500] for q in (data.get("sub_queries") or [])[:12]],
+                            "sources_found": data.get("sources_found"),
+                        }
+                    )
                     state["progress"] = progress[-40:]
                     snapshot_changed = True
                     snapshot_patch = {"progress": state["progress"]}
@@ -127,8 +129,13 @@ class ResearchRunManager:
                     state["usage"] = {
                         key: data.get(key)
                         for key in (
-                            "prompt_tokens", "completion_tokens", "cached_tokens", "cost",
-                            "provider", "generation_id", "subagent_generations",
+                            "prompt_tokens",
+                            "completion_tokens",
+                            "cached_tokens",
+                            "cost",
+                            "provider",
+                            "generation_id",
+                            "subagent_generations",
                         )
                         if data.get(key) is not None
                     }
@@ -198,7 +205,13 @@ class ResearchRunManager:
                 await context.emit({"type": "error", "data": {"message": message}})
 
             has_report = bool(context.report.strip())
-            status = "partial" if report_errors and has_report else "failed" if report_errors and not has_report else "completed"
+            status = (
+                "partial"
+                if report_errors and has_report
+                else "failed"
+                if report_errors and not has_report
+                else "completed"
+            )
             return RunOutcome(
                 status=status,
                 error="; ".join(report_errors[:3])[:4000] if report_errors else None,

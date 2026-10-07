@@ -1,16 +1,16 @@
 """Skill: sports — Display sports match scores or standings. Use when user asks about sports scores"""
 
 SKILL = {
-    'id': 'sports',
-    'name': 'Sports',
-    'description': 'Display sports match scores or standings. Use when user asks about sports scores, match results, or team standings.',
-    'category': 'widget',
-    'icon': 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """Widget: sports — display a match score or standings card.
+    "id": "sports",
+    "name": "Sports",
+    "description": "Display sports match scores or standings. Use when user asks about sports scores, match results, or team standings.",
+    "category": "widget",
+    "icon": "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """Widget: sports — display a match score or standings card.
 
 Call: use_widget(name="sports", data={...})
 
@@ -36,9 +36,28 @@ For standings:
 }
 
 Use web_search to get accurate current data before calling this widget.""",
-    'data_schema': {'type': 'string — match or standings', 'league': 'string', 'home': {'name': 'string', 'score': 'number', 'logo_letter': 'string'}, 'away': {'name': 'string', 'score': 'number', 'logo_letter': 'string'}, 'status': 'string', 'events': ['string'], 'teams': [{'pos': 'number', 'name': 'string', 'played': 'number', 'won': 'number', 'drawn': 'number', 'lost': 'number', 'gd': 'string', 'points': 'number'}]},
-    'api_config': None,
-    'template_html': """<div class="widget-sports">
+    "data_schema": {
+        "type": "string — match or standings",
+        "league": "string",
+        "home": {"name": "string", "score": "number", "logo_letter": "string"},
+        "away": {"name": "string", "score": "number", "logo_letter": "string"},
+        "status": "string",
+        "events": ["string"],
+        "teams": [
+            {
+                "pos": "number",
+                "name": "string",
+                "played": "number",
+                "won": "number",
+                "drawn": "number",
+                "lost": "number",
+                "gd": "string",
+                "points": "number",
+            }
+        ],
+    },
+    "api_config": None,
+    "template_html": """<div class="widget-sports">
   {{#league}}<div class="ws-badge">{{league}}</div>{{/league}}
   {{#home}}
   <div class="ws-match">
@@ -70,7 +89,7 @@ Use web_search to get accurate current data before calling this widget.""",
   </table>
   {{/teams}}
 </div>""",
-    'template_css': """.widget-card .widget-sports {
+    "template_css": """.widget-card .widget-sports {
   padding: 1.25rem;
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--quip-glass-bg, rgba(22,22,26,0.42));

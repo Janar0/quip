@@ -10,10 +10,12 @@ from quip.services.voice import tools
 
 
 @pytest.mark.asyncio
-async def test_durable_cancel_before_tool_registration_prevents_external_work(client, auth_headers, db_session, monkeypatch):
-    created = await client.post('/api/chats', headers=auth_headers, json={'title':'Cancel race'})
-    chat = await db_session.get(Chat, UUID(created.json()['id']))
-    call = VoiceCall(user_id=chat.user_id, chat_id=chat.id, model='fixture', status='active')
+async def test_durable_cancel_before_tool_registration_prevents_external_work(
+    client, auth_headers, db_session, monkeypatch
+):
+    created = await client.post("/api/chats", headers=auth_headers, json={"title": "Cancel race"})
+    chat = await db_session.get(Chat, UUID(created.json()["id"]))
+    call = VoiceCall(user_id=chat.user_id, chat_id=chat.id, model="fixture", status="active")
     db_session.add(call)
     await db_session.commit()
     reservation_committed, release = asyncio.Event(), asyncio.Event()
@@ -34,19 +36,21 @@ async def test_durable_cancel_before_tool_registration_prevents_external_work(cl
 
     async def fake_work(name, args):
         calls.append((name, args))
-        return {'status':'completed','error_code':None,'result':{'content':'fixture'}}
+        return {"status": "completed", "error_code": None, "result": {"content": "fixture"}}
 
     monkeypatch.setattr(tools, "_commit_voice_tool_reservation", paused_reservation)
-    monkeypatch.setattr(tools,'run_voice_web_tool',fake_work)
-    running = asyncio.create_task(client.post(
-        f"/api/voice/calls/{call.id}/tools",
-        headers=auth_headers,
-        json={
-            "provider_call_id": "cancel-before-work",
-            "name": "read_url",
-            "arguments": json.dumps({"url": "https://example.org"}),
-        },
-    ))
+    monkeypatch.setattr(tools, "run_voice_web_tool", fake_work)
+    running = asyncio.create_task(
+        client.post(
+            f"/api/voice/calls/{call.id}/tools",
+            headers=auth_headers,
+            json={
+                "provider_call_id": "cancel-before-work",
+                "name": "read_url",
+                "arguments": json.dumps({"url": "https://example.org"}),
+            },
+        )
+    )
     await asyncio.wait_for(reservation_committed.wait(), 3)
     cancelled = await client.post(
         f"/api/voice/calls/{call.id}/tools/cancel-before-work/cancel",

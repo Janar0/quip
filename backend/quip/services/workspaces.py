@@ -35,14 +35,10 @@ async def ensure_personal_workspace(user: User, db: AsyncSession) -> Workspace:
         await db.flush()
 
     await db.execute(
-        update(Chat)
-        .where(Chat.user_id == user.id, Chat.workspace_id.is_(None))
-        .values(workspace_id=workspace.id)
+        update(Chat).where(Chat.user_id == user.id, Chat.workspace_id.is_(None)).values(workspace_id=workspace.id)
     )
     await db.execute(
-        update(File)
-        .where(File.user_id == user.id, File.workspace_id.is_(None))
-        .values(workspace_id=workspace.id)
+        update(File).where(File.user_id == user.id, File.workspace_id.is_(None)).values(workspace_id=workspace.id)
     )
     return workspace
 

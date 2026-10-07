@@ -1,4 +1,5 @@
 """Tool call dispatch and execution."""
+
 import asyncio
 import json
 import logging
@@ -18,9 +19,7 @@ class ToolExecutor:
     """Dispatches and executes tool calls from LLM responses."""
 
     @staticmethod
-    async def ensure_sandbox(
-        user_id, chat_id: str, sandbox=None
-    ):
+    async def ensure_sandbox(user_id, chat_id: str, sandbox=None):
         """Lazy-init sandbox container when a sandbox tool is requested."""
         if sandbox is not None:
             return sandbox
@@ -42,10 +41,7 @@ class ToolExecutor:
         user_id,
     ) -> tuple:
         """Execute tool calls concurrently. Returns (sandbox, list of (tc_name, parsed_result, raw_json))."""
-        need_sandbox = any(
-            tc.function_name in SANDBOX_TOOL_NAMES
-            for tc in accumulated_tool_calls
-        )
+        need_sandbox = any(tc.function_name in SANDBOX_TOOL_NAMES for tc in accumulated_tool_calls)
         if need_sandbox and not sandbox:
             sandbox = await ToolExecutor.ensure_sandbox(user_id, chat_id, sandbox)
 
@@ -106,8 +102,10 @@ class ToolExecutor:
                 if isinstance(r, dict) and r.get("url"):
                     url = r["url"]
                     if not any(s.get("url") == url for s in accumulated_sources):
-                        accumulated_sources.append({
-                            "title": r.get("title", "") or url,
-                            "url": url,
-                        })
+                        accumulated_sources.append(
+                            {
+                                "title": r.get("title", "") or url,
+                                "url": url,
+                            }
+                        )
         return accumulated_images, accumulated_sources

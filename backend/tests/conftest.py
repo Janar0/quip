@@ -50,13 +50,16 @@ async def client():
 @pytest.fixture
 async def auth_headers(client):
     """Register a test user and return Bearer auth headers."""
-    res = await client.post("/api/auth/register", json={
-        "email": "test@quip.dev",
-        "username": "testuser",
-        "name": "Test User",
-        "password": "password123",
-        "bootstrap_token": "test-bootstrap-token",
-    })
+    res = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "test@quip.dev",
+            "username": "testuser",
+            "name": "Test User",
+            "password": "password123",
+            "bootstrap_token": "test-bootstrap-token",
+        },
+    )
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 
 
@@ -78,6 +81,7 @@ def app_session_factory():
 def tmp_upload_dir(tmp_path):
     """Redirect file uploads to a temp directory."""
     import quip.routers.files as files_mod
+
     original = files_mod.UPLOAD_DIR
     files_mod.UPLOAD_DIR = tmp_path
     yield tmp_path
@@ -88,6 +92,7 @@ def tmp_upload_dir(tmp_path):
 def _reset_settings():
     """Reset in-memory config settings between tests."""
     from quip.core import config
+
     saved = dict(config._settings)
     yield
     config._settings.clear()

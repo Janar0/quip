@@ -29,11 +29,7 @@ def _version_info(model_id: str) -> tuple[str, tuple[int, ...], str] | None:
         return None
 
     # Numeric parameter sizes (70b, 8k, ...) are model tiers, not generations.
-    matches = [
-        match
-        for match in matches
-        if slug[match.end():match.end() + 1].casefold() not in {"b", "k", "m"}
-    ]
+    matches = [match for match in matches if slug[match.end() : match.end() + 1].casefold() not in {"b", "k", "m"}]
     if not matches:
         return None
 
@@ -42,7 +38,7 @@ def _version_info(model_id: str) -> tuple[str, tuple[int, ...], str] | None:
         version_parts = version_parts[:-1]
     identity = slug
     for match in reversed(matches):
-        identity = identity[:match.start()] + identity[match.end():]
+        identity = identity[: match.start()] + identity[match.end() :]
     identity = re.sub(r"[-_.]{2,}", "-", identity).strip("-_.").casefold()
     if variant:
         identity = f"{identity}:{variant.casefold()}"

@@ -1,16 +1,16 @@
 """Skill: fast_search — multi-angle web answers with inline citations."""
 
 SKILL = {
-    'id': 'fast_search',
-    'name': 'fast_search',
-    'description': 'Multi-angle web answers with inline citations and retrieved sources',
-    'category': 'tool',
-    'icon': None,
-    'type': 'content',
-    'enabled': True,
-    'is_builtin': True,
-    'is_internal': False,
-    'prompt_instructions': """You are producing a well-structured, multi-source answer with inline citations.
+    "id": "fast_search",
+    "name": "fast_search",
+    "description": "Multi-angle web answers with inline citations and retrieved sources",
+    "category": "tool",
+    "icon": None,
+    "type": "content",
+    "enabled": True,
+    "is_builtin": True,
+    "is_internal": False,
+    "prompt_instructions": """You are producing a well-structured, multi-source answer with inline citations.
 
 WORKFLOW (iterative, not one-shot):
 1. Start with one focused web_search. Read the returned snippets.
@@ -58,8 +58,8 @@ STRICT RULES:
 - Length target: 400-900 words for typical questions; longer is fine for deep multi-angle topics.
 - Answer in the user's language (see runtime context).
 """,
-    'data_schema': None,
-    'template_html': None,
-    'template_css': None,
-    'api_config': None,
+    "data_schema": None,
+    "template_html": None,
+    "template_css": None,
+    "api_config": None,
 }

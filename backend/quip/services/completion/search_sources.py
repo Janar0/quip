@@ -173,9 +173,7 @@ def _strip_model_sources_block(answer: str) -> str:
     return "\n".join(output).strip()
 
 
-def append_retrieved_sources(
-    answer: str, tool_executions: list[dict] | None, locale: str | None = None
-) -> str:
+def append_retrieved_sources(answer: str, tool_executions: list[dict] | None, locale: str | None = None) -> str:
     """Replace any model-authored footer with unique safe search result URLs."""
     body = _strip_model_sources_block(answer)
     sources = _source_metadata(tool_executions)
@@ -185,9 +183,7 @@ def append_retrieved_sources(
     heading = "Источники" if (locale or "").lower().startswith("ru") else "Sources"
     entries = []
     for index, (title, url) in enumerate(sources, 1):
-        encoded_title = base64.urlsafe_b64encode(
-            title.encode("utf-8", errors="replace")
-        ).decode("ascii").rstrip("=")
+        encoded_title = base64.urlsafe_b64encode(title.encode("utf-8", errors="replace")).decode("ascii").rstrip("=")
         entries.append(f"[{index}] quip-source-v1:{encoded_title} - {url}")
     footer = f"---\n**{heading}:**\n" + "\n".join(entries)
     return f"{body}\n\n{footer}" if body else footer

@@ -1,4 +1,5 @@
 """Authenticated, idempotent allowlisted tools for live Qwen voice calls."""
+
 import asyncio
 import hashlib
 import json
@@ -62,11 +63,13 @@ async def _run_tool(name: str, args: dict) -> dict:
         results, _images = await web_search(args["query"], max_results=5)
         bounded = []
         for result in results[:5]:
-            bounded.append({
-                "title": str(result.title or "")[:250],
-                "url": str(result.url or "")[:2048],
-                "snippet": str(result.snippet or result.content or "")[:1200],
-            })
+            bounded.append(
+                {
+                    "title": str(result.title or "")[:250],
+                    "url": str(result.url or "")[:2048],
+                    "snippet": str(result.snippet or result.content or "")[:1200],
+                }
+            )
         return {"results": bounded}
 
     from quip.services.scraper import read_url
@@ -85,14 +88,10 @@ async def run_voice_web_tool(name: str, args: dict) -> dict:
     if name not in ALLOWED_TOOLS:
         return {"status": "failed", "error_code": "unsupported_tool", "result": {"error": "unsupported_tool"}}
     try:
-        normalized, _arguments_hash = _parse_arguments(
-            name, json.dumps(args, ensure_ascii=False)
-        )
+        normalized, _arguments_hash = _parse_arguments(name, json.dumps(args, ensure_ascii=False))
         if name == "web_search":
             await _check_search_gate()
-        result = await asyncio.wait_for(
-            _run_tool(name, normalized), timeout=MAX_TOOL_SECONDS
-        )
+        result = await asyncio.wait_for(_run_tool(name, normalized), timeout=MAX_TOOL_SECONDS)
         status, error_code = "completed", None
     except HTTPException as exc:
         result = {"error": "tool_permission_denied" if exc.status_code == 403 else "invalid_tool_input"}
@@ -204,19 +203,23 @@ async def execute_voice_tool(
     for admission_slot in range(MAX_TOOL_CALLS_PER_CALL):
         for search_slot in search_slots:
             candidate_id = uuid4()
-            statement = conflict_insert(VoiceToolCall).values(
-                id=candidate_id,
-                voice_call_id=voice_call_id,
-                provider_call_id=provider_call_id,
-                function_name=name,
-                arguments_hash=arguments_hash,
-                status="pending",
-                cancel_requested=False,
-                execution_started=False,
-                admission_slot=admission_slot,
-                search_slot=search_slot,
-                pending_slot=1,
-            ).on_conflict_do_nothing()
+            statement = (
+                conflict_insert(VoiceToolCall)
+                .values(
+                    id=candidate_id,
+                    voice_call_id=voice_call_id,
+                    provider_call_id=provider_call_id,
+                    function_name=name,
+                    arguments_hash=arguments_hash,
+                    status="pending",
+                    cancel_requested=False,
+                    execution_started=False,
+                    admission_slot=admission_slot,
+                    search_slot=search_slot,
+                    pending_slot=1,
+                )
+                .on_conflict_do_nothing()
+            )
             result = await db.execute(statement)
             if result.rowcount == 1:
                 reserved_id = candidate_id
@@ -226,10 +229,12 @@ async def execute_voice_tool(
 
     if reserved_id is None:
         await db.rollback()
-        existing = await db.scalar(select(VoiceToolCall).where(
-            VoiceToolCall.voice_call_id == voice_call_id,
-            VoiceToolCall.provider_call_id == provider_call_id,
-        ))
+        existing = await db.scalar(
+            select(VoiceToolCall).where(
+                VoiceToolCall.voice_call_id == voice_call_id,
+                VoiceToolCall.provider_call_id == provider_call_id,
+            )
+        )
         if existing:
             if existing.arguments_hash != arguments_hash or existing.function_name != name:
                 raise HTTPException(status_code=409, detail="Tool call ID was reused with different arguments")
@@ -242,9 +247,7 @@ async def execute_voice_tool(
                 "result": existing.result or {"error": "tool_result_unavailable"},
                 "replayed": True,
             }
-        rows = list((await db.scalars(
-            select(VoiceToolCall).where(VoiceToolCall.voice_call_id == voice_call_id)
-        )).all())
+        rows = list((await db.scalars(select(VoiceToolCall).where(VoiceToolCall.voice_call_id == voice_call_id))).all())
         if len(rows) >= MAX_TOOL_CALLS_PER_CALL:
             raise HTTPException(status_code=429, detail="Voice tool call limit reached")
         if name == "web_search" and sum(row.function_name == "web_search" for row in rows) >= MAX_SEARCHES_PER_CALL:
@@ -378,10 +381,12 @@ async def cancel_voice_tool(
     if call is None:
         raise HTTPException(status_code=404, detail="Voice call not found")
     voice_call_id = call.id
-    row = await db.scalar(select(VoiceToolCall).where(
-        VoiceToolCall.voice_call_id == voice_call_id,
-        VoiceToolCall.provider_call_id == provider_call_id,
-    ))
+    row = await db.scalar(
+        select(VoiceToolCall).where(
+            VoiceToolCall.voice_call_id == voice_call_id,
+            VoiceToolCall.provider_call_id == provider_call_id,
+        )
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="Voice tool call not found")
     if row.status != "pending":

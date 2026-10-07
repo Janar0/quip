@@ -1,4 +1,5 @@
 """Config service — stores settings in DB, cached in memory."""
+
 import os
 
 from sqlalchemy import select

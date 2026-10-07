@@ -1,4 +1,5 @@
 """Persistent metadata for direct-media voice calls and their Quip tool calls."""
+
 import uuid
 
 from sqlalchemy import (

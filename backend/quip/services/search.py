@@ -1,4 +1,5 @@
 """Web search providers — Tavily and SearXNG. Returns text results + images."""
+
 import asyncio
 import logging
 import time
@@ -84,15 +85,15 @@ def _is_http_url(value: object) -> bool:
         return False
 
 
-async def web_search(
-    query: str, max_results: int = 5
-) -> SearchResponse:
+async def web_search(query: str, max_results: int = 5) -> SearchResponse:
     """Dispatch to the configured search provider with explicit outcome metadata."""
     from quip.services.skill_store import get_skill_setting
-    provider = str(
-        get_skill_setting("web_search", "provider", None)
-        or get_setting("search_provider", "searxng")
-    ).strip().lower()
+
+    provider = (
+        str(get_skill_setting("web_search", "provider", None) or get_setting("search_provider", "searxng"))
+        .strip()
+        .lower()
+    )
 
     cache_key = (provider, query.strip(), max_results)
     cached = _search_cache_get(cache_key)
@@ -113,11 +114,10 @@ async def web_search(
     return result
 
 
-async def _tavily_search(
-    query: str, max_results: int
-) -> SearchResponse:
+async def _tavily_search(query: str, max_results: int) -> SearchResponse:
     """Search via Tavily API (https://api.tavily.com)."""
     from quip.services.skill_store import get_skill_setting
+
     api_key = get_skill_setting("web_search", "tavily_api_key", "") or get_setting("tavily_api_key", "")
     if not api_key:
         return SearchResponse([], [], error="Tavily API key is not configured.")
@@ -144,12 +144,14 @@ async def _tavily_search(
             if not isinstance(item, dict) or not _is_http_url(item.get("url")):
                 continue
             url = item["url"]
-            results.append(SearchResult(
-                title=item.get("title", "") or url,
-                url=url,
-                snippet=item.get("content", ""),
-                content=item.get("content", ""),
-            ))
+            results.append(
+                SearchResult(
+                    title=item.get("title", "") or url,
+                    url=url,
+                    snippet=item.get("content", ""),
+                    content=item.get("content", ""),
+                )
+            )
 
         # Tavily returns images as either a list of strings or list of {url, description}
         images: list[ImageResult] = []
@@ -172,19 +174,15 @@ async def _tavily_search(
         return SearchResponse(results, images)
     except Exception as e:
         logger.warning("Tavily search failed (%s)", type(e).__name__)
-        return SearchResponse(
-            [], [], error=f"Tavily search is unavailable ({type(e).__name__})."
-        )
+        return SearchResponse([], [], error=f"Tavily search is unavailable ({type(e).__name__}).")
 
 
-async def _searxng_search(
-    query: str, max_results: int
-) -> SearchResponse:
+async def _searxng_search(query: str, max_results: int) -> SearchResponse:
     """Search via a self-hosted SearXNG instance — runs text + image queries concurrently."""
     from quip.services.skill_store import get_skill_setting
+
     base_url = (
-        get_skill_setting("web_search", "searxng_url", "")
-        or get_setting("searxng_url", "http://127.0.0.1:8888")
+        get_skill_setting("web_search", "searxng_url", "") or get_setting("searxng_url", "http://127.0.0.1:8888")
     ).rstrip("/")
     if not base_url:
         return SearchResponse([], [], error="SearXNG URL is not configured.")
@@ -201,11 +199,13 @@ async def _searxng_search(
             if not isinstance(item, dict) or not _is_http_url(item.get("url")):
                 continue
             url = item["url"]
-            results.append(SearchResult(
-                title=item.get("title", "") or url,
-                url=url,
-                snippet=item.get("content", ""),
-            ))
+            results.append(
+                SearchResult(
+                    title=item.get("title", "") or url,
+                    url=url,
+                    snippet=item.get("content", ""),
+                )
+            )
         return results
 
     async def _fetch_images(client: httpx.AsyncClient) -> list[ImageResult]:
@@ -235,9 +235,7 @@ async def _searxng_search(
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             text_task = asyncio.create_task(_fetch_text(client))
             img_task = asyncio.create_task(_fetch_images(client))
-            text_results, img_results = await asyncio.gather(
-                text_task, img_task, return_exceptions=True
-            )
+            text_results, img_results = await asyncio.gather(text_task, img_task, return_exceptions=True)
 
         error = None
         warning = None
@@ -258,6 +256,4 @@ async def _searxng_search(
         )
     except Exception as e:
         logger.warning("SearXNG search failed (%s)", type(e).__name__)
-        return SearchResponse(
-            [], [], error=f"SearXNG search is unavailable ({type(e).__name__})."
-        )
+        return SearchResponse([], [], error=f"SearXNG search is unavailable ({type(e).__name__}).")

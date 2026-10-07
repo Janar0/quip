@@ -1,13 +1,13 @@
 """Skill: image_generation — Generate or edit images using AI image models"""
 
 SKILL = {
-    'id': 'image_generation',
-    'name': 'Image Generation',
-    'description': 'Generate or edit images using AI image models',
-    'category': 'tool',
-    'type': 'content',
-    'enabled': True,
-    'prompt_instructions': """## Image Generation
+    "id": "image_generation",
+    "name": "Image Generation",
+    "description": "Generate or edit images using AI image models",
+    "category": "tool",
+    "type": "content",
+    "enabled": True,
+    "prompt_instructions": """## Image Generation
 
 Use the `generate_image` tool to create or edit images.
 
@@ -50,14 +50,14 @@ If you pass `hidden: true`, NOTHING is rendered by the tool — you are responsi
 {"prompt": "Merge the style of the first image with the subject of the second", "image_urls": ["/api/files/id1", "/api/files/id2"]}
 {"prompt": "Add dramatic storm clouds to the sky", "image_urls": ["/api/images/prev.png"]}
 ```""",
-    'settings_schema': [
+    "settings_schema": [
         {
-            'key': 'model',
-            'label': 'Model',
-            'type': 'text',
-            'default': 'google/gemini-2.0-flash-exp:free',
-            'help': 'OpenRouter image model id.',
+            "key": "model",
+            "label": "Model",
+            "type": "text",
+            "default": "google/gemini-2.0-flash-exp:free",
+            "help": "OpenRouter image model id.",
         },
     ],
-    'default_settings': {'model': 'google/gemini-2.0-flash-exp:free'},
+    "default_settings": {"model": "google/gemini-2.0-flash-exp:free"},
 }
