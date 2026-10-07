@@ -43,10 +43,4 @@ npm run build
 
 Перед релизом дождитесь успешного workflow **Quality, Build & Push** в GitHub Actions: кроме этих проверок он запускает `pip-audit`, `npm audit --audit-level=low`, проверку Compose и сборку с публикацией Docker-образов. Тесты конфигурации Compose требуют CLI `docker compose`; запуск Docker daemon для них не нужен. Успешная локальная сборка frontend не подтверждает прохождение всего CI.
 
-## Навигация по проекту
-
-- [Архитектура и правила правок](docs/architecture.md)
-- [Диагностика OpenRouter / DNS / VPN](docs/openrouter-network.md)
-- [Результаты проверки и ограничения](docs/audit-2026-10-07.md)
-
 Production Compose использует опубликованные образы из GHCR. Изменения локальных исходников не попадут в этот образ автоматически: используйте локальную сборку или штатный CI релиза.
