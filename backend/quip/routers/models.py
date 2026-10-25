@@ -186,6 +186,7 @@ async def get_available_models(
 async def get_features(user: User = Depends(get_current_user)):
     """Return feature flags visible to all authenticated users."""
     from quip.core.config import get_setting as _get_setting
+    from quip.routers.roki import roki_enabled
 
     research_enabled = (
         get_bool_setting("research_enabled", False)
@@ -195,4 +196,5 @@ async def get_features(user: User = Depends(get_current_user)):
         "search_enabled": get_bool_setting("search_enabled", False),
         "research_enabled": research_enabled,
         "tool_gating_enabled": get_bool_setting("tool_gating_enabled", True),
+        "roki_enabled": roki_enabled(),
     }
