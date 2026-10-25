@@ -216,10 +216,15 @@ export async function loadChat(chatId: string, options: { background?: boolean }
           }
         }
       }
-      await research.hydrateResearchRuns(
-        chatId, msgs, data.runs ?? [], streamContext?.messages ?? messages,
-        () => streamContext?.messageId ?? null, () => version === chatVersion,
-      );
+      // Avoid yielding after copying live stream messages when there are no
+      // research runs to hydrate: a later SSE event could otherwise be
+      // overwritten by this older snapshot.
+      if ((data.runs ?? []).some((run: { task_kind?: string }) => run.task_kind === 'research')) {
+        await research.hydrateResearchRuns(
+          chatId, msgs, data.runs, streamContext?.messages ?? messages,
+          () => streamContext?.messageId ?? null, () => version === chatVersion,
+        );
+      }
       if (version !== chatVersion) return;
       if (streamContext) streamContext.messages.set(msgs);
       else if (JSON.stringify(get(messages)) !== JSON.stringify(msgs)) messages.set(msgs);

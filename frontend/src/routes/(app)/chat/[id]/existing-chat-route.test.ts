@@ -116,7 +116,7 @@ describe('existing chat route Search mode', () => {
         status: 'completed',
         result: { status: 'partial' },
       });
-    }, { timeout: 5000 });
+    });
 
     await loadChat('chat-42');
     expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/chats/chat-42')).toBe(true);
