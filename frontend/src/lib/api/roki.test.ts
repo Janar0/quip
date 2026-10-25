@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { tryRefresh } from './client';
-import { refreshRokiPresence, rokiFetch, rokiPresence } from './roki';
+import { loadRokiModule, refreshRokiPresence, rokiFetch, rokiPresence } from './roki';
 
 vi.mock('./client', () => ({ tryRefresh: vi.fn() }));
 const refresh = vi.mocked(tryRefresh);
@@ -43,6 +43,15 @@ it('does not retry when the refresh fails', async () => {
   refresh.mockResolvedValueOnce(false);
   expect((await rokiFetch('/api/roki/presence')).status).toBe(401);
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it('refreshes the session before loading the protected browser module', async () => {
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));
+  refresh.mockResolvedValueOnce(true);
+  await expect(loadRokiModule()).rejects.toThrow();
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 it('shows Roki offline when the service cannot be reached', async () => {

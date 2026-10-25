@@ -34,7 +34,10 @@ export async function rokiFetch(url: string, init: RequestInit = {}): Promise<Re
 let moduleLoad: Promise<unknown> | null = null;
 
 export function loadRokiModule(): Promise<unknown> {
-  moduleLoad ??= import(/* @vite-ignore */ MODULE_URL).catch((error) => {
+  moduleLoad ??= rokiFetch(MODULE_URL).then((response) => {
+    if (!response.ok) throw new Error(`Roki module unavailable (${response.status})`);
+    return import(/* @vite-ignore */ MODULE_URL);
+  }).catch((error) => {
     moduleLoad = null;
     throw error;
   });
