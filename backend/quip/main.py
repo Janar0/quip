@@ -24,6 +24,7 @@ from quip.routers.icons import router as icons_router
 from quip.routers.images import router as images_router
 from quip.routers.migrate import router as migrate_router
 from quip.routers.models import router as models_router
+from quip.routers.roki import router as roki_router
 from quip.routers.sandbox import router as sandbox_router
 from quip.routers.skills import router as skills_router
 from quip.routers.voice import router as voice_router
@@ -123,6 +124,7 @@ app.include_router(audio_router)
 app.include_router(icons_router)
 app.include_router(workspaces_router)
 app.include_router(voice_router)
+app.include_router(roki_router)
 
 
 @app.get("/health/live")
