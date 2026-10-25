@@ -16,6 +16,8 @@ dependencies = [
     "redis>=5.2.0",
     "python-multipart>=0.0.18",
     "python-dotenv>=1.2.2",
+    # Keep aiohttp's multidict patched and pinned in the hashed Docker export.
+    "multidict>=6.9.1",
     "httpx>=0.28.0",
     "aiosqlite>=0.20.0",
     "docker>=7.0.0",
@@ -42,10 +44,6 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.uv]
-# The aiohttp dependency chain must not resolve the vulnerable items-view implementation.
-constraint-dependencies = ["multidict>=6.9.1"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

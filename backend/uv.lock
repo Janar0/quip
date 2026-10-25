@@ -2,9 +2,6 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
-[manifest]
-constraints = [{ name = "multidict", specifier = ">=6.9.1" }]
-
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
@@ -1727,6 +1724,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "geoip2" },
     { name = "httpx" },
+    { name = "multidict" },
     { name = "openpyxl" },
     { name = "pillow" },
     { name = "pydantic" },
@@ -1765,6 +1763,7 @@ requires-dist = [
     { name = "geoip2", specifier = ">=4.8.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
+    { name = "multidict", specifier = ">=6.9.1" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
