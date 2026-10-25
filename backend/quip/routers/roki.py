@@ -4,6 +4,7 @@ Roki is a separate host service with its own repository and release cycle. This
 router only forwards ``/api/roki/<path>`` to Roki's ``/api/<path>``; it never
 interprets Roki's API, so Roki fixes ship without rebuilding Quip.
 """
+
 import hashlib
 import hmac
 import os
@@ -41,7 +42,9 @@ def roki_enabled() -> bool:
     return bool(roki_url()) and len(roki_secret()) >= 32
 
 
-def sign(secret: bytes, method: str, target: str, user: str, admin: bool, *, now: float | None = None) -> dict[str, str]:
+def sign(
+    secret: bytes, method: str, target: str, user: str, admin: bool, *, now: float | None = None
+) -> dict[str, str]:
     """Same scheme as roki/quip_identity.py; both repos test one shared vector."""
     stamp = str(int(time.time() if now is None else now))
     flag = "1" if admin else "0"

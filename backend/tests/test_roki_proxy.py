@@ -127,7 +127,11 @@ async def test_attachment_upload_keeps_filename_and_body(client, db_session, ups
     _, headers = await make_user(db_session)
     res = await client.post(
         "/api/roki/conversation/attachments",
-        headers={**headers, "Content-Type": "application/octet-stream", "X-Roki-Filename": "%D0%BE%D1%82%D1%87%D1%91%D1%82.csv"},
+        headers={
+            **headers,
+            "Content-Type": "application/octet-stream",
+            "X-Roki-Filename": "%D0%BE%D1%82%D1%87%D1%91%D1%82.csv",
+        },
         content=b"a;b\n1;2\n",
     )
     assert res.json()["body"] == "a;b\n1;2\n"
