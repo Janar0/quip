@@ -21,6 +21,11 @@ services:
       TELEGRAM_LOGIN_REDIRECT_URI: ${TELEGRAM_LOGIN_REDIRECT_URI:-}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
       TELEGRAM_MAX_FILE_MB: ${TELEGRAM_MAX_FILE_MB:-20}
+      # Roki runs on the host as its own service; empty keeps it hidden.
+      ROKI_URL: ${ROKI_URL:-}
+      ROKI_IDENTITY_SECRET: ${ROKI_IDENTITY_SECRET:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - quip_data:/app/data
     restart: unless-stopped
