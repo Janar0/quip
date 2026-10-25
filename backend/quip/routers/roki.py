@@ -22,7 +22,7 @@ from quip.services.permissions import get_current_user
 router = APIRouter(prefix="/api/roki", tags=["roki"])
 
 PATH = re.compile(r"[A-Za-z0-9._~/-]{1,512}")
-REQUEST_HEADERS = ("content-type", "if-none-match", "if-modified-since")
+REQUEST_HEADERS = ("content-type", "if-none-match", "if-modified-since", "x-roki-filename")
 RESPONSE_HEADERS = ("content-type", "etag", "last-modified", "content-disposition", "cache-control")
 
 _client: httpx.AsyncClient | None = None

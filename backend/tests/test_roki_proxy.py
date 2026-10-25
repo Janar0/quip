@@ -121,3 +121,15 @@ async def test_bad_paths_and_unavailable_roki(client, db_session, upstream):
     assert (await client.get("/api/roki/a//b", headers=headers)).status_code == 404
     assert (await client.get("/api/roki/a/%2e%2e/admin/summary", headers=headers)).status_code == 404
     assert (await client.get("/api/roki/broken", headers=headers)).status_code == 502
+
+
+async def test_attachment_upload_keeps_filename_and_body(client, db_session, upstream):
+    _, headers = await make_user(db_session)
+    res = await client.post(
+        "/api/roki/conversation/attachments",
+        headers={**headers, "Content-Type": "application/octet-stream", "X-Roki-Filename": "%D0%BE%D1%82%D1%87%D1%91%D1%82.csv"},
+        content=b"a;b\n1;2\n",
+    )
+    assert res.json()["body"] == "a;b\n1;2\n"
+    assert upstream[-1].headers["x-roki-filename"] == "%D0%BE%D1%82%D1%87%D1%91%D1%82.csv"
+    assert upstream[-1].headers["content-type"] == "application/octet-stream"
