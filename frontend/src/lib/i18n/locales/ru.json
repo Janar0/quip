@@ -449,5 +449,18 @@
   "admin.modelUpdateReason.backwards": "предложенная модель не новее выбранной",
   "admin.modelUpdateReason.not_latest": "предложена не последняя версия",
   "admin.modelUpdateReason.duplicate_suggestion": "модель повторяется в ответе сопоставления",
-  "admin.modelUpdateReason.no_configured_models": "нет настроенных моделей для обновления"
+  "admin.modelUpdateReason.no_configured_models": "нет настроенных моделей для обновления",
+  "nav.roki": "Roki",
+  "admin.tabs.roki": "Roki",
+  "admin.roki.title": "Roki",
+  "admin.roki.description": "Расход по людям, ресурсы VM и проверка общих инструментов",
+  "roki.loadFailed": "Не удалось загрузить Roki. Проверьте, что служба Roki запущена.",
+  "roki.status.offline": "офлайн",
+  "roki.status.blocked_storage": "нужно место на диске",
+  "roki.status.idle": "на связи",
+  "roki.status.waiting": "на связи",
+  "roki.status.queued": "подключается",
+  "roki.status.working": "работает",
+  "roki.status.sleeping": "компьютер спит",
+  "roki.status.paused": "на паузе"
 }

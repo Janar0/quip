@@ -20,6 +20,7 @@
   import { D1, D2, D3, easeOut } from '$lib/motion';
   import WorkspaceSwitcher from '$lib/components/workspaces/WorkspaceSwitcher.svelte';
   import { loadWorkspaces, selectedWorkspaceId } from '$lib/stores/workspaces';
+  import { rokiEnabled, rokiPresence, refreshRokiPresence } from '$lib/api/roki';
 
   let { children } = $props();
   let isAdmin = $derived($currentUser?.role === 'admin');
@@ -137,6 +138,18 @@
       goto('/auth/login');
     }
   });
+
+  // Roki's status in the sidebar: light polling only while it is enabled and visible.
+  $effect(() => {
+    if (!$rokiEnabled) return;
+    refreshRokiPresence();
+    const timer = setInterval(() => {
+      if (!document.hidden) refreshRokiPresence();
+    }, 15000);
+    return () => clearInterval(timer);
+  });
+  const rokiBusy = $derived(['working', 'queued'].includes($rokiPresence));
+  const rokiDown = $derived(['offline', 'blocked_storage'].includes($rokiPresence));
 
   // Auto-close sidebar on mobile navigation
   $effect(() => {
@@ -272,6 +285,34 @@
             <span class="text-[10px] text-subtle font-mono">Ctrl+N</span>
           </a>
         </div>
+
+        {#if $rokiEnabled}
+          <!-- Roki lives here, above the chats -->
+          <div class="px-3 pb-2 shrink-0">
+            <a
+              href="/roki"
+              class="flex items-center gap-2.5 w-full px-3 py-2 rounded-[11px] transition-colors text-[13.5px]
+                {page.url.pathname.startsWith('/roki') ? 'bg-elevated text-foreground' : 'text-muted hover:text-foreground hover:bg-panel'}"
+              aria-current={page.url.pathname.startsWith('/roki') ? 'page' : undefined}
+              onclick={() => clearSearch()}
+            >
+              <span
+                class="w-6 h-6 rounded-full grid place-items-center text-[12px] font-extrabold shrink-0"
+                style="background: radial-gradient(circle at 35% 30%, #ffb08a, #ff7a45); color: #2a0d00"
+                aria-hidden="true">r</span
+              >
+              <span class="flex flex-col min-w-0 leading-tight">
+                <span class="font-medium" style="color: var(--quip-text)">{$t('nav.roki')}</span>
+                <span class="text-[11px] text-subtle truncate">{$t(`roki.status.${$rokiPresence || 'idle'}`)}</span>
+              </span>
+              <span
+                class="ml-auto w-2 h-2 rounded-full shrink-0"
+                style="background: {rokiBusy ? 'var(--quip-success)' : rokiDown ? 'var(--quip-error)' : 'var(--quip-text-muted)'}"
+                aria-hidden="true"
+              ></span>
+            </a>
+          </div>
+        {/if}
 
         <!-- Search -->
         <div class="px-3 pb-2 shrink-0">

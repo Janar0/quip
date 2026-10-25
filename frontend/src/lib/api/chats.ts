@@ -7,6 +7,7 @@ import { t } from 'svelte-i18n';
 import type { UploadedFile } from '$lib/api/files';
 import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
 import { cancelChatRun, ChatRunRequestError, getChatRun } from '$lib/api/chat-runs';
+import { rokiEnabled } from '$lib/api/roki';
 
 let researchPollTimer: ReturnType<typeof setInterval> | null = null;
 let researchPollChatId: string | null = null;
@@ -450,6 +451,7 @@ export async function fetchFeatures(): Promise<void> {
       const data = await res.json();
       searchEnabled.set(data.search_enabled ?? false);
       researchEnabled.set(data.research_enabled ?? false);
+      rokiEnabled.set(data.roki_enabled ?? false);
     }
   } catch {
     // ignore

@@ -455,5 +455,18 @@
   "admin.modelUpdateReason.backwards": "suggested model is not newer than the selected model",
   "admin.modelUpdateReason.not_latest": "suggested model is not the latest successor",
   "admin.modelUpdateReason.duplicate_suggestion": "the mapping response repeated this model",
-  "admin.modelUpdateReason.no_configured_models": "there are no configured model references to update"
+  "admin.modelUpdateReason.no_configured_models": "there are no configured model references to update",
+  "nav.roki": "Roki",
+  "admin.tabs.roki": "Roki",
+  "admin.roki.title": "Roki",
+  "admin.roki.description": "Spending per person, VM resources and shared tool review",
+  "roki.loadFailed": "Could not load Roki. Check that the Roki service is running.",
+  "roki.status.offline": "offline",
+  "roki.status.blocked_storage": "needs disk space",
+  "roki.status.idle": "online",
+  "roki.status.waiting": "online",
+  "roki.status.queued": "connecting",
+  "roki.status.working": "working",
+  "roki.status.sleeping": "computer asleep",
+  "roki.status.paused": "paused"
 }

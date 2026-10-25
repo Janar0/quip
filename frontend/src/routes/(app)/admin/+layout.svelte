@@ -11,6 +11,7 @@
     { href: '/admin/users', key: 'admin.tabs.users', icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2m22 4v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
     { href: '/admin/usage', key: 'admin.tabs.usage', icon: 'M18 20V10M12 20V4M6 20v-6' },
     { href: '/admin/budgets', key: 'admin.tabs.budgets', icon: 'M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6' },
+    { href: '/admin/roki', key: 'admin.tabs.roki', icon: 'M12 2a10 10 0 100 20 10 10 0 000-20zM8 10h.01M16 10h.01M8 15c2 2 6 2 8 0' },
     { href: '/admin/skills', key: 'admin.tabs.skills', icon: 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z' },
     { href: '/admin/migrate', key: 'admin.tabs.import', icon: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12' },
   ];
