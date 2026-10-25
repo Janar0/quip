@@ -35,4 +35,6 @@ assert.ok(existsSync(fileURLToPath(new URL(filename, build))),
   `Navigation fallback ${filename} is missing from the static build`);
 assert.ok(navigation.denylist.some(pattern => pattern.test('/api/auth/me')),
   'API requests must bypass the cached application shell');
+assert.ok(readFileSync(new URL('index.html', build), 'utf8').includes('/registerSW.js'),
+  'Static application shell must register the generated service worker');
 console.log('PWA: cached navigation shell exists; API requests bypass it');

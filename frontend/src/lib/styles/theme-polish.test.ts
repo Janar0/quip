@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error Node built-ins are available in Vitest; app dependencies omit @types/node.
 import { readFileSync } from 'node:fs';
-// @ts-expect-error Node built-ins are available in Vitest; app dependencies omit @types/node.
 import { resolve } from 'node:path';
-// @ts-expect-error Node built-ins are available in Vitest; app dependencies omit @types/node.
 import { cwd } from 'node:process';
 
 const css = [

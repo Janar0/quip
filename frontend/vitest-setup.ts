@@ -13,8 +13,8 @@ vi.mock('svelte-i18n', () => ({
 
 // Provide localStorage mock before any module tries to access it
 const _storage: Record<string, string> = {};
-(globalThis as any).localStorage = {
+Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   getItem: vi.fn((key: string) => _storage[key] ?? null),
   setItem: vi.fn((key: string, value: string) => { _storage[key] = value; }),
   removeItem: vi.fn((key: string) => { delete _storage[key]; }),
-};
+} });

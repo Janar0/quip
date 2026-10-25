@@ -1,74 +1,21 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
-import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import { defineConfig } from 'vite';
+import { relative, sep } from 'node:path';
 
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
-		sveltekit(),
-		SvelteKitPWA({
-			kit: { adapterFallback: 'index.html', spa: true },
-			registerType: 'autoUpdate',
-			strategies: 'generateSW',
-			injectRegister: 'auto',
-			devOptions: { enabled: false },
-			manifest: {
-				name: 'Q.U.I.P.',
-				short_name: 'QUIP',
-				description: 'Q.U.I.P. — agent-first AI chat',
-				theme_color: '#060606',
-				background_color: '#060606',
-				display: 'standalone',
-				orientation: 'portrait',
-				start_url: '/',
-				scope: '/',
-				icons: [
-					{ src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
-					{ src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
-					{ src: '/pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-				],
-			},
-			workbox: {
-				globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff,woff2}'],
-				navigateFallback: '/index.html',
-				navigateFallbackDenylist: [/^\/api\//],
-				cleanupOutdatedCaches: true,
-				clientsClaim: true,
-				skipWaiting: true,
-				runtimeCaching: [
-					{
-						urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-						handler: 'NetworkOnly',
-					},
-					{
-						urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/,
-						handler: 'StaleWhileRevalidate',
-						options: {
-							cacheName: 'google-fonts-stylesheets',
-							expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 },
-						},
-					},
-					{
-						urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/,
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'google-fonts-webfonts',
-							expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
-							cacheableResponse: { statuses: [0, 200] },
-						},
-					},
-					{
-						urlPattern: ({ request }) => request.destination === 'image',
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'images',
-							expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 },
-							cacheableResponse: { statuses: [0, 200] },
-						},
-					},
-				],
-			},
+		sveltekit({
+			alias: { '$lib': 'src/lib' },
+			adapter: adapter({ fallback: 'index.html' }),
+			compilerOptions: {
+				runes: ({ filename }) => {
+					const pathSegments = relative(import.meta.dirname, filename).toLowerCase().split(sep);
+					return pathSegments.includes('node_modules') ? undefined : true;
+				}
+			}
 		}),
 	],
 	server: {

@@ -8,13 +8,11 @@ import {
 import { get } from 'svelte/store';
 
 const _storage: Record<string, string> = {};
-(globalThis as any).localStorage = {
+vi.stubGlobal('localStorage', {
   getItem: vi.fn((key: string) => _storage[key] ?? null),
   setItem: vi.fn((key: string, value: string) => { _storage[key] = value; }),
   removeItem: vi.fn((key: string) => { delete _storage[key]; }),
-};
-
-vi.stubGlobal('localStorage', (globalThis as any).localStorage);
+});
 
 describe('branch persistence', () => {
   const CHAT_ID = 'chat-test-123';
