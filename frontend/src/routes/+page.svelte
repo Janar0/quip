@@ -1,6 +1,15 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { goto } from '$app/navigation';
+  import { authLoading, isAuthenticated } from '$lib/stores/auth';
   import { getRandomBackronym, getAppName } from '$lib/quip/backronyms';
+
+  // Installed PWAs launch at /; wait for the root layout to restore cookies.
+  $effect(() => {
+    if (!$authLoading && $isAuthenticated) {
+      goto('/chat', { replaceState: true });
+    }
+  });
 
   let backronym = $state('');
   let appName = $state('Q.U.I.P.');
@@ -16,6 +25,11 @@
   });
 </script>
 
+{#if $authLoading || $isAuthenticated}
+  <div class="flex items-center justify-center min-h-dvh">
+    <p class="opacity-50">{$t('common.loading')}</p>
+  </div>
+{:else}
 <div class="flex flex-col items-center justify-center min-h-dvh gap-6 p-8 ambient-glow">
   <div class="text-center">
     <h1 class="text-6xl font-black tracking-widest">{appName}</h1>
@@ -38,3 +52,4 @@
     ↻
   </button>
 </div>
+{/if}
