@@ -456,6 +456,7 @@
   "admin.modelUpdateReason.duplicate_suggestion": "the mapping response repeated this model",
   "admin.modelUpdateReason.no_configured_models": "there are no configured model references to update",
   "nav.roki": "Roki",
+  "nav.rakazo": "Rakazo",
   "admin.tabs.roki": "Roki",
   "admin.roki.title": "Roki",
   "admin.roki.description": "Spending per person, VM resources and shared tool review",

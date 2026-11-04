@@ -186,6 +186,7 @@ async def get_features(user: User = Depends(get_current_user)):
     """Return feature flags visible to all authenticated users."""
     from quip.core.config import get_setting as _get_setting
     from quip.routers.roki import roki_enabled
+    from quip.services.oidc import oidc_config
 
     research_enabled = (
         get_bool_setting("research_enabled", False)
@@ -196,4 +197,5 @@ async def get_features(user: User = Depends(get_current_user)):
         "research_enabled": research_enabled,
         "tool_gating_enabled": get_bool_setting("tool_gating_enabled", True),
         "roki_enabled": roki_enabled(),
+        "rakazo_url": oidc.rakazo_url if (oidc := oidc_config()) else "",
     }

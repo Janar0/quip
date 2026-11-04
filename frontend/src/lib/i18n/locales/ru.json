@@ -450,6 +450,7 @@
   "admin.modelUpdateReason.duplicate_suggestion": "модель повторяется в ответе сопоставления",
   "admin.modelUpdateReason.no_configured_models": "нет настроенных моделей для обновления",
   "nav.roki": "Roki",
+  "nav.rakazo": "Rakazo",
   "admin.tabs.roki": "Roki",
   "admin.roki.title": "Roki",
   "admin.roki.description": "Расход по людям, ресурсы VM и проверка общих инструментов",

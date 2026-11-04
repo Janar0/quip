@@ -9,6 +9,7 @@ import { selectedWorkspaceId, selectWorkspace } from '$lib/stores/workspaces';
 import { isActiveResearch } from './research-projection';
 import { createResearchSync } from './research-sync';
 import { rokiEnabled } from '$lib/api/roki';
+import { rakazoUrl } from '$lib/api/rakazo';
 
 type PendingResearchRequest = {
   chatId?: string;
@@ -279,6 +280,7 @@ export async function fetchFeatures(): Promise<void> {
       searchEnabled.set(data.search_enabled ?? false);
       researchEnabled.set(data.research_enabled ?? false);
       rokiEnabled.set(data.roki_enabled ?? false);
+      rakazoUrl.set(data.rakazo_url ?? '');
     }
   } catch {
     // ignore

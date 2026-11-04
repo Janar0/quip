@@ -54,7 +54,7 @@ def test_fresh_database_migrates_to_workspace_head(tmp_path):
     assert "workspace_id" in file_columns
     assert {"user_id", "telegram_user_id"}.issubset(token_columns)
     assert "execution_started" in tool_columns
-    assert revision == SCHEMA_REVISION == "0010"
+    assert revision == SCHEMA_REVISION == "0011"
 
 
 def test_voice_migration_can_downgrade_and_upgrade(tmp_path):
@@ -71,7 +71,7 @@ def test_voice_migration_can_downgrade_and_upgrade(tmp_path):
     command.upgrade(config, "head")
     tables, *_rest, revision = asyncio.run(_schema_snapshot(database_url))
     assert {"voice_calls", "voice_tool_calls"}.issubset(tables)
-    assert revision == SCHEMA_REVISION == "0010"
+    assert revision == SCHEMA_REVISION == "0011"
     tool_columns = _rest[-1]
     assert "execution_started" in tool_columns
 
@@ -140,4 +140,4 @@ def test_unversioned_database_is_stamped_and_backfilled(tmp_path, monkeypatch):
     assert workspace_count == 1
     assert chat_workspace
     assert file_workspace == chat_workspace
-    assert revision == "0010"
+    assert revision == "0011"

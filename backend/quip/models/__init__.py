@@ -3,6 +3,7 @@ from quip.models.budget import Budget
 from quip.models.chat import Chat, ChatRun, Message
 from quip.models.config import Config
 from quip.models.file import DocumentChunk, DocumentImage, File
+from quip.models.oidc import OidcCode
 from quip.models.sandbox import Sandbox
 from quip.models.skill import Skill
 from quip.models.usage import UsageLog
@@ -26,6 +27,7 @@ __all__ = [
     "DocumentImage",
     "File",
     "Message",
+    "OidcCode",
     "Sandbox",
     "Skill",
     "UsageLog",

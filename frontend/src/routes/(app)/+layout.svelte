@@ -21,6 +21,9 @@
   import WorkspaceSwitcher from '$lib/components/workspaces/WorkspaceSwitcher.svelte';
   import { loadWorkspaces, selectedWorkspaceId } from '$lib/stores/workspaces';
   import { rokiEnabled, rokiPresence, refreshRokiPresence } from '$lib/api/roki';
+  import { rakazoEntry, rakazoUrl } from '$lib/api/rakazo';
+  import { theme } from '$lib/stores/theme';
+  import { tryRefresh } from '$lib/api/client';
 
   let { children } = $props();
   let isAdmin = $derived($currentUser?.role === 'admin');
@@ -141,7 +144,7 @@
 
   // Roki's status in the sidebar: light polling only while it is enabled and visible.
   $effect(() => {
-    if (!$rokiEnabled) return;
+    if (!$rokiEnabled || $rakazoUrl) return;
     refreshRokiPresence();
     const timer = setInterval(() => {
       if (!document.hidden) refreshRokiPresence();
@@ -150,6 +153,15 @@
   });
   const rokiBusy = $derived(['working', 'queued'].includes($rokiPresence));
   const rokiDown = $derived(['offline', 'blocked_storage'].includes($rokiPresence));
+
+  // Opened once and then kept alive, so an open chat or computer survives leaving the page.
+  const onRakazo = $derived(page.url.pathname.startsWith('/rakazo'));
+  let rakazoOpened = $state(false);
+  $effect(() => {
+    if (!onRakazo || !$rakazoUrl || rakazoOpened) return;
+    // A fresh Quip session lets the embedded sign-in finish without a login form.
+    tryRefresh().finally(() => (rakazoOpened = true));
+  });
 
   // Auto-close sidebar on mobile navigation
   $effect(() => {
@@ -286,7 +298,24 @@
           </a>
         </div>
 
-        {#if $rokiEnabled}
+        {#if $rakazoUrl}
+          <div class="px-3 pb-2 shrink-0">
+            <a
+              href="/rakazo"
+              class="flex items-center gap-2.5 w-full px-3 py-2 rounded-[11px] transition-colors text-[13.5px]
+                {onRakazo ? 'bg-elevated text-foreground' : 'text-muted hover:text-foreground hover:bg-panel'}"
+              aria-current={onRakazo ? 'page' : undefined}
+              onclick={() => clearSearch()}
+            >
+              <span
+                class="w-6 h-6 rounded-full grid place-items-center text-[12px] font-extrabold shrink-0"
+                style="background: radial-gradient(circle at 35% 30%, #ffb08a, #ff7a45); color: #2a0d00"
+                aria-hidden="true">r</span
+              >
+              <span class="font-medium" style="color: var(--quip-text)">{$t('nav.rakazo')}</span>
+            </a>
+          </div>
+        {:else if $rokiEnabled}
           <!-- Roki lives here, above the chats -->
           <div class="px-3 pb-2 shrink-0">
             <a
@@ -492,6 +521,15 @@
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
         </button>
+      {/if}
+      {#if rakazoOpened && $rakazoUrl && $currentUser}
+        <iframe
+          src={rakazoEntry($rakazoUrl, $currentUser.email, $theme)}
+          title={$t('nav.rakazo')}
+          class="flex-1 min-h-0 w-full border-0 {$showSidebar ? '' : 'pt-14'}"
+          class:hidden={!onRakazo}
+          allow="microphone; camera; clipboard-read; clipboard-write; fullscreen; autoplay; display-capture"
+        ></iframe>
       {/if}
       {@render children()}
     </main>

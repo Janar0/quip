@@ -1,7 +1,10 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { login } from '$lib/api/auth';
+  import { tryRefresh } from '$lib/api/client';
+  import { safeNext } from '$lib/api/rakazo';
   import { fly } from 'svelte/transition';
   import { D3, easeOut } from '$lib/motion';
 
@@ -13,6 +16,22 @@
   const authQuery = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const telegramError = authQuery?.get('telegram_error');
   const telegramLink = authQuery?.get('telegram_link');
+  const next = safeNext(authQuery?.get('next'), typeof window !== 'undefined' ? window.location.origin : '');
+
+  onMount(async () => {
+    if (!next) return;
+    // An expired access cookie with a live refresh cookie needs no password.
+    if (await tryRefresh()) {
+      window.location.replace(next);
+    } else if (window.self !== window.top) {
+      // Embedded in Quip: log in on the whole page, then come back to Rakazo.
+      try {
+        window.top?.location.assign('/auth/login?next=%2Frakazo');
+      } catch {
+        // Framed by another site: stay put.
+      }
+    }
+  });
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
@@ -24,6 +43,8 @@
       if (result.ok) {
         if (telegramLink) {
           window.location.assign(`/api/auth/telegram/claim?token=${encodeURIComponent(telegramLink)}`);
+        } else if (next) {
+          window.location.assign(next);
         } else {
           goto('/chat');
         }

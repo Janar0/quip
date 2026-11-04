@@ -1,5 +1,7 @@
+import { get } from 'svelte/store';
 import { currentUser } from '$lib/stores/auth';
 import { api } from '$lib/api/client';
+import { endRakazoSession, rakazoUrl } from '$lib/api/rakazo';
 
 export interface LoginData {
   email: string;
@@ -73,6 +75,8 @@ export async function fetchMe(): Promise<boolean> {
 export async function logout(): Promise<void> {
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    const rakazo = get(rakazoUrl);
+    if (rakazo) await endRakazoSession(rakazo);
   } finally {
     currentUser.set(null);
   }
