@@ -58,7 +58,7 @@ export class VoiceSession {
     this.ringback = new Ringback(options.createAudioContext, options.ringbackIntervalMs);
     this.cameraSupported = options.cameraSupported ?? false;
     this.api = options.api ?? voiceApi;
-    this.tools = new VoiceToolExecutor(this.api);
+    this.tools = new VoiceToolExecutor(this.api, options.rakazo);
   }
 
   get state(): VoiceSessionState {
@@ -549,7 +549,11 @@ export class VoiceSession {
     this.sessionInstructions = safeContextText(this.context);
     this.sendData({
       type: 'session.update',
-      session: providerSessionConfiguration(this.sessionInstructions, this.current.cameraEnabled && this.cameraSupported),
+      session: providerSessionConfiguration(
+        this.sessionInstructions,
+        this.current.cameraEnabled && this.cameraSupported,
+        Boolean(this.options.rakazo),
+      ),
     });
   }
 

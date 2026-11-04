@@ -1,3 +1,4 @@
+import type { RakazoVoice } from '$lib/api/rakazo';
 import { ALLOWED_TOOLS } from './provider-protocol';
 import type { VoiceSessionApi } from './types';
 
@@ -7,7 +8,7 @@ type StartedTask = Awaited<ReturnType<VoiceSessionApi['startTask']>>;
 export class VoiceToolExecutor {
   private pending = new Map<string, { controller: AbortController; callId: string; providerCallId: string }>();
 
-  constructor(private api: VoiceSessionApi) {}
+  constructor(private api: VoiceSessionApi, private rakazo?: RakazoVoice) {}
 
   reset(): void { this.pending.clear(); }
 
@@ -51,6 +52,25 @@ export class VoiceToolExecutor {
       } catch {
         if (!isCurrent()) return;
         return JSON.stringify({ error: 'quip_task_failed' });
+      }
+    }
+    if (this.rakazo && (name === 'ask_rakazo' || name === 'rakazo_reply')) {
+      let task = '';
+      if (name === 'ask_rakazo') {
+        try {
+          const parsed = JSON.parse(args);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length === 1
+              && typeof parsed.task === 'string') task = parsed.task.trim();
+        } catch { /* reported below */ }
+        if (!task || task.length > 2_000) return JSON.stringify({ error: 'invalid_task' });
+      }
+      try {
+        const answer = name === 'ask_rakazo' ? await this.rakazo.ask(task) : await this.rakazo.latest();
+        if (!isCurrent()) return;
+        return JSON.stringify(answer);
+      } catch {
+        if (!isCurrent()) return;
+        return JSON.stringify({ error: 'rakazo_failed' });
       }
     }
     if (!ALLOWED_TOOLS.has(name)) return JSON.stringify({ error: 'unsupported_tool' });

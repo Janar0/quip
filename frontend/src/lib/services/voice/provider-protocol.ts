@@ -41,6 +41,31 @@ const VOICE_TOOLS = [
   },
 ];
 
+// Offered only when Quip embeds Rakazo; the browser runs them through the Rakazo bridge.
+const RAKAZO_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'ask_rakazo',
+      description:
+        "Give a task to the user's Rakazo bot. It has its own computer with a browser, files and engineering programs (Mathcad, FreeCAD, TRACE MODE, LibreOffice, Octave). Returns its reply, or that it is still working.",
+      parameters: {
+        type: 'object', additionalProperties: false,
+        properties: { task: { type: 'string', description: 'What to do, under 2000 characters.' } },
+        required: ['task'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rakazo_reply',
+      description: "Check for the Rakazo bot's newest reply to the last task.",
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+    },
+  },
+];
+
 export function publicErrorCode(error: unknown): string {
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') return 'microphone_permission_denied';
@@ -86,7 +111,11 @@ export function safeContextText(context: VoiceContextPacket, latestResult = ''):
   return render();
 }
 
-export function providerSessionConfiguration(instructions: string, cameraEnabled: boolean): Record<string, unknown> {
+export function providerSessionConfiguration(
+  instructions: string,
+  cameraEnabled: boolean,
+  rakazo = false,
+): Record<string, unknown> {
   const session: Record<string, unknown> = {
     modalities: ['audio', 'text'],
     instructions: instructions,
@@ -94,7 +123,7 @@ export function providerSessionConfiguration(instructions: string, cameraEnabled
     input_audio_transcription: { language: 'ru' },
     output_audio: { language: 'ru' },
     turn_detection: { type: 'server_vad' },
-    tools: VOICE_TOOLS,
+    tools: rakazo ? [...VOICE_TOOLS, ...RAKAZO_TOOLS] : VOICE_TOOLS,
   };
   if (cameraEnabled) {
     session.video = { input: { representation_compact: 'normal' } };

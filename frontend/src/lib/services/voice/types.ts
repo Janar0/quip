@@ -1,3 +1,4 @@
+import type { RakazoVoice } from '$lib/api/rakazo';
 import type { VoiceContextPacket, VoiceTaskStatus, VoiceToolResult } from '$lib/api/voice';
 
 export type VoiceStatus = 'idle' | 'connecting' | 'active' | 'ending' | 'ended' | 'error';
@@ -43,6 +44,8 @@ export interface VoiceSessionApi {
 
 export type VoiceSessionOptions = {
   api?: VoiceSessionApi;
+  /** The person's Rakazo bot, when Quip embeds Rakazo. */
+  rakazo?: RakazoVoice;
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
   createPeerConnection?: () => RTCPeerConnection;
   createAudioContext?: () => AudioContext;

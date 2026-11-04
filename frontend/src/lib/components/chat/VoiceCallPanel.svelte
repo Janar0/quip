@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { voiceApi } from '$lib/api/voice';
+  import { RakazoBridge, rakazoUrl } from '$lib/api/rakazo';
   import { VoiceSession, type VoiceSessionState, type VoiceTranscriptEntry } from '$lib/services/voice/session';
 
   type Props = { chatId: string; onClose: () => void };
@@ -27,13 +29,19 @@
       cameraSupported = false;
       session?.setCameraSupported(false);
     });
+    const rakazoAddress = get(rakazoUrl);
+    const rakazo = rakazoAddress ? new RakazoBridge(rakazoAddress) : undefined;
     session = new VoiceSession(chatId, {
+      rakazo,
       onState: (next) => { callState = next; },
       onTranscript: (entry) => { transcript = [...transcript, entry].slice(-8); },
       onLocalVideoStream: (stream) => { videoStream = stream; },
     });
     session.attachRemoteAudio(remoteAudio ?? null);
-    return () => { void session?.end(); };
+    return () => {
+      void session?.end();
+      rakazo?.dispose();
+    };
   });
 
   $effect(() => {
